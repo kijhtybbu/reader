@@ -127,6 +127,12 @@
     <!-- Tabs -->
     <string name="default_tab">Default</string>
     <string name="typography_tab">Typography</string>
+    <string name="typography_presets_option">Presets</string>
+    <string name="preset_compact">Compact</string>
+    <string name="preset_standard">Standard</string>
+    <string name="preset_large">Large</string>
+    <string name="preset_eye_care">Eye care</string>
+    <string name="typography_preview_sample">他合上书，窗外的雨还没停。「明天再读吧。」</string>
     <string name="general_tab">General</string>
     <string name="display_tab">Display</string>
     <string name="color_tab">Colors</string>

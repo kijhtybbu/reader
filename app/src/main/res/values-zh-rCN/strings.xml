@@ -91,6 +91,12 @@
     <string name="blue_color">蓝色</string>
     <string name="paragraph_height_option">段落间距</string>
     <string name="typography_tab">排版</string>
+    <string name="typography_presets_option">预设</string>
+    <string name="preset_compact">紧凑</string>
+    <string name="preset_standard">标准</string>
+    <string name="preset_large">大字</string>
+    <string name="preset_eye_care">护眼</string>
+    <string name="typography_preview_sample">他合上书，窗外的雨还没停。「明天再读吧。」</string>
     <string name="more_tab">更多</string>
     <string name="color_tab">颜色</string>
     <string name="filter_tab">过滤</string>

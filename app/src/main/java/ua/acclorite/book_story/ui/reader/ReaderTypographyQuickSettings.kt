@@ -19,6 +19,8 @@
 package ua.acclorite.book_story.ui.reader
 
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.material3.MaterialTheme
+import ua.acclorite.book_story.ui.settings.components.SettingsSubcategory
 import ua.acclorite.book_story.ui.settings.reader.font.components.FontFamilyOption
 import ua.acclorite.book_story.ui.settings.reader.font.components.FontSizeOption
 import ua.acclorite.book_story.ui.settings.reader.font.components.LetterSpacingOption
@@ -28,15 +30,27 @@ import ua.acclorite.book_story.ui.settings.reader.text.components.ParagraphInden
 import ua.acclorite.book_story.ui.settings.reader.text.components.TextAlignmentOption
 
 /**
- * 顺序按「改动频率」排：字号 → 行距 → 段距 → 字距 → 缩进 → 对齐 → 字体。
+ * 顺序按「改动频率」排：预览 → 预设 → 字号 → 行距 → 段距 → 字距 → 缩进 → 对齐 → 字体。
  * 字体放在最后，因为它是横向 chips，占高度最多。
+ *
+ * 第一项是面板内的样例预览：分页模式下正文会在每次重排时淡出（见 ReaderTypographyPresets.kt），
+ * 所以拖动时真正能看的是这段样例，而不是面板上方的正文。
  */
 fun LazyListScope.ReaderTypographyQuickSettings() {
-    item { FontSizeOption() }
-    item { LineHeightOption() }
-    item { ParagraphHeightOption() }
-    item { LetterSpacingOption() }
-    item { ParagraphIndentationOption() }
-    item { TextAlignmentOption() }
-    item { FontFamilyOption() }
+    SettingsSubcategory(
+        titleColor = { MaterialTheme.colorScheme.primary },
+        title = { "" },
+        showTitle = false,
+        showDivider = false
+    ) {
+        item { ReaderTypographyPreview() }
+        item { ReaderTypographyPresets() }
+        item { FontSizeOption() }
+        item { LineHeightOption() }
+        item { ParagraphHeightOption() }
+        item { LetterSpacingOption() }
+        item { ParagraphIndentationOption() }
+        item { TextAlignmentOption() }
+        item { FontFamilyOption() }
+    }
 }

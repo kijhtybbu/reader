@@ -53,8 +53,13 @@ fun ReaderSettingsBottomSheet(
     DisposableEffect(Unit) { onDispose { initialPage = pagerState.currentPage } }
 
     val animatedScrimColor by animateColorAsState(
-        targetValue = if (pagerState.currentPage == 2) Color.Transparent
-        else BottomSheetDefaults.ScrimColor,
+        // fork: 排版页也要透明 —— 面板里就是要看清文字效果，蒙一层 32% 黑会直接毁掉预览；
+        // 颜色页本来就是透明的
+        targetValue = if (pagerState.currentPage == 0 || pagerState.currentPage == 2) {
+            Color.Transparent
+        } else {
+            BottomSheetDefaults.ScrimColor
+        },
         animationSpec = Motion.long()
     )
     val animatedHeight by animateFloatAsState(

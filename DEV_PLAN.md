@@ -143,45 +143,68 @@ ReaderPalette(bg, text, accent, contrastLevel)   // 阅读区专用
 
 改一次字号要：点正文 → 底部面板 → 切到「Reader」Tab → 进 `FontSubcategory` → 拖滑块 → 返回。层级 4 层，且拖动时面板遮住正文，看不到效果。
 
-### 4.2 目标形态
+### 4.2 目标形态（已实现，含两处与原计划的偏差）
 
-`ReaderSettingsBottomSheet.kt` 从 3 Tab 改为 **2 Tab：「排版」+「主题」**，并在「排版」Tab 顶部放一个**常驻高频区**（不折叠）：
+**偏差一：保留 3 个 Tab，而不是 2 个。** 原计划「2 Tab + 更多设置 →」会失去
+阅读模式/边距/系统/速度/杂项这 5 组设置的入口（它们原本在「常规」Tab）。
+改为 **排版 / 更多 / 颜色**：第一个 Tab 就是高频排版区，原「常规」内容整体挪到「更多」，
+所有设置仍在面板内可达，不用跳去设置页。
+
+**偏差二：实时预览改为「面板内样例」，不是「面板上方的正文」。** 见下方实测结论。
 
 ```
 ┌─────────────────────────────┐
-│  A-  ━━━━●━━━━  A+    字号  │   17sp
-│  ☰   ━━━●━━━━━ 行距         │   ⏎  ━━●━━━━━ 段距
-│  字距 ━●━━━━━━ 缩进 ━━━●━━  │
-│  [两端对齐] [首行缩进] [标点悬挂]  │
-│  字体  ▸ 默认 宋 黑 楷 圆        │  横向滚动
+│  他合上书，窗外的雨还没停。      │  ← 面板内样例预览（按当前设置渲染）
+│      「明天再读吧。」          │
 │  预设  紧凑 │ 标准 │ 大字 │ 护眼  │
-│  ─────────────────────────  │
-│  更多设置 →                  │   跳现有 settings/reader/*
+│  字号 ━━━━●━━━━              │
+│  行距 ━━━●━━━━━ 段距 ━━●━━━━  │
+│  字距 ━●━━━━━━ 缩进 ━━━●━━━━  │
+│  [左对齐] [两端对齐] [居中] …    │
+│  字体  默认 宋 黑 楷 …          │
+│  ─────────────────────────   │
+│  字重 / 粗体字重 / 斜体          │  ← FontSubcategory 精简后
+│  图片 / 标题 / 进度 / 翻译        │
 └─────────────────────────────┘
 ```
 
-关键交互：
-- **实时预览**：面板高度固定为 `0.55f`（现在 `ReaderSettingsBottomSheet.kt:74` 是 `0.7f/0.6f`），正文区在面板上方按新参数重排。`ReaderLayoutPaged` 已有 reflow 逻辑（`LaunchedEffect(config, readerNodes, …)`），只需保证面板不覆盖正文并保持 pager 位置。
-- **预设一键切换**：本质是写一组 `SettingsManager` 的值（字号 15/17/20/24、行距 1.4/1.6/1.8、段距 8/12/16、缩进 0/2em），做成 4 个 chip。
-- **字体补中文**：`res/font/` 增补 3 款开源中文字体，注册进 `ReaderData.fonts`：
-  - 思源宋体 / 思源黑体（SIL OFL，子集化后各 ~5MB）
-  - 霞鹜文楷（SIL OFL，~8MB，中文阅读观感最好）
-  - 用 `pyftsubset` 按 GB2312 + 常用标点裁剪，体积可压到 3–5MB
-  - **必须同时加「字体缺失回退」**：选中拉丁字体时提示「该字体不含中文字形，中文将使用系统字体」
+**实测结论（Round 1 评审抓出，我原计划写错了）**：分页模式下 `ReaderLayoutPaged.kt:249`
+在每次 config 变化时把 `contentAlpha` 推到 **0** 重新分页，`:308` 才恢复；而滑块是逐步回调的。
+所以「拖动时看面板上方的正文」在默认（分页）布局下根本不成立——文字会一直闪。
+修法不是拆掉那个淡出闸门（它还负责首次加载与滚动定位），而是在面板里放一段用当前设置
+渲染的样例文字：与阅读布局无关，拖到哪看到哪。同时把排版页的 scrim 改为透明，
+否则 32% 黑会把预览压暗。
 
-手机 APK 体积会从 ~30MB 涨到 ~45MB，自用可接受；若要控体积，改成「首启按需下载字体包」。
+其余交互：
+- 面板高度 0.7 → 0.62（排版页），多露出一些正文。
+- **预设一键切换**：4 个 chip 一次性写入 `fontSize / lineHeight / paragraphHeight /
+  letterSpacing / paragraphIndentation`，不引入新存储。当前值完全匹配时 chip 显示为选中。
+- **字体补中文**：仍未做，见 §4.4。
+
+### 4.4 未完成项：中文字体（明确推迟）
+
+`res/font/` 里 31 个字体全是拉丁字库，所以中文书下「字体」这一项选了等于没选。
+推迟的理由不是工作量，而是**取舍**：
+
+- 内置 3 款中文子集化字体，APK 从 ~30MB 涨到 ~45MB，且每款仍需自己用 `pyftsubset` 裁剪；
+- 而「用户自行导入字体」（附录 A）能覆盖同一需求，且体积为零、字体选择无限，
+  还能顺带解决「我喜欢某款商用字体」这类诉求。
+
+结论：**优先做附录 A 的用户导入**，内置中文子集字体作为可选补充。在导入能力落地前，
+`FontFamilyOption` 里应给出提示——这一点目前**尚未实现**，属于 Phase 2.5 的验收项。
 
 ### 4.3 要改的文件
 
 ```
-ui/theme/ReaderPalette.kt                      阅读区配色（从 Phase 1 推迟而来，本阶段必须有消费者）
-ui/reader/ReaderContent.kt                     提供 ReaderPalette（必须包住 bottom sheet，见下）
-ui/reader/ReaderSettingsBottomSheet.kt          重写为 2 Tab + 高频区
-ui/reader/ReaderSettingsBottomSheetTabRow.kt    2 个 Tab
-ui/reader/data/ReaderData.kt                    注册中文字体
-res/font/                                       新增 3 个中文字体
-ui/settings/reader/font/FontSubcategory.kt      增加回退提示
-presentation/reader/model/ReaderTextAlignment.kt 若实测两端对齐不达标，调整选项
+ui/theme/ReaderPalette.kt                       阅读区配色 + 对比度派生（已完成）
+ui/reader/ReaderContent.kt                      提供 ReaderPalette / 系统栏覆盖（已完成）
+ui/theme/SystemBars.kt                          系统栏图标明暗跟随阅读背景（已完成）
+ui/reader/ReaderTypographyQuickSettings.kt      常驻高频排版区（已完成）
+ui/reader/ReaderTypographyPresets.kt            4 个预设 + 面板内样例预览（已完成）
+ui/reader/ReaderSettingsBottomSheet.kt          重排为 排版/更多/颜色（已完成）
+ui/reader/ReaderSettingsBottomSheetTabRow.kt    3 个 Tab 标签（已完成）
+ui/settings/reader/font/FontSubcategory.kt      include 开关 + （待）缺中文提示
+res/font/ + ReaderData.kt                       内置中文字体 —— 推迟，见 §4.4
 ```
 
 ---
