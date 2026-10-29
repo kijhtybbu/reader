@@ -34,6 +34,8 @@ import ua.acclorite.book_story.presentation.settings.SettingsEvent
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
 import ua.acclorite.book_story.ui.theme.LocalReaderPalette
 import ua.acclorite.book_story.ui.theme.readerPalette
+import ua.acclorite.book_story.ui.theme.SystemBarsAppearanceOverride
+import androidx.compose.ui.graphics.luminance
 
 @Composable
 fun ReaderContent(
@@ -127,121 +129,125 @@ fun ReaderContent(
         readerPalette(backgroundColor, fontColor, accentSeed)
     }
 
+    // 阅读页的系统栏区域被 palette.bar 覆盖，图标明暗必须跟着它走，否则默认配置下
+    // （深色系统 + 默认浅色预设）会出现浅底 + 浅图标
+    SystemBarsAppearanceOverride(lightBars = palette.bar.luminance() > 0.5f)
+
     CompositionLocalProvider(LocalReaderPalette provides palette) {
-    ReaderBottomSheet(
-        bottomSheet = bottomSheet,
-        menuVisibility = menuVisibility,
-        dismissBottomSheet = dismissBottomSheet
-    )
+        ReaderBottomSheet(
+            bottomSheet = bottomSheet,
+            menuVisibility = menuVisibility,
+            dismissBottomSheet = dismissBottomSheet
+        )
 
-    when (layoutState) {
-        is LayoutState.Loading -> {
-            ReaderLoadingPlaceholder(navigateBack)
+        when (layoutState) {
+            is LayoutState.Loading -> {
+                ReaderLoadingPlaceholder(navigateBack)
+            }
+
+            is LayoutState.Parsing -> {
+                ReaderParsingPlaceholder(layoutState, navigateBack)
+            }
+
+            is LayoutState.Saving -> {
+                ReaderSavingPlaceholder(navigateBack)
+            }
+
+            is LayoutState.Error -> {
+                ReaderErrorPlaceholder(layoutState, retry, navigateBack)
+            }
+
+            is LayoutState.Showing -> {
+                ReaderScaffold(
+                    layout = layout,
+                    pagedDirection = pagedDirection,
+                    nodes = nodes,
+                    book = book,
+                    paginating = paginating,
+                    scrollTarget = scrollTarget,
+                    currentChapter = currentChapter,
+                    currentChapterString = currentChapterString,
+                    chaptersEmpty = chaptersEmpty,
+                    nestedScrollConnection = nestedScrollConnection,
+                    fastColorPresetChange = fastColorPresetChange,
+                    perceptionExpander = perceptionExpander,
+                    perceptionExpanderPadding = perceptionExpanderPadding,
+                    perceptionExpanderThickness = perceptionExpanderThickness,
+                    horizontalLimiter = horizontalLimiter,
+                    horizontalLimiterHeight = horizontalLimiterHeight,
+                    horizontalLimiterVerticalOffset = horizontalLimiterVerticalOffset,
+                    horizontalLimiterRuler = horizontalLimiterRuler,
+                    horizontalLimiterRulerThickness = horizontalLimiterRulerThickness,
+                    horizontalLimiterDimming = horizontalLimiterDimming,
+                    currentChapterProgress = currentChapterProgress,
+                    checkpoints = checkpoints,
+                    showMenu = showMenu,
+                    lockMenu = lockMenu,
+                    contentPadding = contentPadding,
+                    verticalPadding = verticalPadding,
+                    highlightedReading = highlightedReading,
+                    highlightedReadingThickness = highlightedReadingThickness,
+                    progress = progress,
+                    progressBar = progressBar,
+                    progressBarPadding = progressBarPadding,
+                    progressBarAlignment = progressBarAlignment,
+                    progressBarFontSize = progressBarFontSize,
+                    paragraphTextStyle = paragraphTextStyle,
+                    boldFontThickness = boldFontThickness,
+                    header1TextStyle = header1TextStyle,
+                    header2TextStyle = header2TextStyle,
+                    header3TextStyle = header3TextStyle,
+                    header4TextStyle = header4TextStyle,
+                    header5TextStyle = header5TextStyle,
+                    header6TextStyle = header6TextStyle,
+                    paragraphHeight = paragraphHeight,
+                    sidePadding = sidePadding,
+                    bottomBarPadding = bottomBarPadding,
+                    backgroundColor = backgroundColor,
+                    fontColor = fontColor,
+                    images = images,
+                    imagesCaptions = imagesCaptions,
+                    imagesCornersRoundness = imagesCornersRoundness,
+                    imagesAlignment = imagesAlignment,
+                    imagesWidth = imagesWidth,
+                    imagesColorEffects = imagesColorEffects,
+                    imagesOriginalSize = imagesOriginalSize,
+                    horizontalAlignment = horizontalAlignment,
+                    doubleClickTranslation = doubleClickTranslation,
+                    switchColorPreset = switchColorPreset,
+                    menuVisibility = menuVisibility,
+                    leave = leave,
+                    restoreCheckpoint = restoreCheckpoint,
+                    scroll = scroll,
+                    openShareApp = openShareApp,
+                    openWebBrowser = openWebBrowser,
+                    openTranslator = openTranslator,
+                    openDictionary = openDictionary,
+                    showSettingsBottomSheet = showSettingsBottomSheet,
+                    showChaptersDrawer = showChaptersDrawer,
+                    updateProgress = updateProgress,
+                    paginateForward = paginateForward,
+                    paginateBackward = paginateBackward,
+                    scrollConsumed = scrollConsumed,
+                    navigateBack = navigateBack,
+                    navigateToBookInfo = navigateToBookInfo,
+                    loadNodesBefore = loadNodesBefore
+                )
+            }
         }
 
-        is LayoutState.Parsing -> {
-            ReaderParsingPlaceholder(layoutState, navigateBack)
-        }
+        ReaderDrawer(
+            drawer = drawer,
+            chapters = chapters,
+            currentChapter = currentChapter,
+            currentChapterProgress = currentChapterProgress,
+            scrollToChapter = scrollToChapter,
+            dismissDrawer = dismissDrawer
+        )
 
-        is LayoutState.Saving -> {
-            ReaderSavingPlaceholder(navigateBack)
-        }
-
-        is LayoutState.Error -> {
-            ReaderErrorPlaceholder(layoutState, retry, navigateBack)
-        }
-
-        is LayoutState.Showing -> {
-            ReaderScaffold(
-                layout = layout,
-                pagedDirection = pagedDirection,
-                nodes = nodes,
-                book = book,
-                paginating = paginating,
-                scrollTarget = scrollTarget,
-                currentChapter = currentChapter,
-                currentChapterString = currentChapterString,
-                chaptersEmpty = chaptersEmpty,
-                nestedScrollConnection = nestedScrollConnection,
-                fastColorPresetChange = fastColorPresetChange,
-                perceptionExpander = perceptionExpander,
-                perceptionExpanderPadding = perceptionExpanderPadding,
-                perceptionExpanderThickness = perceptionExpanderThickness,
-                horizontalLimiter = horizontalLimiter,
-                horizontalLimiterHeight = horizontalLimiterHeight,
-                horizontalLimiterVerticalOffset = horizontalLimiterVerticalOffset,
-                horizontalLimiterRuler = horizontalLimiterRuler,
-                horizontalLimiterRulerThickness = horizontalLimiterRulerThickness,
-                horizontalLimiterDimming = horizontalLimiterDimming,
-                currentChapterProgress = currentChapterProgress,
-                checkpoints = checkpoints,
-                showMenu = showMenu,
-                lockMenu = lockMenu,
-                contentPadding = contentPadding,
-                verticalPadding = verticalPadding,
-                highlightedReading = highlightedReading,
-                highlightedReadingThickness = highlightedReadingThickness,
-                progress = progress,
-                progressBar = progressBar,
-                progressBarPadding = progressBarPadding,
-                progressBarAlignment = progressBarAlignment,
-                progressBarFontSize = progressBarFontSize,
-                paragraphTextStyle = paragraphTextStyle,
-                boldFontThickness = boldFontThickness,
-                header1TextStyle = header1TextStyle,
-                header2TextStyle = header2TextStyle,
-                header3TextStyle = header3TextStyle,
-                header4TextStyle = header4TextStyle,
-                header5TextStyle = header5TextStyle,
-                header6TextStyle = header6TextStyle,
-                paragraphHeight = paragraphHeight,
-                sidePadding = sidePadding,
-                bottomBarPadding = bottomBarPadding,
-                backgroundColor = backgroundColor,
-                fontColor = fontColor,
-                images = images,
-                imagesCaptions = imagesCaptions,
-                imagesCornersRoundness = imagesCornersRoundness,
-                imagesAlignment = imagesAlignment,
-                imagesWidth = imagesWidth,
-                imagesColorEffects = imagesColorEffects,
-                imagesOriginalSize = imagesOriginalSize,
-                horizontalAlignment = horizontalAlignment,
-                doubleClickTranslation = doubleClickTranslation,
-                switchColorPreset = switchColorPreset,
-                menuVisibility = menuVisibility,
-                leave = leave,
-                restoreCheckpoint = restoreCheckpoint,
-                scroll = scroll,
-                openShareApp = openShareApp,
-                openWebBrowser = openWebBrowser,
-                openTranslator = openTranslator,
-                openDictionary = openDictionary,
-                showSettingsBottomSheet = showSettingsBottomSheet,
-                showChaptersDrawer = showChaptersDrawer,
-                updateProgress = updateProgress,
-                paginateForward = paginateForward,
-                paginateBackward = paginateBackward,
-                scrollConsumed = scrollConsumed,
-                navigateBack = navigateBack,
-                navigateToBookInfo = navigateToBookInfo,
-                loadNodesBefore = loadNodesBefore
-            )
-        }
-    }
-
-    ReaderDrawer(
-        drawer = drawer,
-        chapters = chapters,
-        currentChapter = currentChapter,
-        currentChapterProgress = currentChapterProgress,
-        scrollToChapter = scrollToChapter,
-        dismissDrawer = dismissDrawer
-    )
-
-    ReaderBackHandler(
-        leave = leave,
-        navigateBack = navigateBack
-    )
+        ReaderBackHandler(
+            leave = leave,
+            navigateBack = navigateBack
+        )
     }
 }

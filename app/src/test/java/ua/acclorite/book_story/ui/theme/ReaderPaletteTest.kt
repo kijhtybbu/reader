@@ -124,6 +124,28 @@ class ReaderPaletteTest {
     }
 
     @Test
+    fun `bar still lifts when the preset foreground is close to its background`() {
+        // bg 纯黑 + fg #1A1A1A：按前景叠色到 24% 上限也只有 1.04:1，
+        // 必须走「朝背景反方向推」的兜底。（#333 在 24% 时刚好 1.08，测不出兜底，别用）
+        val palette = readerPalette(Color(0xFF000000), Color(0xFF1A1A1A))
+        assertTrue(
+            "预设前景过近时栏底仍然要能被抬起",
+            contrastRatio(palette.bar, Color(0xFF000000)) >= MinBarLift
+        )
+    }
+
+    @Test
+    fun `accent clears the non-text floor on every preset`() {
+        presets.forEach { preset ->
+            val palette = readerPalette(preset.background, preset.onBackground)
+            assertTrue(
+                "${preset.name}: 强调色在栏底上只有 ${contrastRatio(palette.accent, palette.bar)}:1",
+                contrastRatio(palette.accent, palette.bar) >= 3.0
+            )
+        }
+    }
+
+    @Test
     fun `mid tone presets are not silently promised to be readable`() {
         // 中灰背景 + 白字：正文对比度本身就不够（3.95:1），palette 不负责修正，
         // 但栏底与强调色仍须满足各自的契约。

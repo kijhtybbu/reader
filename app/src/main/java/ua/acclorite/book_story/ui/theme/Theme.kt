@@ -12,7 +12,9 @@ import android.view.View
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -28,6 +30,9 @@ fun BookStoryTheme(
     content: @Composable () -> Unit
 ) {
     val view = LocalView.current
+    // 组合期读取（而非在 SideEffect 里读），这样阅读页写入覆盖时会触发重组并重新应用
+    val systemBarsHolder = remember { mutableStateOf<Boolean?>(null) }
+    val systemBarsOverride = systemBarsHolder.value
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
@@ -41,8 +46,10 @@ fun BookStoryTheme(
                 window.isNavigationBarContrastEnforced = false
             }
 
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
-            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !isDark
+            // fork: 阅读页会用预设派生色覆盖系统栏区域，此时图标明暗必须跟着那块底色走
+            val lightBars = systemBarsOverride ?: !isDark
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = lightBars
+            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = lightBars
         }
     }
 
@@ -54,6 +61,7 @@ fun BookStoryTheme(
     )
     val animatedColorScheme = animateColorScheme(targetColorScheme = colorScheme)
 
+    CompositionLocalProvider(LocalSystemBarsOverride provides systemBarsHolder) {
     MaterialTheme(
         colorScheme = animatedColorScheme,
         // fork: 意在**降低分配**，不是为了减少重组。
@@ -65,4 +73,5 @@ fun BookStoryTheme(
         typography = remember { appTypography() },
         content = content
     )
+    }
 }

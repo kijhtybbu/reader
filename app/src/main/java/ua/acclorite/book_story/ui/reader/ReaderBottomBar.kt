@@ -285,7 +285,7 @@ private fun ReaderBottomBarCheckpointsIndicator(checkpointsProgress: List<Float>
                     .width(4.dp)
                     .height(16.dp)
                     .clip(RoundedCornerShape(0.5.dp))
-                    .background(LocalReaderPalette.current.accent.copy(0.7f))
+                    .background(LocalReaderPalette.current.accent)
             )
         }
     }
