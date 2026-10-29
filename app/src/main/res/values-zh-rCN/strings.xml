@@ -193,7 +193,7 @@
     <string name="custom_screen_brightness_option">自定义亮度</string>
     <string name="screen_brightness_option">亮度</string>
     <string name="search_field_empty">搜索…</string>
-    <string name="alignment_justify">文本对齐</string>
+    <string name="alignment_justify">两端对齐</string>
     <string name="start_welcome">欢迎来到“%1$s”！</string>
     <string name="reading_mode_reader_settings">阅读模式</string>
     <string name="today">今天</string>
@@ -279,7 +279,7 @@
     <string name="show_more_content_desc">显示更多信息</string>
     <string name="font_thickness_option">字体粗细</string>
     <string name="font_thickness_light">细体</string>
-    <string name="progress_count_quantity">数量</string>
+    <string name="progress_count_quantity">段落</string>
     <string name="edit">编辑</string>
     <string name="ok">确定</string>
     <string name="font_thickness_thin">极细</string>

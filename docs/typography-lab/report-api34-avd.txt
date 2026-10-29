@@ -1,0 +1,28 @@
+[M4 分页成本] 3000 字单段 / 版心 984×1895px → 4 页, 耗时 9ms
+    （目标 ≤100ms / 低端机 ≤250ms；模拟器数值仅供基线）
+    注意：只覆盖「单段纯文本、无行内样式」，不是带标题/图片/链接的完整章节
+[M1 避头尾] 
+  【样本1 网文混排】
+    Unspecified(不设): 扫 61 宽度 → 行首违规 0、行尾违规 0、成对标点被拆 0；断行与 Unspecified 差异 0 (24 vs 24 行)
+    Simple: 扫 61 宽度 → 行首违规 0、行尾违规 0、成对标点被拆 0；断行与 Unspecified 差异 0 (24 vs 24 行)
+    Paragraph: 扫 61 宽度 → 行首违规 0、行尾违规 0、成对标点被拆 0；断行与 Unspecified 差异 0 (24 vs 24 行)
+    Heading: 扫 61 宽度 → 行首违规 0、行尾违规 0、成对标点被拆 0；断行与 Unspecified 差异 0 (24 vs 24 行)
+  【样本2 对抗性】
+    Unspecified(不设): 扫 61 宽度 → 行首违规 0、行尾违规 0、成对标点被拆 0；断行与 Unspecified 差异 0 (21 vs 21 行)
+    Simple: 扫 61 宽度 → 行首违规 0、行尾违规 0、成对标点被拆 0；断行与 Unspecified 差异 0 (21 vs 21 行)
+    Paragraph: 扫 61 宽度 → 行首违规 0、行尾违规 0、成对标点被拆 0；断行与 Unspecified 差异 21 (19 vs 21 行)
+    Heading: 扫 61 宽度 → 行首违规 0、行尾违规 0、成对标点被拆 0；断行与 Unspecified 差异 21 (19 vs 21 行)
+[M2 两端对齐] 中文样本 / 24 行 / 版心 984px
+    justification 插入宽度: avg 5px / max 23px / min 0px；真正被撑宽的行 5/23（>2px 计），无法配对 0 行
+    撑宽/字节: 0.12 字宽（1 字宽 = 16sp × density = 42px）
+    剩余右边缘残留: avg 24px / max 32px
+    不变量：justification 只能插入宽度，任何一行 stretch 都不得为负
+[M2b 拉丁对照] 拉丁样本 / 16 行 / 版心 984px
+    剩余右边缘残留: avg 3px / max 4px
+    若此值远小于 M2 的中文残留，说明 JUSTIFICATION_MODE_INTER_WORD 只对空格生效
+[M5 重排成本] 字号 16sp → 4 页 / 6ms；字号 20sp → 6 页 / 11ms
+    这是重排成本的下限（仅 paginateReaderPages），不含 TextMeasurer 构造、切 Dispatchers.Default、重组与 pager 重布局
+[M3 字距] 0em → 0.1em: 高度 1280 → 1439 (Δ159), 行数 24 → 27 (Δ3)。字距对 CJK 生效；仍需肉眼确认标点间距是否被破坏
+[M0 设备] API 34 / sdk_gphone64_arm64 / density 2.625 / fontScale 1.0
+    屏宽 411dp / 屏高 842dp → 版心 984×1895px；正文 16sp / 行高 20sp（上游默认值）。
+    所有结论仅对当前设备/系统版本成立。

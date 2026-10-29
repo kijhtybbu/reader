@@ -26,9 +26,9 @@ android {
         applicationId = "dev.jia.reader"
         // fork: 上游为 26。提到 29 的硬理由只有一条：
         //   Typeface.CustomFallbackBuilder（API 29）—— 用户导入字体时唯一能串中文字形回退链的 API。
-        // 注意 NOT 理由：避头尾与 LineBreak 无关（实测 ICU 无条件遵守 UAX#14）；
-        //   而 LineBreak.Paragraph/Heading 依赖 android.graphics.text.LineBreakConfig，那是 API 33，
-        //   在 29~32 上仍会退化。
+        // 注意 NOT 理由：避头尾与 LineBreak 无关（实测 ICU 无条件遵守 UAX#14）。
+        // LineBreak 的 strictness / wordBreak 部分依赖 android.graphics.text.LineBreakConfig（API 33），
+        // 在 29~32 上会退化；但断行策略（HIGH_QUALITY）从 API 23 就有。
         // rebase upstream 后务必检查此行，冲突不会导致编译失败，只会静默退回 26。
         minSdk = 29
         targetSdk = 36
@@ -224,14 +224,13 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.3.0")
 
     // UI testing
-    // fork: 上游将这三个测试件钉在 1.10.0，而 app 本身用 1.9.3 —— debug/androidTest 变体因此
-    // 解析到 ui:1.10.0，导致「调试包与发布包跑的不是同一套文本引擎」。已全部钉回 1.9.3。
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.9.3")
-    // fork: 排版自检只需要 runner + junit4，不必要 compose-ui-test
+    // fork: 上游将三个测试件钉在 1.10.0，而 app 本身用 1.9.3 —— Compose 是 atomic group，
+    // debug/androidTest 变体因此整体解析到 ui:1.10.0，导致「调试包与发布包跑的不是同一套文本引擎」。
+    // 排版自检只用 runner + junit4，不依赖 Compose UI 测试（Round 2 评审：留着它们就还是会被后续
+    // 版本 bump 重新拉上去，所以直接不引入）。现在 debug 与 release 解析到同一个 1.9.3。
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    // fork: 显式声明 runner，避免依赖 ui-test-junit4 的传递引入
     androidTestImplementation("androidx.test:runner:1.7.0")
-    debugImplementation("androidx.compose.ui:ui-test-manifest:1.9.3")
+    // fork: @Preview 需要 ui-tooling；上游钉在 1.10.0，会把 debug 变体的 ui 拉到 1.10.0，已钉回 1.9.3
     debugImplementation("androidx.compose.ui:ui-tooling:1.9.3")
     kspAndroidTest("com.google.dagger:hilt-android-compiler:2.57.2")
     testImplementation(kotlin("test"))

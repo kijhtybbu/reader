@@ -428,31 +428,46 @@ data class FontWithName(
 - `values-zh-rCN` 补齐上游尚未翻译的 23 条（`app_name` 与 4 个 badge、`header_level_label` 为 `translatable="false"`，按规范不应出现在 zh 文件）
 - manifest 里 3 个 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` 随 applicationId 同步改名 —— 漏改会让 `tools:node="remove"` 静默失效
 
-### B.4 实测数据（`TypographyLabTest`，AVD reader34 / API 34 / Compose 1.9.3）
+### B.4 实测数据（AVD reader34 / API 34 / density 2.625 / 屏宽 411dp / Compose 1.9.3）
 
-> 运行：`./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ua.acclorite.book_story.typography.TypographyLabTest`
-> 输出同时写入 logcat，TAG = `TypographyLab`。
-> 设备：`API 34 / sdk_gphone64_arm64 / density 2.625 / fontScale 1.0`。
+> 原始输出已入库：`docs/typography-lab/report-api34-avd.txt`（可复核，不是转述）。
+> 1 字宽 = 16sp × density 2.625 = **42px**。
 > **模拟器数值只作基线与相对比较，绝对值不代表真机**；Phase 2 验收需在真机复测。
 
 | 项 | 量的是什么 | 结果 | 结论 |
 | --- | --- | --- | --- |
-| M1a | 行首/行尾禁则违规数，扫 61 个宽度 × 4 种 `LineBreak` | **全部 0 处** | **避头尾已由 ICU 无条件保证，不需要写任何代码** |
-| M1b | 四种 `LineBreak` 的断行差异（固定宽度） | Simple 0/29；**Paragraph 15/29**；**Heading 25/29** | `LineBreak` 确实生效，但改的是**断行平衡**（避免孤字寡行），与禁则无关 |
-| M2 | 中文 Justify vs Start 右侧墨迹残留（按行尾字符分组） | 行尾非标点组：Justify **21px** / Start **36px**；以标点结尾组：54px / 46px | 中文两端对齐**部分有效**（0.82 字宽 → 0.48 字宽），但**做不到贴边** |
-| M2b | 拉丁对照组 | 行尾非标点：Justify **3px** / Start **37px** | `JUSTIFICATION_MODE_INTER_WORD` 只对空格生效，拉丁能贴边、中文只能补一半 |
-| M3 | `letterSpacing` 0em → 0.1em | 行数 29 → 32，高度 1545 → 1704px | 对 CJK **生效**，面板保留此项 |
-| M4 | 3000 字单章真实分页（预热 + 取 3 次最小值） | 6 页 / **12ms** | 远低于 100ms 预算，**不需要动 `ReaderPagePaginator.kt`** |
-| M5 | 改字号重排（仅分页部分） | 16sp 12ms / 20sp 17ms | 同上 |
+| M1a | 行首/行尾禁则违规 + 破折号/省略号成对拆分，2 个样本 × 61 宽度 × 4 种 `LineBreak` | **全部 0** | 避头尾（UAX#14 CL/OP）**不需要写代码** |
+| M1b | 四种 `LineBreak` 的断行差异 | 平文样本：`Simple`/`Paragraph`/`Heading` 均 0/24；**对抗性样本：`Paragraph` 21 处差异（19 vs 21 行）、`Heading` 21 处** | `LineBreak` 确实生效，改的是**断行平衡**（避免孤字寡行），与禁则正交。现有 `LineBreak.Paragraph` 应保留 |
+| M2 | 中文 justification **逐行**插入宽度（见下方方法与修正记录） | 插入 avg **5px（0.12 字宽）**，max 23px，23 行中只有 **5 行**被撑宽；剩余残留 avg 24px | 中文两端对齐**实质上无效** |
+| M2b | 拉丁对照 | 剩余残留 avg **3px** | 同一个 `TextAlign.Justify`，拉丁能贴边 → 证明引擎只在空格处分配余量 |
+| M3 | `letterSpacing` 0em → 0.1em | 行数 24 → 27，高度 1280 → 1439px | 对 CJK **生效**，面板保留此项 |
+| M4 | 3000 字单段整章分页（预热 + 取 3 次最小值） | 4 页 / **9ms** | 远低于 100ms 预算，**不需要动 `ReaderPagePaginator.kt`** |
+| M5 | 改字号重排（仅分页部分） | 16sp 6ms / 20sp 11ms | 同上；真实路径还要加 `TextMeasurer` 构造 + 重组 |
 | M6 | 跨章翻页空白帧 | — | 无法自动化，需人工观察（Phase 3） |
+
+数据口径说明：
+
+- M1 的「对抗性样本」是 Round 2 评审要求补的。原样本只包含 `：，。”）；`，对 `！？、》」』`、破折号 `——`、
+  省略号 `……`、长 URL、数字串均未覆盖。特别是 U+2014 属 UAX#14 的 B2 类（前后均可断），
+  它被行边界劈成两半时旧计数器会报 0 违规，因此新增了成对标点拆分计数器。
+- M2 的测法经过两次修正：初版用 `getLineRight`（拿不到绘制期的 justification，**无效**）；
+  二版“分别统计两侧右边缘再相减”（**逻辑错误**：justify 会改变断行位置，两边不是同一批行）；
+  三版为逐行配对：取 justify 自己的行边界，将同一段文字单独排版（不换行、左对齐）求自然墨迹右缘，
+  相减即为该行被撑宽的量。并断言「任何一行撑宽值不得为负」——旧口径曾得出
+  “以标点结尾的行 justify 54px > start 46px”这种算术上不可能的结果，该不变量就是防线。
 
 ### B.5 实测结论（三条与最初假设相反）
 
-1. **避头尾不需要做，但 `LineBreak` 不是无关的。** ICU 无条件遵守 UAX#14，四种模式违规都是 0；然而 `LineBreak.Paragraph` 实际改变了 **15/29 行**的断点、`Heading` 改变 **25/29 行**。它是断行平衡（避免孤字寡行/行尾单词），不是禁则。`ReaderScreen.kt:242` 现有设置**应当保留**。
-2. **中文两端对齐：部分有效，不是完全无效。** 按行尾字符分组后，中文 Justify 把平均右侧残留从 36px（0.82 字宽）压到 21px（0.48 字宽），拉丁能压到 3px。因为 Android 只有 inter-word 一种模式，中文没有空格可分配，所以补到字形侧空的极限就停了。
-   → 含义：Justify 比 Start 好，但仍是「半个字的褫齿」。要真正贴边必须自研字符间距分配（约 1.5 天）；不投入的话，**Justify 与 Start 两者都不完美，而 Justify 实测更好且零成本**。
+1. **避头尾不需要做，但 `LineBreak` 不是无关的。** UAX#14 CL/OP 禁则在两个样本、61 个宽度、
+   四种模式下违规恒为 0（含破折号/省略号成对拆分）。然而 `LineBreak.Paragraph` 在对抗性样本上
+   改变了 **21 处**断点（19 vs 21 行）——它做的是断行平衡（避免孤字寡行），不是禁则。
+   `ReaderScreen.kt:242` 的现有设置**应当保留**。
+2. **中文两端对齐实质上无效。** 逐行配对测量：23 行里只有 5 行被撑宽，平均插入宽度 5px（0.12 字宽）；
+   同样引擎跑拉丁，剩余残留 3px。原因：Android 只有 `JUSTIFICATION_MODE_INTER_WORD`，只在空格处分配。
+   **决策：不自研字符间距分配；保留 `ReaderTextAlignment.JUSTIFY` 默认值，面板保留对齐选项。**
+   即这一项**零改动**——换回左对齐没有收益（两者视觉几乎无差异），自研也不值 1.5 天。
 3. **`letterSpacing` 对 CJK 生效**（与 Readium 文档的“CJK 不支持”相反，以 Compose 实测为准）。
-4. **分页不需要优化。** 3000 字 12ms，“不碰 `ReaderPagePaginator.kt`”可作为硬约束。
+4. **分页不需要优化。** 3000 字 9ms，“不碰 `ReaderPagePaginator.kt`”可作为硬约束。
 
 ### B.6 其它待 Phase 2 处理的默认值问题
 
@@ -470,3 +485,27 @@ Round 1 还提到、但我用构建结果直接否定的两条：
 
 - “`androidTest` 看不到 `internal`” → `compileDebugAndroidTestKotlin` 已通过，friend-path 成立
 - “`TextLayoutResult.multiParagraph` 在 1.9.3 不可见” → 已编译并运行通过
+
+### B.8 Review Round 2 抓到的问题（已修）
+
+1. **M2 的对比不是逐行对齐的（方法错，不是代码错）**：justify 会改变断行位置，两个布局的行不是同一批内容，
+   比较两组的平均值无效。修正后结论从“部分有效（0.82→0.48 字宽）”变成**“实质无效（0.12 字宽）”**。
+   旧口径还产出过「以标点结尾的行 justify 54px > start 46px」这种算术上不可能的数据——
+   逐行看 justification 只增宽、残留只能变小。现已加「撑宽值不得为负」不变量断言。
+2. **M1 样本覆盖不足**：声明的 26 个禁则字符里样本只出现了 6 个；`！？、》」』` 未测；
+   `——`（U+2014，UAX#14 B2 类，前后均可断）被拆分时旧计数器会报 0 违规。
+   已加对抗性样本 + 成对标点拆分计数器。
+3. **测试的 `ReaderPageConfig` 不是运行时那份**：版心宽用 360dp 推算，而设备实际 411dp
+   （报出的 851px 是一个这台设备不存在的宽度，M1 的扫描区间甚至没覆盖到真实宽度）；
+   `gap` 8dp vs 运行时的 24dp（`paragraphHeight 8 × 3`）；`separatorHeight` 1 vs 3dp；
+   缺 `textDirection = Content`。现已与 `ReaderLayoutPaged.kt:200-219` 逐字段对齐。
+   修正后 M4 从 12ms/6 页变为 9ms/4 页。
+4. **两项 zh-CN 翻译错**（上游遗留，恰好在 Phase 2 要重建的面板里）：
+   `alignment_justify` “文本对齐”→“两端对齐”、`progress_count_quantity` “数量”→“段落”。
+5. **根因而非钉版本**：删掉了 `ui-test-junit4` / `ui-test-manifest`（本仓库没有 UI 测试，用不到），
+   而不是靠三个版本号保持同步。`ui-tooling` 保留（`@Preview` 需要）并钉在 1.9.3。
+6. 其它小项：M1/M2 结论已升级为断言（Phase 2 换字体后它们就是回归测试）；
+   无墨迹行不再计入残留统计；原始输出入库到 `docs/typography-lab/`。
+
+Round 2 的验收判断：**无阻塞项**，可以作为 Phase 1 基线。其中 M1/M2 是数据债，
+只影响 Phase 2 的对齐面板文案，不影响 Phase 1 的设计 token 工作。

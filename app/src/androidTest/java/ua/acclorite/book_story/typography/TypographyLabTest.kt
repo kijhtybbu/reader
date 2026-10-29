@@ -6,24 +6,24 @@
  * fork 新增：中文排版自检实验室。
  *
  * 目的：在改任何 UI 之前，先用真机的 Android 文本排版引擎量出四件事：
- *   M1 避头尾：LineBreak.Paragraph 到底有没有生效，禁则字符是否出现在行首
- *   M2 两端对齐：TextAlign.Justify 在纯中文下每行右边缘的差多少
+ *   M1 避头尾：禁则字符是否出现在行首/行尾，以及四种 LineBreak 模式到底有没有差别
+ *   M2 两端对齐：justify 到底把行撑宽了多少（逐行配对测量，见 M2 注释）
  *   M3 字距：letterSpacing 对 CJK 是否产生实际影响
- *   M4 分页成本：3000 字章节走真实 paginateReaderPages 耗时多久
+ *   M4 分页成本：整章走真实 paginateReaderPages 的耗时
+ *   M5 重排成本：改字号后重新分页的耗时下限
  *
- * 这些结论决定 Phase 2/3 是「只改 UI」还是「必须动排版代码」，因此必须在
- * Phase 0 拿数据，不能靠肉眼判断。
- *
- * 运行方式：
+ * 运行：
  *   ./gradlew :app:connectedDebugAndroidTest \
  *     -Pandroid.testInstrumentationRunnerArguments.class=ua.acclorite.book_story.typography.TypographyLabTest
- * 结果同时输出到 logcat（TAG = TypographyLab）。
+ * 结果写入 logcat（TAG = TypographyLab）与 stdout。
  *
- * 注意：测量结果随设备字体引擎、系统版本不同而不同，不跨设备比较。
+ * 注意：测量结果随设备字体引擎、系统版本、屏幕尺寸而变，不跨设备比较。
+ * 所有报告都带 M0 设备信息头。
  */
 
 package ua.acclorite.book_story.typography
 
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
@@ -33,12 +33,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
@@ -64,6 +66,8 @@ class TypographyLabTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val displayMetrics = context.resources.displayMetrics
+    private val configuration = context.resources.configuration
+
     // fork: fontScale 必须传进来，否则 sp→px 与设备「系统字体大小」设置不符
     private val density = Density(
         density = displayMetrics.density,
@@ -76,28 +80,51 @@ class TypographyLabTest {
         cacheSize = 0
     )
 
-    /** 所有报告都带设备信息：不同设备/系统版本的排版行为不可直接比较 */
     private val deviceHeader =
         "API ${android.os.Build.VERSION.SDK_INT} / ${android.os.Build.MODEL} / " +
             "density ${displayMetrics.density} / fontScale ${displayMetrics.scaledDensity / displayMetrics.density}"
 
-    // 视口按 360dp 宽、左右各 18dp sidePadding 推算
+    // 与运行时一致：版心宽 = 屏宽 - 左右各 18dp sidePadding（sidePadding 设置默认 6，×3 = 18dp）
     private val contentWidthPx =
-        ((360 - 18 * 2) * density.density).roundToInt()
+        ((configuration.screenWidthDp - 36) * density.density).roundToInt()
+
+    // 运行时版心高来自 BoxWithConstraints，测试里没有那个 Box，用屏高扣掉状态栏/导航栏/padding 近似
+    private val contentHeightPx =
+        ((configuration.screenHeightDp - 120) * density.density).roundToInt()
 
     /** 禁则字符：不允许出现在行首的标点（闭标点 + 后置标点） */
     private val closingPunctuation =
-        "。，、；：？！）〕］｝〉》」』】”’％‰℃…·・"
+        "。，、；：？！）〕］｝〉》」』】”’！？、％‰℃…·・"
 
-    /** 开标点：不允许出现在行尾（行尾禁则），否则与行首禁则对称失守 */
+    /** 开标点：不允许出现在行尾 */
     private val openingPunctuation = "（〔［｛〈《「『【“‘"
 
-    /** 混排样本：中文标点密集 + 中英数字混排，足够在一屏内制造大量断行点 */
-    private val cjkSample = buildString {
+    /** 可被拆开的成对标点：破折号与省略号不应被行边界劈成两半 */
+    private val pairedMarks = "—…"
+
+    /**
+     * 样本 1：网文常见对话 + 中英数混排。
+     */
+    private val proseSample = buildString {
         repeat(6) {
             append("他说：“这本书我已经读完了，写得真好。”")
             append("然后他把书放回书架上（第三层），转身看向窗外——天色已经暗了下来；")
             append("隔壁房间里传来收音机的声音，正在播报 2025 年的新闻，据说有 37% 的人不再看纸质书了。")
+        }
+    }
+
+    /**
+     * 样本 2：对抗性样本。样本 1 只覆盖了 `：，。”）；` 这几个禁则字符，
+     * 对 `！？、》」』`、破折号/省略号成对拆分、ASCII `%`、长拉丁 token、数字串都没覆盖。
+     * 没有这个样本，「0 违规」只是关于样本里出现过的字符的证据，不是关于规则集的证据。
+     */
+    private val adversarialSample = buildString {
+        repeat(3) {
+            append("「你确定！？」他问。『当然、当然。』她答。")
+            append("他说完就沉默了……然后补了一句——「算了。」")
+            append("参见 https://example.com/a/very/long/unbreakable/token?x=1 与 3.14159265358979")
+            append("增长率 37%、同比 12.5%、累计 1234567890 人次，见《统计年鉴》（2025 年版）。")
+            append("书名号《活着》、引号「家」、括号（测试）连排：》』」）！？、。")
         }
     }
 
@@ -106,6 +133,7 @@ class TypographyLabTest {
     /**
      * 复刻 ReaderScreen.kt 的正文 TextStyle。
      * fontSize 16 / lineHeight 20 是上游默认值（lineHeight 设置项是「相对字号的 sp 增量」）。
+     * textDirection = Content 与运行时一致（ReaderLayoutPaged.kt:205-207）。
      */
     private fun readerStyle(
         fontSizeSp: Int = 16,
@@ -121,7 +149,8 @@ class TypographyLabTest {
         textAlign = align,
         lineBreak = lineBreak,
         textIndent = TextIndent(firstLine = indentSp.sp),
-        letterSpacing = letterSpacingEm.em
+        letterSpacing = letterSpacingEm.em,
+        textDirection = TextDirection.Content
     )
 
     private fun layout(
@@ -138,15 +167,6 @@ class TypographyLabTest {
         val message = "[$section] $body"
         Log.i(LOG_TAG, message)
         println(message)
-    }
-
-    @Test
-    fun m0_deviceInfo() {
-        report(
-            "M0 设备",
-            deviceHeader + "\n    版心宽 ${contentWidthPx}px，正文字号 16sp / 行高 20sp " +
-                "（上游默认值）。所有结论仅对当前设备/系统版本成立。"
-        )
     }
 
     /** 返回该行第一个非空白字符的下标；整行空白则返回 null */
@@ -185,25 +205,34 @@ class TypographyLabTest {
         for (line in 0 until result.lineCount) {
             val end = result.getLineEnd(line, visibleEnd = true)
             if (end <= 0) continue
-            val char = text[end - 1]
-            if (openingPunctuation.indexOf(char) >= 0) count++
+            if (openingPunctuation.indexOf(text[end - 1]) >= 0) count++
+        }
+        return count
+    }
+
+    /** 成对标点被行边界劈开：行尾是 — / … 且下一行行首是同一个字符 */
+    private fun countPairSplits(text: String, result: TextLayoutResult): Int {
+        var count = 0
+        for (line in 0 until result.lineCount - 1) {
+            val end = result.getLineEnd(line, visibleEnd = true)
+            val next = result.getLineStart(line + 1)
+            if (end <= 0 || next >= text.length) continue
+            val last = text[end - 1]
+            if (pairedMarks.indexOf(last) >= 0 && text[next] == last) count++
         }
         return count
     }
 
     /**
-     * 像素级测量：绘制到 Bitmap，返回每行墨迹的 [左缘, 右缘] 像素列。
+     * 像素级测量：绘制到 Bitmap，返回每行墨迹的 [左缘, 右缘] 像素列；无墨迹的行返回 null。
      *
      * 为什么要用像素而不是 getLineRight：justification 是绘制时把多余宽度分配到字间，
-     * getLineRight/getPrimaryHorizontal 返回的是字形前进宽度，不包含这份分配，
-     * 因此用它算“右边缘不足”会得到与对齐无关的数。
+     * getLineRight/getPrimaryHorizontal 返回的是字形前进宽度，不包含这份分配。
      */
-    private fun measureLineInk(result: TextLayoutResult): List<Pair<Int, Int>> {
+    private fun measureLineInk(result: TextLayoutResult): List<Pair<Int, Int>?> {
         val widthPx = result.size.width.coerceAtLeast(1)
         val heightPx = result.size.height.coerceAtLeast(1)
-        val bitmap = android.graphics.Bitmap.createBitmap(
-            widthPx, heightPx, android.graphics.Bitmap.Config.ARGB_8888
-        )
+        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         bitmap.eraseColor(android.graphics.Color.WHITE)
         result.multiParagraph.paint(
             androidx.compose.ui.graphics.Canvas(android.graphics.Canvas(bitmap))
@@ -219,173 +248,202 @@ class TypographyLabTest {
             for (y in top until bottom) {
                 val rowOffset = y * widthPx
                 for (x in 0 until widthPx) {
-                    // 只看蓝通道：白底为 255，抗锯齿灰阶 < 200 视为墨迹
+                    // 只看蓝通道：白底 255，抗锯齿灰阶 < 200 视为墨迹
                     if ((pixels[rowOffset + x] and 0xFF) < 200) {
                         if (x < left) left = x
                         if (x > right) right = x
                     }
                 }
             }
-            left to right
+            if (right < 0) null else left to right
         }
+    }
+
+    /**
+     * 把某一行单独排版（不换行、不缩进、左对齐），返回它「自然状态下」的墨迹右缘。
+     * 用于与 justify 版同一行的墨迹右缘相减，得到 justification 实际插入的宽度。
+     */
+    private fun naturalInkRight(text: String, start: Int, end: Int, style: TextStyle): Int? {
+        if (end <= start) return null
+        val sub = text.substring(start, end)
+        val natural = measurer.measure(
+            text = sub,
+            style = style.copy(
+                textAlign = TextAlign.Start,
+                textIndent = TextIndent.None
+            ),
+            softWrap = false,
+            constraints = Constraints()
+        )
+        return measureLineInk(natural).firstOrNull()?.second
+    }
+
+    // ---------------------------------------------------------------- M0
+
+    @Test
+    fun m0_deviceInfo() {
+        report(
+            "M0 设备",
+            "$deviceHeader\n    屏宽 ${configuration.screenWidthDp}dp / 屏高 ${configuration.screenHeightDp}dp " +
+                "→ 版心 ${contentWidthPx}×${contentHeightPx}px；正文 16sp / 行高 20sp（上游默认值）。\n" +
+                "    所有结论仅对当前设备/系统版本成立。"
+        )
     }
 
     // ---------------------------------------------------------------- M1
 
     @Test
-    fun m1_kinsoku_lineBreakComparison() {
+    fun m1_kinsoku() {
         val modes = listOf(
-            "Unspecified(不设 lineBreak)" to LineBreak.Unspecified,
+            "Unspecified(不设)" to LineBreak.Unspecified,
             "Simple" to LineBreak.Simple,
             "Paragraph" to LineBreak.Paragraph,
             "Heading" to LineBreak.Heading
         )
+        val samples = listOf("样本1 网文混排" to proseSample, "样本2 对抗性" to adversarialSample)
 
-        // 单一宽度下「违规 0 处」不能证明避头尾生效：也可能恰好没有出现断点。
+        // 单一宽度下「0 违规」不能证明避头尾生效：也可能恰好没有出现断点。
         // 正确做法是扫宽度——只要断点可能落不合法位置，某个宽度就会暴露出来。
-        // 宽度必须相对真实版心（不能用绝对 px，mdpi 设备上会跑到 2~3 倍视口）。
         val widths = ((contentWidthPx - 120)..(contentWidthPx + 120) step 4).toList()
         val summary = StringBuilder()
 
-        // 额外回答一个正交问题：四种 LineBreak 模式到底有没有差别？
-        fun lineStarts(mode: LineBreak): List<Int> =
-            layout(cjkSample, readerStyle(lineBreak = mode), contentWidthPx).let { r ->
+        fun lineStarts(text: String, mode: LineBreak): List<Int> =
+            layout(text, readerStyle(lineBreak = mode), contentWidthPx).let { r ->
                 (0 until r.lineCount).map { r.getLineStart(it) }
             }
 
-        val baseline = lineStarts(LineBreak.Unspecified)
+        samples.forEach { (sampleName, sample) ->
+            summary.append("\n  【$sampleName】")
+            val baseline = lineStarts(sample, LineBreak.Unspecified)
 
-        modes.forEach { (label, mode) ->
-            var startOffenders = 0
-            var endOffenders = 0
-            val examples = mutableListOf<String>()
-            widths.forEach { width ->
-                val result = layout(cjkSample, readerStyle(lineBreak = mode), width)
-                startOffenders += countLineStartOffenders(cjkSample, result, examples)
-                endOffenders += countLineEndOffenders(cjkSample, result)
+            modes.forEach { (label, mode) ->
+                var startOffenders = 0
+                var endOffenders = 0
+                var pairSplits = 0
+                val examples = mutableListOf<String>()
+                widths.forEach { width ->
+                    val result = layout(sample, readerStyle(lineBreak = mode), width)
+                    startOffenders += countLineStartOffenders(sample, result, examples)
+                    endOffenders += countLineEndOffenders(sample, result)
+                    pairSplits += countPairSplits(sample, result)
+                }
+                val starts = lineStarts(sample, mode)
+                val diff = if (starts.size == baseline.size) {
+                    starts.indices.count { starts[it] != baseline[it] }
+                } else {
+                    maxOf(starts.size, baseline.size)
+                }
+                summary.append(
+                    "\n    $label: 扫 ${widths.size} 宽度 → 行首违规 $startOffenders、行尾违规 $endOffenders、" +
+                        "成对标点被拆 $pairSplits；断行与 Unspecified 差异 $diff " +
+                        "(${starts.size} vs ${baseline.size} 行)"
+                )
+                examples.forEach { summary.append("\n        $it") }
+
+                // 把结论变成断言：Phase 2 换字体/改排版后它仍须成立，否则是回归。
+                assertEquals("[$sampleName/$label] 行首出现禁则字符", 0, startOffenders)
+                assertEquals("[$sampleName/$label] 行尾出现开标点", 0, endOffenders)
+                assertEquals("[$sampleName/$label] 破折号/省略号被行边界劈开", 0, pairSplits)
             }
-            val starts = lineStarts(mode)
-            val diff = if (starts.size == baseline.size) {
-                starts.indices.count { starts[it] != baseline[it] }
-            } else {
-                maxOf(starts.size, baseline.size)
-            }
-            summary.append(
-                "\n  $label: 扫 ${widths.size} 个宽度，行首禁则违规 $startOffenders 处、" +
-                    "行尾禁则违规 $endOffenders 处；与 Unspecified 断行差异 $diff/${baseline.size} 行"
-            )
-            examples.forEach { summary.append("\n      $it") }
         }
 
         report("M1 避头尾", summary.toString())
-        assertTrue("样本必须能排多行", layout(cjkSample, readerStyle()).lineCount > 5)
     }
 
     // ---------------------------------------------------------------- M2
 
-    private data class InkStats(
-        val max: Int,
-        val avg: Int,
-        val flush: Int,
-        val total: Int,
-        val tailsWithPunctAvg: Int?,
-        val tailsWithPunctCount: Int,
-        val tailsPlainAvg: Int?,
-        val tailsPlainCount: Int
-    )
-
     /**
-     * 右边缘间距统计。
+     * 逐行配对测量 justification 实际插入的宽度。
      *
-     * 必须按「行尾字符类别」分组：全角闭标点（。，））的字形只占字身左侧一半，
-     * 所以一行以 。 结尾时即使完美对齐，墨迹也会天然离右缘 0.3~0.5em。
-     * 不分组的话，中文样本（行尾几乎都是标点）会系统性地被高估褫齿，
-     * 而拉丁样本（行尾是字母）不会被高估 —— 两边不可比，会直接导错结论。
+     * 为什么不能像最初那样「分别统计 Justify/Start 的右边缘残留再相减」：
+     * justification 会改变断行位置，两个布局的行根本不是同一批内容，
+     * 把两组的平均值放在一起比较是无效的（Round 2 评审指出：记录里出现过
+     * 「以标点结尾的行 justify 54px > start 46px」，而逐行看 justification
+     * 只会增加宽度、残留只能变小，所以那组数据本身就是总体不同导致的伪结果）。
+     *
+     * 正确做法：取 justify 布局自己的行边界，把同一段文字单独排版（不换行、左对齐）
+     * 得到自然墨迹右缘，两者相减 = 这一行被 justify 撑宽了多少。逐行、可配对。
      */
-    private fun inkStats(text: String, result: TextLayoutResult): InkStats {
-        val ink = measureLineInk(result)
-        val widthPx = result.size.width
-        // 末行按规范不对齐，剔除
-        val nonLast = ink.dropLast(1)
-        if (nonLast.isEmpty()) {
-            return InkStats(0, 0, 0, 0, null, 0, null, 0)
-        }
-        val gaps = nonLast.map { (_, right) -> (widthPx - right).coerceAtLeast(0) }
-
-        val withPunct = mutableListOf<Int>()
-        val plain = mutableListOf<Int>()
-        nonLast.forEachIndexed { index, _ ->
-            val end = result.getLineEnd(index, visibleEnd = true)
-            val lastChar = if (end > 0) text[end - 1] else ' '
-            val isClosing = closingPunctuation.indexOf(lastChar) >= 0
-            if (isClosing) withPunct += gaps[index] else plain += gaps[index]
-        }
-
-        return InkStats(
-            max = gaps.maxOrNull() ?: 0,
-            avg = gaps.average().roundToInt(),
-            flush = nonLast.count { it.second >= widthPx - 2 },
-            total = nonLast.size,
-            tailsWithPunctAvg = if (withPunct.isEmpty()) null else withPunct.average().roundToInt(),
-            tailsWithPunctCount = withPunct.size,
-            tailsPlainAvg = if (plain.isEmpty()) null else plain.average().roundToInt(),
-            tailsPlainCount = plain.size
-        )
-    }
-
-    private fun InkStats.render(): String =
-        "右边缘不足 max ${max}px / avg ${avg}px，触边行 $flush/$total" +
-            "｜行尾为标点 $tailsWithPunctCount 行 avg ${tailsWithPunctAvg ?: "-"}px" +
-            "｜行尾非标点 $tailsPlainCount 行 avg ${tailsPlainAvg ?: "-"}px"
-
     @Test
-    fun m2_justify_pixelRightEdge() {
-        val justify = layout(cjkSample, readerStyle(align = TextAlign.Justify))
-        val start = layout(cjkSample, readerStyle(align = TextAlign.Start))
+    fun m2_justifyPerLineStretch() {
+        val style = readerStyle(align = TextAlign.Justify)
+        val justify = layout(proseSample, style)
+        val ink = measureLineInk(justify)
+        val widthPx = justify.size.width
 
+        val stretches = mutableListOf<Int>()
+        val residues = mutableListOf<Int>()
+        var unmatched = 0
+
+        for (line in 0 until justify.lineCount - 1) { // 末行按规范不对齐
+            val start = justify.getLineStart(line)
+            val end = justify.getLineEnd(line, visibleEnd = true)
+            val inkRight = ink[line]?.second
+            val naturalRight = naturalInkRight(proseSample, start, end, style)
+            if (inkRight == null || naturalRight == null) {
+                unmatched++
+                continue
+            }
+            stretches += inkRight - naturalRight
+            residues += (widthPx - inkRight).coerceAtLeast(0)
+        }
+
+        val stretchedCount = stretches.count { it > 2 }
         report(
             "M2 两端对齐",
-            "中文样本 / 版心宽 ${justify.size.width}px, ${justify.lineCount} 行\n" +
-                "    Justify:       ${inkStats(cjkSample, justify).render()}\n" +
-                "    Start(对照):  ${inkStats(cjkSample, start).render()}\n" +
-                "    判定：看「行尾非标点」那一组的 avg。若 Justify 在该组明显小于 Start，则对中文部分生效"
+            "中文样本 / ${justify.lineCount} 行 / 版心 ${widthPx}px\n" +
+                "    justification 插入宽度: avg ${stretches.average().roundToInt()}px / " +
+                "max ${stretches.maxOrNull() ?: 0}px / min ${stretches.minOrNull() ?: 0}px；" +
+                "真正被撑宽的行 $stretchedCount/${stretches.size}（>2px 计），无法配对 $unmatched 行\n" +
+                "    撑宽/字节: ${(stretches.average() / (16 * displayMetrics.density / 1.0)).let { "%.2f".format(it) }} 字宽" +
+                "（1 字宽 = 16sp × density = ${(16 * displayMetrics.density).roundToInt()}px）\n" +
+                "    剩余右边缘残留: avg ${residues.average().roundToInt()}px / max ${residues.maxOrNull() ?: 0}px\n" +
+                "    不变量：justification 只能插入宽度，任何一行 stretch 都不得为负"
         )
 
-        assertTrue("版心宽度必须大于 0", justify.size.width > 0)
+        assertTrue("必须测到多行", stretches.size > 5)
+        assertTrue(
+            "justification 不可能让某一行变窄（出现负值说明测量口径不一致）",
+            stretches.all { it >= -1 }
+        )
     }
 
-    /**
-     * M2b 关键对照组：同一引擎上跑纯拉丁样本。
-     *
-     * Android 只有 `JUSTIFICATION_MODE_INTER_WORD` 一种justification 模式（Compose 的
-     * TextAlign.Justify 就映射到它）。如果拉丁样本能触边、中文样本不能，就能证明
-     * 中文两端对齐在当前技术栈上不成立。
-     */
+    /** M2b 拉丁对照：同一引擎、同一测法，拉丁应当被撑到接近填满 */
     @Test
-    fun m2b_justify_latinControl() {
+    fun m2b_justifyLatinControl() {
         val latin = buildString {
             while (length < 800) {
                 append("The quick brown fox jumps over the lazy dog while reading a book. ")
             }
         }.take(800)
 
-        val justify = layout(latin, readerStyle(align = TextAlign.Justify))
-        val start = layout(latin, readerStyle(align = TextAlign.Start))
+        val style = readerStyle(align = TextAlign.Justify)
+        val justify = layout(latin, style)
+        val ink = measureLineInk(justify)
+        val widthPx = justify.size.width
+
+        val residues = mutableListOf<Int>()
+        for (line in 0 until justify.lineCount - 1) {
+            val inkRight = ink[line]?.second ?: continue
+            residues += (widthPx - inkRight).coerceAtLeast(0)
+        }
 
         report(
-            "M2b 两端对齐(拉丁对照)",
-            "拉丁样本 / ${justify.lineCount} 行\n" +
-                "    Justify:       ${inkStats(latin, justify).render()}\n" +
-                "    Start(对照):  ${inkStats(latin, start).render()}"
+            "M2b 拉丁对照",
+            "拉丁样本 / ${justify.lineCount} 行 / 版心 ${widthPx}px\n" +
+                "    剩余右边缘残留: avg ${residues.average().roundToInt()}px / max ${residues.maxOrNull() ?: 0}px\n" +
+                "    若此值远小于 M2 的中文残留，说明 JUSTIFICATION_MODE_INTER_WORD 只对空格生效"
         )
+
+        assertTrue("必须测到多行", residues.size > 5)
     }
 
     // ---------------------------------------------------------------- M3
 
     @Test
     fun m3_letterSpacingOnCjk() {
-        val base = layout(cjkSample, readerStyle(letterSpacingEm = 0f))
-        val wide = layout(cjkSample, readerStyle(letterSpacingEm = 0.1f))
+        val base = layout(proseSample, readerStyle(letterSpacingEm = 0f))
+        val wide = layout(proseSample, readerStyle(letterSpacingEm = 0.1f))
 
         val heightDelta = wide.size.height - base.size.height
         val lineDelta = wide.lineCount - base.lineCount
@@ -397,65 +455,70 @@ class TypographyLabTest {
                 if (heightDelta == 0 && lineDelta == 0) {
                     "⚠ 无变化：该字距对 CJK 不生效，面板中应对中文隐藏此项"
                 } else {
-                    "字距生效；需肉眼确认标点间距是否被破坏"
+                    "字距对 CJK 生效；仍需肉眼确认标点间距是否被破坏"
                 }
         )
     }
 
     // ---------------------------------------------------------------- M4
 
+    /** 与 ReaderLayoutPaged.kt:200-219 的运行时 config 对齐（gap 24dp、separator 3dp、textDirection） */
+    private fun pageConfig(style: TextStyle) = ReaderPageConfig(
+        width = contentWidthPx,
+        height = contentHeightPx,
+        // 运行时 gap = paragraphHeight 设置(8) × 3 = 24dp
+        gap = (24 * density.density).roundToInt(),
+        // 运行时 separatorHeight = 3dp
+        separatorHeight = (3 * density.density).roundToInt(),
+        paragraphStyle = style.copy(color = Color.Unspecified, textDirection = TextDirection.Content),
+        headerStyles = List(6) {
+            style.copy(color = Color.Unspecified, textDirection = TextDirection.Content)
+        },
+        images = true,
+        imagesCaptions = true,
+        imagesOriginalSize = true,
+        imagesWidth = 1f,
+        density = density
+    )
+
+    private val measureBlock: (AnnotatedString, TextStyle) -> ReaderTextMeasurement = { text, textStyle ->
+        val result = measurer.measure(
+            text = text,
+            style = textStyle,
+            constraints = Constraints(minWidth = contentWidthPx, maxWidth = contentWidthPx)
+        )
+        ReaderTextMeasurement(
+            height = result.size.height,
+            lineEnds = List(result.lineCount) { result.getLineEnd(it, visibleEnd = false) },
+            lineBottoms = List(result.lineCount) { ceil(result.getLineBottom(it)).toInt() }
+        )
+    }
+
     @Test
-    fun m4_paginationCostOn3000Chars() = runBlocking {
-        // 3000 字单章，接近网文单章上限
+    fun m4_paginationCost() = runBlocking {
         val paragraphText = buildString {
             while (length < 3000) {
                 append("他停下脚步，抬头看了看天色，觉得该回去了；")
             }
         }.take(3000)
 
-        val node = Node(
-            NodeId(0),
-            NodePosition(paragraphText.length, 0),
-            NodeContent.Paragraph(paragraphText, emptyList())
+        val node = ReaderNode.Paragraph(
+            Node(
+                NodeId(0),
+                NodePosition(paragraphText.length, 0),
+                NodeContent.Paragraph(paragraphText, emptyList())
+            ),
+            AnnotatedString(paragraphText)
         )
-        val readerNode = ReaderNode.Paragraph(node, AnnotatedString(paragraphText))
-
-        val style = readerStyle()
-        val pageHeightPx = (600 * density.density).roundToInt()
-        val config = ReaderPageConfig(
-            width = contentWidthPx,
-            height = pageHeightPx,
-            gap = (8 * density.density).roundToInt(),
-            separatorHeight = 1,
-            paragraphStyle = style,
-            headerStyles = List(6) { style },
-            images = true,
-            imagesCaptions = true,
-            imagesOriginalSize = true,
-            imagesWidth = 1f,
-            density = density
-        )
+        val config = pageConfig(readerStyle())
 
         var pages = emptyList<ReaderPage>()
-        val measureBlock: (AnnotatedString, TextStyle) -> ReaderTextMeasurement = { text, textStyle ->
-            val result = measurer.measure(
-                text = text,
-                style = textStyle,
-                constraints = Constraints(minWidth = contentWidthPx, maxWidth = contentWidthPx)
-            )
-            ReaderTextMeasurement(
-                height = result.size.height,
-                lineEnds = List(result.lineCount) { result.getLineEnd(it, visibleEnd = false) },
-                lineBottoms = List(result.lineCount) { ceil(result.getLineBottom(it)).toInt() }
-            )
-        }
-
         // 预热 + 取 3 次最小值：单次采样在模拟器上受 JIT 与调度干扰太大
-        paginateReaderPages(listOf(readerNode), config, measureBlock)
+        paginateReaderPages(listOf(node), config, measureBlock)
         var elapsed = Long.MAX_VALUE
         repeat(3) {
             val cost = measureTimeMillis {
-                pages = paginateReaderPages(listOf(readerNode), config, measureBlock)
+                pages = paginateReaderPages(listOf(node), config, measureBlock)
             }
             if (cost < elapsed) elapsed = cost
         }
@@ -470,20 +533,20 @@ class TypographyLabTest {
 
         report(
             "M4 分页成本",
-            "3000 字 / 版心 ${contentWidthPx}×${pageHeightPx}px → ${pages.size} 页, 耗时 ${elapsed}ms" +
-                "（目标 ≤100ms / 低端机 ≤250ms；模拟器数值仅供基线，不代表真机）"
+            "3000 字单段 / 版心 ${contentWidthPx}×${contentHeightPx}px → ${pages.size} 页, 耗时 ${elapsed}ms\n" +
+                "    （目标 ≤100ms / 低端机 ≤250ms；模拟器数值仅供基线）\n" +
+                "    注意：只覆盖「单段纯文本、无行内样式」，不是带标题/图片/链接的完整章节"
         )
 
         assertEquals("分页后文本必须与原文本完全一致", paragraphText, rebuilt.toString())
         assertTrue("3000 字必须被分成多页", pages.size > 1)
         // 耗时不做硬断言：模拟器与真机差一个量级，硬断言只会造成假失败。
-        // 是否达标由人根据 report 输出判定，并记录到 DEV_PLAN 附录 B。
     }
 
     // ---------------------------------------------------------------- M5
 
     @Test
-    fun m5_reflowCostOnFontSizeChange() = runBlocking {
+    fun m5_reflowCost() = runBlocking {
         val paragraphText = buildString {
             while (length < 3000) append("夜深了，窗外的风把树叶吹得沙沙作响；")
         }.take(3000)
@@ -497,35 +560,8 @@ class TypographyLabTest {
             AnnotatedString(paragraphText)
         )
 
-        val measureBlock: (AnnotatedString, TextStyle) -> ReaderTextMeasurement = { text, textStyle ->
-            val result = measurer.measure(
-                text = text,
-                style = textStyle,
-                constraints = Constraints(minWidth = contentWidthPx, maxWidth = contentWidthPx)
-            )
-            ReaderTextMeasurement(
-                height = result.size.height,
-                lineEnds = List(result.lineCount) { result.getLineEnd(it, visibleEnd = false) },
-                lineBottoms = List(result.lineCount) { ceil(result.getLineBottom(it)).toInt() }
-            )
-        }
-
         suspend fun paginate(fontSize: Int): Pair<Int, Long> {
-            val style = readerStyle(fontSizeSp = fontSize, lineHeightSp = fontSize + 4)
-            val config = ReaderPageConfig(
-                width = contentWidthPx,
-                height = (600 * density.density).roundToInt(),
-                gap = (8 * density.density).roundToInt(),
-                separatorHeight = 1,
-                paragraphStyle = style,
-                headerStyles = List(6) { style },
-                images = true,
-                imagesCaptions = true,
-                imagesOriginalSize = true,
-                imagesWidth = 1f,
-                density = density
-            )
-            // 预热 + 取 3 次最小值
+            val config = pageConfig(readerStyle(fontSizeSp = fontSize, lineHeightSp = fontSize + 4))
             paginateReaderPages(listOf(node), config, measureBlock)
             var count = 0
             var cost = Long.MAX_VALUE
@@ -543,8 +579,8 @@ class TypographyLabTest {
 
         report(
             "M5 重排成本",
-            "字号 16sp → ${pages16} 页 / ${cost16}ms；字号 20sp → ${pages20} 页 / ${cost20}ms。" +
-                "注意：这只是重排成本的下限（仅 paginateReaderPages），" +
+            "字号 16sp → ${pages16} 页 / ${cost16}ms；字号 20sp → ${pages20} 页 / ${cost20}ms\n" +
+                "    这是重排成本的下限（仅 paginateReaderPages），" +
                 "不含 TextMeasurer 构造、切 Dispatchers.Default、重组与 pager 重布局"
         )
 
