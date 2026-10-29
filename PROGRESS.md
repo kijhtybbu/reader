@@ -56,6 +56,30 @@ export ANDROID_HOME=$HOME/Library/Android/sdk
 
 每个阶段都走完 2 轮独立评审 + 修复，评审发现的问题全部记录在提交信息里。
 
+### 3.1 第二阶段（翻译与词典）/ S1
+
+| 项 | 内容 |
+| --- | --- |
+| 分支 | `phase-2` |
+| 设计文档 | [`docs/phase-2-design.md`](docs/phase-2-design.md) |
+| S1 内容 | 设计文档、依赖（openai-kotlin 4.1.0 + Ktor 3.0.0、tink-android 1.18.0、commons-compress 1.28.0 + xz 1.10）、三个 JVM spike 测试 |
+| 状态 | ✅ 三重门禁通过（`assembleDebug` / `testDebugUnitTest` / `assembleRelease-debug`，171 个单测全绿） |
+
+S1 的门禁命令与第一阶段相同：
+
+```bash
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+export ANDROID_HOME=$HOME/Library/Android/sdk
+./gradlew :app:assembleDebug :app:testDebugUnitTest :app:assembleRelease-debug
+```
+
+**R8 限制（review 发现，必须在 S3/S6 回查）**：`assembleRelease-debug` 能过，但
+minified 构建里 Tink / commons-compress / xz / openai 的类被**整体 shrink 掉了**——S1 还没有
+任何生产代码调用它们，R8 自然视作无用。因此 S1 的 “R8 通过” 只证明**构建能过**，
+**不证明**这些库在 R8 下可用。S3 必须在 minified 构建/设备上真解一份 7z，
+S6 必须在 minified 构建/设备上真跑一次 Tink 存取，否则不得认为这两个依赖已验证。
+在此之前**不**加任何 speculative 的 keep 规则（无条件 keep 会把整个库拉进包，体积无法评估）。
+
 ---
 
 ## 4. 真机验证结果

@@ -59,6 +59,21 @@
 
 明确不引入：`mdict-java`（无可用 Maven 构件、依赖杂乱）、`stardict4j`（整包解压内存不可控）、已废弃的 `security-crypto`。
 
+### 2.1 传递依赖（S1 实测版本）
+
+上表四个新依赖会带进以下传递依赖，全部保留、不做 exclude（AboutLibraries 会自动列出，
+Credits 无需手写条目）：
+
+| 传递依赖 | 版本 | 来自 |
+| --- | --- | --- |
+| `commons-io:commons-io` | 2.20.0 | commons-compress |
+| `org.apache.commons:commons-lang3` | 3.18.0 | commons-compress |
+| `commons-codec:commons-codec` | 1.19.0 | commons-compress |
+| `com.google.code.gson:gson` | 2.10.1 | tink-android |
+| `org.slf4j:slf4j-api` | 2.0.16 | ktor-client-okhttp |
+
+体积/方法数收益不明确之前不写 speculative 的 exclude —— S3 记录安装包体积后再决定是否裁剪。
+
 ## 3. 总体架构
 
 ```
@@ -162,6 +177,8 @@ ReaderLayout (Paged/Continuous)
 - 语法：`responseFormat = ChatResponseFormat.JsonObject`，非流式或流式聚合均可。
 - 错误映射：401 Key 无效、403、404 模型/路径不存在、429 限流、5xx、超时、断网。
 - 长段落按句子边界切块（≤3000 字符）顺序输出；关闭对话框取消 Job。
+- 明文 HTTP 只放行 `localhost` / `127.0.0.1` / `10.0.2.2`（`res/xml/network_security_config.xml`），
+  其余流量强制 HTTPS。IPv6 回环 `::1` 与局域网 HTTP 本期**不**放行，本机/局域网明文策略留给 S6 决定。
 
 ### 6.4 提示词
 
@@ -251,7 +268,7 @@ cacheKey = SHA-256(
 
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
-| S1 | 设计文档、`phase-2` 分支、依赖与 Spike（openai-kotlin/Ktor、Tink、7z、引擎编译） | Debug/Release-debug 可编译；MockEngine 流式测试；Tink 存取测试；7z 解压测试；R8 通过 |
+| S1 | 设计文档、`phase-2` 分支、依赖与 Spike（openai-kotlin/Ktor、Tink、7z） | Debug/Release-debug 可编译；MockEngine 流式测试；Tink 存取测试；7z 解压测试；R8 通过 |
 | S2 | `:dict-engine` 模块 + `EngineFactory` + 上游测试 | 引擎单测通过；MDX/StarDict fixture 查询/渲染通过 |
 | S3 | ECDICT `stardict.7z` 资产 + 首次解压 + 内置词典注册 | 首次启动解压成功；`apple`/`perceive` 可查；重启不重复解压 |
 | S4 | 词典仓库、MDX/StarDict 导入、设置页词典管理 | 导入/启用/删除；损坏/加密/空间不足错误明确 |

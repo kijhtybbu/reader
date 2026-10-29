@@ -189,6 +189,20 @@ dependencies {
     // EPUB parser
     implementation("org.jsoup:jsoup:1.21.2")
 
+    // OpenAI compatible API client (fork: phase 2 AI translation)
+    // openai-client 4.1.0 编译期就依赖 Ktor 3.0.0，二者版本必须一起走；
+    // 4.1.0 的 OpenAIConfig 有 engine 参数，MockEngine 测试才能离线。
+    implementation("com.aallam.openai:openai-client:4.1.0")
+    implementation("io.ktor:ktor-client-okhttp:3.0.0")
+
+    // API key encryption (fork: phase 2, AndroidKeysetManager + AES256-GCM)
+    implementation("com.google.crypto.tink:tink-android:1.18.0")
+
+    // 7z decompression for the built-in ECDICT (fork: phase 2)
+    // commons-compress 的 7z LZMA2 解码器通过反射探测 org.tukaani.xz，缺了它整份 7z 读不了。
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.tukaani:xz:1.10")
+
     // Language Switcher
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.appcompat:appcompat-resources:1.7.1")
@@ -223,6 +237,8 @@ dependencies {
     testImplementation("io.mockk:mockk:1.14.7")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.3.0")
+    // fork: 与 openai-client 的 Ktor 版本对齐，供流式 spike 测试离线注入
+    testImplementation("io.ktor:ktor-client-mock:3.0.0")
 
     // UI testing
     // fork: 上游将三个测试件钉在 1.10.0，而 app 本身用 1.9.3 —— Compose 是 atomic group，

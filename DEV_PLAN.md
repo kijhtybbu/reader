@@ -377,6 +377,29 @@ data class BookmarkEntity(
 
 ---
 
+## 11. 第二阶段（翻译与词典）
+
+第一阶段（§1–§10，UI/动效/字体）已完成。第二阶段另开分支 `phase-2`，
+完整设计见 **[`docs/phase-2-design.md`](docs/phase-2-design.md)**（产品决策、组件选型、
+缓存表结构、测试矩阵、风险均在那里，本文不复述）。
+
+| 阶段 | 内容 |
+| --- | --- |
+| S1 | 设计文档、`phase-2` 分支、依赖与 Spike（openai-kotlin/Ktor、Tink、7z） |
+| S2 | `:dict-engine` 模块 + `EngineFactory` + 上游测试 |
+| S3 | ECDICT `stardict.7z` 资产 + 首次解压 + 内置词典注册 |
+| S4 | 词典仓库、MDX/StarDict 导入、设置页词典管理 |
+| S5 | 取词手势、文本布局命中、取词卡片 |
+| S6 | AI 设置、Tink、openai 客户端、MockEngine 测试 |
+| S7 | Room 缓存表/DAO/迁移/仓库 |
+| S8 | `TranslationModel`、双击整段、翻译/语法对话框、缓存优先 |
+| S9 | 文案/许可/文档、全量回归、`release-debug`、终审 |
+
+约定同第一阶段：每阶段 `worker` 实现 → `reviewer` 第 1 轮 → 修复 → `reviewer-expert` 第 2 轮，
+两轮通过后提交；每次改动都要过三重构建门禁（含 `:app:assembleRelease-debug`）。
+
+---
+
 ## 附录 A · 用户手动导入字体（实现设计）
 
 ### A.1 为什么不能照抄内置字体的注册方式

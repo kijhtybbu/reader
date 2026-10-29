@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- fork: phase 2 只放行本机/模拟器回环地址的明文 HTTP（Ollama 等本地 OpenAI 兼容服务），
+     其余流量仍然强制 HTTPS。不要为了图省事改成 cleartextTrafficPermitted="true"，
+     API Key 与正文都会走这条通道。
+     IPv6 回环 ::1 与局域网 HTTP 本期故意不放行，本机/局域网明文策略留给 S6 决定。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!-- Android 模拟器访问宿主机的回环地址 -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
