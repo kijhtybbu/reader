@@ -8,12 +8,12 @@
  * 改动前，改一次字号要：点正文 → 底部面板 → 切到「阅读器」Tab → 进「字体」子页 → 拖滑块 → 返回。
  * 四层操作，而拖动时面板又遮住正文，看不到效果。
  *
- * 现在这七项直接摆在第一个 Tab 的顶部：字号 / 行距 / 段距 / 字距 / 缩进 / 对齐 / 字体。
+ * 现在这些项直接摆在第一个 Tab：字号 / 行距 / 段距 / 字距 / 缩进 / 对齐 / 字体。
  * 它们同时也是中文排版里最常调的东西（对齐与首行缩进尤其）。
  *
  * 注意：这里只重排入口，不新增能力 —— 每一项都是原有设置项的原控件。
- * 面板自身保持 App 主题（不透明 ModalBottomSheet），实时预览靠的是面板上方露出的正文，
- * 所以不要把阅读区配色（LocalReaderPalette）用到这里。
+ * 样例预览不在这里，它固定在面板顶部（见 ReaderSettingsBottomSheet 的排版页），
+ * 否则滚到下半部分调字距/缩进时就看不到预览了。
  */
 
 package ua.acclorite.book_story.ui.reader
@@ -30,7 +30,7 @@ import ua.acclorite.book_story.ui.settings.reader.text.components.ParagraphInden
 import ua.acclorite.book_story.ui.settings.reader.text.components.TextAlignmentOption
 
 /**
- * 顺序按「改动频率」排：预览 → 预设 → 字号 → 行距 → 段距 → 字距 → 缩进 → 对齐 → 字体。
+ * 顺序按「改动频率」排：预设 → 字号 → 行距 → 段距 → 字距 → 缩进 → 对齐 → 字体。
  * 字体放在最后，因为它是横向 chips，占高度最多。
  *
  * 第一项是面板内的样例预览：分页模式下正文会在每次重排时淡出（见 ReaderTypographyPresets.kt），
@@ -43,7 +43,6 @@ fun LazyListScope.ReaderTypographyQuickSettings() {
         showTitle = false,
         showDivider = false
     ) {
-        item { ReaderTypographyPreview() }
         item { ReaderTypographyPresets() }
         item { FontSizeOption() }
         item { LineHeightOption() }

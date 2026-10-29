@@ -17,7 +17,8 @@ fun LineHeightOption() {
     val settings = LocalSettings.current
 
     SliderWithTitle(
-        value = settings.lineHeight.value to "pt",
+        // fork: 该项是「在字号之上增加的 sp 增量」，不是 pt
+        value = settings.lineHeight.value to "sp",
         fromValue = 1,
         toValue = 24,
         title = stringResource(id = R.string.line_height_option),

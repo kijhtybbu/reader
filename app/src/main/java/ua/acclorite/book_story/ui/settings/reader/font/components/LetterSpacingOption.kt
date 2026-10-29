@@ -17,7 +17,8 @@ fun LetterSpacingOption() {
     val settings = LocalSettings.current
 
     SliderWithTitle(
-        value = settings.letterSpacing.value to "pt",
+        // fork: 该项是 1/100 em，不是 pt
+        value = settings.letterSpacing.value to "×0.01em",
         fromValue = -8,
         toValue = 16,
         title = stringResource(id = R.string.letter_spacing_option),

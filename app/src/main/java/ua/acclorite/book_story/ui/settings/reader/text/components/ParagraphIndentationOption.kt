@@ -23,7 +23,8 @@ fun ParagraphIndentationOption() {
                 settings.textAlignment.value != ReaderTextAlignment.END
     ) {
         SliderWithTitle(
-            value = settings.paragraphIndentation.value to "pt",
+            // fork: 该项是 ×6sp 倍率，不是 pt
+            value = settings.paragraphIndentation.value to "×6sp",
             fromValue = 0,
             toValue = 12,
             title = stringResource(id = R.string.paragraph_indentation_option),

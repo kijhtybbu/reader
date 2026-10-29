@@ -58,6 +58,7 @@ import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.helpers.setBrightness
 import ua.acclorite.book_story.ui.reader.ReaderContent
 import ua.acclorite.book_story.ui.reader.ReaderEffects
+import ua.acclorite.book_story.ui.reader.readerParagraphTextStyle
 
 @Parcelize
 data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
@@ -218,28 +219,29 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
             (settings.progressBarFontSize.lastValue * 2).sp
         }
 
+        // fork: 正文样式抽到 readerParagraphTextStyle，与排版面板的样例预览共用同一份实现，
+        // 避免预览显示书里并不存在的效果（曾漏掉斜体与「居中/右对齐取消缩进」）
         val paragraphTextStyle = remember(
             settings.fontFamily.value,
             settings.fontThickness.value,
             settings.textAlignment.value,
-            paragraphIndentation,
-            fontStyle,
-            letterSpacing,
+            settings.paragraphIndentation.value,
+            settings.italic.value,
+            settings.letterSpacing.value,
             settings.fontSize.value,
-            lineHeight,
+            settings.lineHeight.value,
             fontColor.value
         ) {
-            TextStyle(
+            readerParagraphTextStyle(
                 fontFamily = settings.fontFamily.lastValue.font,
                 fontWeight = FontWeight(settings.fontThickness.lastValue),
-                textAlign = settings.textAlignment.lastValue.textAlignment,
-                textIndent = TextIndent(firstLine = paragraphIndentation),
-                fontStyle = fontStyle,
-                letterSpacing = letterSpacing,
-                fontSize = settings.fontSize.lastValue.sp,
-                lineHeight = lineHeight,
-                color = fontColor.value,
-                lineBreak = LineBreak.Paragraph
+                fontSizeSp = settings.fontSize.lastValue,
+                lineHeightDeltaSp = settings.lineHeight.lastValue,
+                letterSpacingHundredths = settings.letterSpacing.lastValue,
+                paragraphIndentationSetting = settings.paragraphIndentation.lastValue,
+                textAlignment = settings.textAlignment.lastValue,
+                italic = settings.italic.lastValue,
+                color = fontColor.value
             )
         }
 

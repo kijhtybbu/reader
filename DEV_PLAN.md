@@ -172,8 +172,8 @@ ReaderPalette(bg, text, accent, contrastLevel)   // 阅读区专用
 在每次 config 变化时把 `contentAlpha` 推到 **0** 重新分页，`:308` 才恢复；而滑块是逐步回调的。
 所以「拖动时看面板上方的正文」在默认（分页）布局下根本不成立——文字会一直闪。
 修法不是拆掉那个淡出闸门（它还负责首次加载与滚动定位），而是在面板里放一段用当前设置
-渲染的样例文字：与阅读布局无关，拖到哪看到哪。同时把排版页的 scrim 改为透明，
-否则 32% 黑会把预览压暗。
+渲染的样例文字：与阅读布局无关，拖到哪看到哪。同时把排版页的 scrim 改为透明 —— 注意 scrim 画在面板**之外**，
+它不会盖住面板内的样例预览，透明是为了让面板上方那段正文不被蒙暗。
 
 其余交互：
 - 面板高度 0.7 → 0.62（排版页），多露出一些正文。
@@ -204,6 +204,8 @@ ui/reader/ReaderTypographyPresets.kt            4 个预设 + 面板内样例预
 ui/reader/ReaderSettingsBottomSheet.kt          重排为 排版/更多/颜色（已完成）
 ui/reader/ReaderSettingsBottomSheetTabRow.kt    3 个 Tab 标签（已完成）
 ui/settings/reader/font/FontSubcategory.kt      include 开关 + （待）缺中文提示
+ui/reader/ReaderTextStyle.kt                    正文样式单一来源（阅读页与预览共用）
+ui/reader/ReaderTextStyleTest.kt                钉住行高/字距/缩进/斜体语义
 res/font/ + ReaderData.kt                       内置中文字体 —— 推迟，见 §4.4
 ```
 
@@ -287,7 +289,7 @@ data class BookmarkEntity(
 | --- | --- | --- |
 | Phase 0 基座 + 实测 | 1 | 可运行 fork、五项实测结论、中文补齐 |
 | Phase 1 设计 token | 2 | `Motion` / `Typography` / `Dimens`（`ReaderPalette` 推迟到 Phase 2） |
-| Phase 2 排版面板 | 2 | 2 Tab 面板 + 高频区 + 内置中文字体 |
+| Phase 2 排版面板 | 2 | 排版/更多/颜色 三 Tab + 高频区 + 预设 + 面板内样例预览（内置中文字体推迟，见 §4.4） |
 | Phase 2.5 用户导入字体 | 1.5 | 见附录 A |
 | Phase 3 手势动效 | 2 | 4 种翻页动效、分区可配、双指亮度、章节提示 |
 | Phase 4 书架 + 书签 | 1 | 书签完整功能、书架视觉、回归 |
@@ -518,7 +520,10 @@ data class FontWithName(
 
 ### B.6 其它待 Phase 2 处理的默认值问题
 
-1. **首行缩进默认值为 0**：`ReaderScreen.kt:152` 是 `settings.paragraphIndentation * 6 sp`，而 `SettingsManager.kt:154` 的默认值是 `0`。中文书籍常规排版是首行缩进 2 字符，因此「打开即缩进」需要改默认值，而不是加功能。
+1. **首行缩进默认值为 0**：`SettingsManager.kt:154` 的默认值是 `0`（×6sp = 0）。
+   **Phase 2 的决定：保持 0，不改默认值。** 理由：默认值一旦改动会覆盖老用户已保存的设置无从区分，
+   且「排版预设」已经让一键切到两字缩进变成一次点击（标准/大字/护眼预设都是 5 ≈ 30sp）。
+   把默认值改成 5 会静默改变所有现有用户的正文外观，收益与风险不成比例。
 2. **`lineHeight` 语义是绝对增量**：`ReaderScreen.kt:118` 为 `(fontSize + lineHeightSetting).sp`，即行高 = 字号 + 增量（默认 16+4=20sp）。做「行距倍数」UI 时必须换算，不能直接把用户的 1.8 倍存进去。
 3. **`letterSpacing` 单位是 em**：`ReaderScreen.kt:121` 是 `setting / 100f` em。滑块刻度与用户感知一致性需在面板重做时确认。
 

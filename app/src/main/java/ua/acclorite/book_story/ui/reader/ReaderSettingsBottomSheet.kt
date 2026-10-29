@@ -8,6 +8,7 @@ package ua.acclorite.book_story.ui.reader
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,8 +54,8 @@ fun ReaderSettingsBottomSheet(
     DisposableEffect(Unit) { onDispose { initialPage = pagerState.currentPage } }
 
     val animatedScrimColor by animateColorAsState(
-        // fork: 排版页也要透明 —— 面板里就是要看清文字效果，蒙一层 32% 黑会直接毁掉预览；
-        // 颜色页本来就是透明的
+        // fork: 排版页也透明，让面板上方的正文不被蒙暗（scrim 画在面板之外，
+        // 它不会盖住面板内的样例预览，但会压暗上方正文）；颜色页本来就是透明的
         targetValue = if (pagerState.currentPage == 0 || pagerState.currentPage == 2) {
             Color.Transparent
         } else {
@@ -63,7 +64,7 @@ fun ReaderSettingsBottomSheet(
         animationSpec = Motion.long()
     )
     val animatedHeight by animateFloatAsState(
-        // fork: 排版页压到 0.62，让面板上方露出更多正文用于实时预览
+        // fork: 排版页压到 0.62，多露出一点上方正文（真正的预览在面板顶部固定）
         targetValue = if (pagerState.currentPage == 2) 0.6f else 0.62f,
         animationSpec = Motion.long()
     )
@@ -101,7 +102,11 @@ fun ReaderSettingsBottomSheet(
         HorizontalPager(state = pagerState) { page ->
             when (page) {
                 0 -> {
-                    LazyColumnWithScrollbar(Modifier.fillMaxSize()) {
+                    // 预览固定在顶部：否则滚到字距/缩进/对齐时预览已经滚出屏幕，
+                    // 调这些项就完全没有反馈
+                    Column(Modifier.fillMaxSize()) {
+                        ReaderTypographyPreview()
+                        LazyColumnWithScrollbar(Modifier.fillMaxSize()) {
                         // 常驻高频区：字号/行距/段距/字距/缩进/对齐/字体
                         ReaderTypographyQuickSettings()
                         // 字体子页只保留「字重/粗体字重/斜体」，避免同一屏出现重复控件；
@@ -126,6 +131,7 @@ fun ReaderSettingsBottomSheet(
                             titleColor = { MaterialTheme.colorScheme.onSurface },
                             showDivider = false
                         )
+                        }
                     }
                 }
 
