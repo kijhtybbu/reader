@@ -6,7 +6,6 @@
 
 package ua.acclorite.book_story.ui.settings.appearance.theme_preferences.components
 
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -47,6 +46,7 @@ import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryTitle
 import ua.acclorite.book_story.ui.theme.animatedColorScheme
 import ua.acclorite.book_story.ui.theme.model.Theme
 import ua.acclorite.book_story.ui.theme.model.ThemeContrast
+import ua.acclorite.book_story.ui.theme.Motion
 
 @Composable
 fun AppThemeOption() {
@@ -140,9 +140,9 @@ private fun AppThemeOptionItem(
 
                 AnimatedVisibility(
                     visible = selected,
-                    enter = scaleIn(tween(300), initialScale = 0.5f) +
-                            fadeIn(tween(300)),
-                    exit = fadeOut(tween(100))
+                    enter = scaleIn(Motion.long(), initialScale = 0.5f) +
+                            fadeIn(Motion.long()),
+                    exit = fadeOut(Motion.fast())
                 ) {
                     Icon(
                         imageVector = Icons.Default.CheckCircle,

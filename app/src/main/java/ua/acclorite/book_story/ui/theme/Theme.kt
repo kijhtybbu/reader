@@ -11,9 +11,9 @@ import android.os.Build
 import android.view.View
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
-import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import ua.acclorite.book_story.ui.theme.model.Theme
@@ -56,8 +56,11 @@ fun BookStoryTheme(
 
     MaterialTheme(
         colorScheme = animatedColorScheme,
-        shapes = Shapes(),
-        typography = Typography(),
+        // fork: 必须 remember。BookStoryTheme 在配色动画期间每帧都会重组（animateColorScheme），
+        // 而 MaterialTheme 是按引用比较 CompositionLocal 的 —— 每帧新建 Typography/Shapes 会让
+        // 整棵文本子树每帧全量重组。上游的 `Shapes()` 也有同样问题，一并修。
+        shapes = remember { Shapes() },
+        typography = remember { appTypography() },
         content = content
     )
 }

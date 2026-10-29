@@ -7,7 +7,6 @@
 package ua.acclorite.book_story.ui.library
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
@@ -19,6 +18,7 @@ import ua.acclorite.book_story.R
 import ua.acclorite.book_story.presentation.library.LibraryEvent
 import ua.acclorite.book_story.ui.common.components.placeholder.EmptyPlaceholder
 import ua.acclorite.book_story.ui.theme.Transitions
+import ua.acclorite.book_story.ui.theme.Motion
 
 @Composable
 fun BoxScope.LibraryEmptyPlaceholder(
@@ -33,7 +33,7 @@ fun BoxScope.LibraryEmptyPlaceholder(
                 && isBooksEmpty,
         modifier = Modifier.align(Alignment.Center),
         enter = Transitions.DefaultTransitionIn,
-        exit = fadeOut(tween(0))
+        exit = fadeOut(Motion.instant())
     ) {
         EmptyPlaceholder(
             message = stringResource(id = R.string.library_empty),

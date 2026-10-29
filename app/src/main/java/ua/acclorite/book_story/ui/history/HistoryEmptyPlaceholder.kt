@@ -6,7 +6,6 @@
 
 package ua.acclorite.book_story.ui.history
 
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
@@ -18,6 +17,7 @@ import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.common.components.common.AnimatedVisibility
 import ua.acclorite.book_story.ui.common.components.placeholder.EmptyPlaceholder
 import ua.acclorite.book_story.ui.theme.Transitions
+import ua.acclorite.book_story.ui.theme.Motion
 
 @Composable
 fun BoxScope.HistoryEmptyPlaceholder(
@@ -31,7 +31,7 @@ fun BoxScope.HistoryEmptyPlaceholder(
                 && !isRefreshing,
         modifier = Modifier.align(Alignment.Center),
         enter = Transitions.DefaultTransitionIn,
-        exit = fadeOut(tween(0))
+        exit = fadeOut(Motion.instant())
     ) {
         EmptyPlaceholder(
             modifier = Modifier.align(Alignment.Center),

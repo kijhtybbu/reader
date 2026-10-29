@@ -7,7 +7,6 @@
 package ua.acclorite.book_story.ui.theme
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -18,7 +17,7 @@ import ua.acclorite.book_story.ui.theme.model.ThemeContrast
 private fun animateColor(targetColor: Color): Color {
     return animateColorAsState(
         targetValue = targetColor,
-        animationSpec = tween(300),
+        animationSpec = Motion.long(),
         label = ""
     ).value
 }

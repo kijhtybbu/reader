@@ -6,7 +6,6 @@
 
 package ua.acclorite.book_story.ui.common.components.common
 
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -38,6 +37,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
+import ua.acclorite.book_story.ui.theme.Motion
 
 /**
  * Snackbar with vertical Swipe-To-Dismiss and animation.
@@ -88,8 +88,8 @@ fun Snackbar(modifier: Modifier = Modifier, snackbarState: SnackbarHostState) {
 
     AnimatedVisibility(
         visible = showSnackbar,
-        enter = slideInVertically(tween(350)) { it } + fadeIn(tween(350)),
-        exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(100))
+        enter = slideInVertically(Motion.slower()) { it } + fadeIn(Motion.slower()),
+        exit = slideOutVertically(Motion.base()) { it } + fadeOut(Motion.fast())
     ) {
         Box(
             modifier = modifier

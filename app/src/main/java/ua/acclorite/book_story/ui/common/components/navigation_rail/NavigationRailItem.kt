@@ -7,7 +7,6 @@
 package ua.acclorite.book_story.ui.common.components.navigation_rail
 
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationRailItem
@@ -19,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import ua.acclorite.book_story.presentation.navigator.NavigatorItem
 import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.components.common.Tooltip
+import ua.acclorite.book_story.ui.theme.Motion
 
 @Composable
 fun NavigationRailItem(
@@ -51,7 +51,7 @@ fun NavigationRailItem(
             ) {
                 Crossfade(
                     targetState = isSelected,
-                    animationSpec = tween(150),
+                    animationSpec = Motion.short(),
                     label = ""
                 ) {
                     if (it) {

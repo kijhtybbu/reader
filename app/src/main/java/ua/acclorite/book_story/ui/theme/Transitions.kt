@@ -9,7 +9,6 @@ package ua.acclorite.book_story.ui.theme
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -34,24 +33,24 @@ import ua.acclorite.book_story.ui.common.components.common.AnimatedVisibility
 import kotlin.math.roundToInt
 
 object Transitions {
-    val DefaultTransitionIn = fadeIn(tween(300))
-    val DefaultTransitionOut = fadeOut(tween(300))
+    val DefaultTransitionIn = fadeIn(Motion.long())
+    val DefaultTransitionOut = fadeOut(Motion.long())
 
-    val FadeTransitionIn = fadeIn(tween(250)) + scaleIn(tween(250), initialScale = 0.975f)
-    val FadeTransitionOut = fadeOut(tween(250))
+    val FadeTransitionIn = fadeIn(Motion.medium()) + scaleIn(Motion.medium(), initialScale = 0.975f)
+    val FadeTransitionOut = fadeOut(Motion.medium())
 
-    val SlidingTransitionIn = fadeIn(tween(350)) +
-            slideInHorizontally(tween(350)) { it / 16 }
-    val BackSlidingTransitionIn = fadeIn(tween(350)) +
-            slideInHorizontally(tween(350)) { -it / 16 }
+    val SlidingTransitionIn = fadeIn(Motion.slower()) +
+            slideInHorizontally(Motion.slower()) { it / 16 }
+    val BackSlidingTransitionIn = fadeIn(Motion.slower()) +
+            slideInHorizontally(Motion.slower()) { -it / 16 }
 
-    val SlidingTransitionOut = fadeOut(tween(350)) +
-            slideOutHorizontally(tween(350)) { -it / 16 }
-    val BackSlidingTransitionOut = fadeOut(tween(350)) +
-            slideOutHorizontally(tween(350)) { it / 16 }
+    val SlidingTransitionOut = fadeOut(Motion.slower()) +
+            slideOutHorizontally(Motion.slower()) { -it / 16 }
+    val BackSlidingTransitionOut = fadeOut(Motion.slower()) +
+            slideOutHorizontally(Motion.slower()) { it / 16 }
 
-    val NoEnterAnimation = fadeIn(tween(0))
-    val NoExitAnimation = fadeOut(tween(0))
+    val NoEnterAnimation = fadeIn(Motion.instant())
+    val NoExitAnimation = fadeOut(Motion.instant())
 }
 
 @Composable
@@ -80,12 +79,12 @@ fun SlidingTransition(
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
-        enter = slideInVertically(tween(300)) {
+        enter = slideInVertically(Motion.long()) {
             with(density) { -12.dp.toPx() }.roundToInt()
-        } + fadeIn(tween(300)),
-        exit = slideOutVertically(tween(150)) {
+        } + fadeIn(Motion.long()),
+        exit = slideOutVertically(Motion.short()) {
             with(density) { -10.dp.toPx() }.roundToInt()
-        } + fadeOut(tween(100)),
+        } + fadeOut(Motion.fast()),
         content = content
     )
 }
@@ -99,10 +98,10 @@ fun ExpandingTransition(
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
-        enter = expandVertically(tween(400)) +
-                fadeIn(tween(400)),
-        exit = shrinkVertically(tween(350)) +
-                fadeOut(tween(200)),
+        enter = expandVertically(Motion.slowest()) +
+                fadeIn(Motion.slowest()),
+        exit = shrinkVertically(Motion.slower()) +
+                fadeOut(Motion.base()),
         content = content
     )
 }
@@ -137,7 +136,7 @@ fun HorizontalExpandingTransition(
 fun FadeTransitionPreservingSpace(
     visible: Boolean,
     modifier: Modifier = Modifier,
-    animationSpec: AnimationSpec<Float> = tween(durationMillis = 300, easing = EaseInOut),
+    animationSpec: AnimationSpec<Float> = Motion.long(Motion.Balanced),
     content: @Composable () -> Unit
 ) {
     val alpha by animateFloatAsState(

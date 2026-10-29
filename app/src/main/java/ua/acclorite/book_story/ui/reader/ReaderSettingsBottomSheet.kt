@@ -8,7 +8,6 @@ package ua.acclorite.book_story.ui.reader
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,6 +39,7 @@ import ua.acclorite.book_story.ui.settings.reader.reading_speed.ReadingSpeedSubc
 import ua.acclorite.book_story.ui.settings.reader.system.SystemSubcategory
 import ua.acclorite.book_story.ui.settings.reader.text.TextSubcategory
 import ua.acclorite.book_story.ui.settings.reader.translator.TranslatorSubcategory
+import ua.acclorite.book_story.ui.theme.Motion
 
 private var initialPage = 0
 
@@ -56,11 +56,11 @@ fun ReaderSettingsBottomSheet(
     val animatedScrimColor by animateColorAsState(
         targetValue = if (pagerState.currentPage == 2) Color.Transparent
         else BottomSheetDefaults.ScrimColor,
-        animationSpec = tween(300)
+        animationSpec = Motion.long()
     )
     val animatedHeight by animateFloatAsState(
         targetValue = if (pagerState.currentPage == 2) 0.6f else 0.7f,
-        animationSpec = tween(300)
+        animationSpec = Motion.long()
     )
 
     LaunchedEffect(pagerState.currentPage) {

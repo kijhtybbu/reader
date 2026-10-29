@@ -9,7 +9,6 @@ package ua.acclorite.book_story.ui.reader
 import android.annotation.SuppressLint
 import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -71,6 +70,7 @@ import ua.acclorite.book_story.ui.common.helpers.showToast
 import ua.acclorite.book_story.ui.reader.model.ReaderNode
 import ua.acclorite.book_story.ui.theme.DefaultTransition
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
+import ua.acclorite.book_story.ui.theme.Motion
 
 private const val PRELOAD_THRESHOLD = 30
 
@@ -174,7 +174,7 @@ fun ReaderLayoutContinuous(
 
     val contentAlpha by animateFloatAsState(
         targetValue = if (scrollTarget != null || isInitialLoading.value) 0f else 1f,
-        animationSpec = tween(durationMillis = 150),
+        animationSpec = Motion.short(),
         label = "continuous_reader_fade"
     )
 
@@ -365,7 +365,7 @@ fun ReaderLayoutContinuous(
                     Column {
                         AnimatedVisibility(
                             visible = index == 0 && !reachedFirst,
-                            enter = fadeIn(tween(0)),
+                            enter = fadeIn(Motion.instant()),
                             exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
                         ) {
                             Box(

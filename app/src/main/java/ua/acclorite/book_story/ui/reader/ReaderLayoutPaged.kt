@@ -8,7 +8,6 @@ package ua.acclorite.book_story.ui.reader
 
 import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -85,6 +84,7 @@ import ua.acclorite.book_story.ui.reader.paged.paginateReaderPages
 import ua.acclorite.book_story.ui.reader.paged.loadReaderPageWindow
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
 import kotlin.math.ceil
+import ua.acclorite.book_story.ui.theme.Motion
 
 @Composable
 fun ReaderLayoutPaged(
@@ -230,7 +230,7 @@ fun ReaderLayoutPaged(
                     targetValue = if (!windowReady || reflowing || scrollTarget != null ||
                         pages.getOrNull(pagerState.currentPage - leadingPages) == null
                     ) 0f else 1f,
-                    animationSpec = tween(durationMillis = 150),
+                    animationSpec = Motion.short(),
                     label = "paged_reader_fade"
                 )
 
