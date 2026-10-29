@@ -21,6 +21,7 @@ import ua.acclorite.book_story.ui.settings.reader.font.components.FontSizeOption
 import ua.acclorite.book_story.ui.settings.reader.font.components.FontStyleOption
 import ua.acclorite.book_story.ui.settings.reader.font.components.FontThicknessOption
 import ua.acclorite.book_story.ui.settings.reader.font.components.LetterSpacingOption
+import ua.acclorite.book_story.ui.settings.reader.font.components.UserFontOption
 
 fun LazyListScope.FontSubcategory(
     titleColor: @Composable () -> Color = { MaterialTheme.colorScheme.primary },
@@ -42,6 +43,11 @@ fun LazyListScope.FontSubcategory(
         if (includeFamily) {
             item {
                 FontFamilyOption()
+            }
+
+            // fork: 导入入口只放在完整设置页（底部面板太窄，且导入是低频动作）。
+            item {
+                UserFontOption()
             }
         }
 

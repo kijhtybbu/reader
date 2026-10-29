@@ -11,6 +11,12 @@ import java.io.File
 
 object FileData {
     fun getCacheDirectory(context: Context) = context.filesDir.resolve("app_cache")
+
+    /**
+     * fork: 用户导入字体的落盘目录。字体永远从这里读，不从 SAF URI 读 ——
+     * URI 的授权可能过期，而 Typeface 重建会发生在任意一次主题/字重变化时。
+     */
+    fun getFontsDirectory(context: Context) = context.filesDir.resolve("fonts")
     fun getTempDirectory() = "temp_${System.currentTimeMillis()}"
     fun getBookContentDirectory(
         bookUUID: String,

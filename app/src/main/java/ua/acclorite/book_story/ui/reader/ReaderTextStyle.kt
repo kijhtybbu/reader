@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineBreak
+import androidx.compose.ui.text.style.TextGeometricTransform
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -41,6 +42,12 @@ fun readerParagraphTextStyle(
     paragraphIndentationSetting: Int,
     textAlignment: ReaderTextAlignment,
     italic: Boolean,
+    /**
+     * fork：用户字体是单 face，没有 italic 字型，Android 也不会对自定义字体做伪斜体
+     * （FontFamily(typeface) 直接返回 typeface，不走 fontSynthesis）。传入 true 时用
+     * TextGeometricTransform 合成斜体，让「斜体」开关对导入字体真实生效。
+     */
+    synthesizeItalic: Boolean = false,
     color: Color
 ): TextStyle {
     // 居中和右对齐下不做首行缩进（与 ParagraphIndentationOption 的隐藏逻辑一致）
@@ -59,6 +66,9 @@ fun readerParagraphTextStyle(
         textAlign = textAlignment.textAlignment,
         textIndent = TextIndent(firstLine = firstLineIndent),
         fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
+        textGeometricTransform = if (synthesizeItalic && italic) {
+            TextGeometricTransform(skewX = SYNTHETIC_ITALIC_SKEW)
+        } else null,
         letterSpacing = (letterSpacingHundredths / 100f).em,
         fontSize = fontSizeSp.sp,
         lineHeight = (fontSizeSp + lineHeightDeltaSp).sp,
@@ -66,6 +76,9 @@ fun readerParagraphTextStyle(
         lineBreak = LineBreak.Paragraph
     )
 }
+
+/** 合成斜体的倾斜度；0.25 是 Android/桌面排版里常见的伪斜体值。 */
+private const val SYNTHETIC_ITALIC_SKEW = -0.25f
 
 /** 段落间距（dp）：段落设置 ×3dp，且不小于行高的 0.5 倍 —— 与 ReaderScreen 的算法一致 */
 fun readerParagraphGapDp(paragraphHeightSetting: Int, lineHeightDeltaSp: Int): Float =

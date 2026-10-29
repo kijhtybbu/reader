@@ -37,6 +37,7 @@ import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.components.settings.ChipsWithTitle
 import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.model.ListItem
+import ua.acclorite.book_story.ui.reader.rememberFontFamily
 import ua.acclorite.book_story.ui.theme.Spacing
 
 /**
@@ -127,8 +128,14 @@ fun ReaderTypographyPreview() {
     val settings = LocalSettings.current
 
     // 全部用 .value：这些是 @Composable getter，读它们才会在拖动滑块时触发重组
+    // fork: 用户字体需要按当前字重/斜体解析 Typeface，内置字体直接返回
+    val fontFamily = rememberFontFamily(
+        font = settings.fontFamily.value,
+        fontWeight = settings.fontThickness.value,
+        italic = settings.italic.value
+    )
     val style = readerParagraphTextStyle(
-        fontFamily = settings.fontFamily.value.font,
+        fontFamily = fontFamily,
         fontWeight = FontWeight(settings.fontThickness.value),
         fontSizeSp = settings.fontSize.value,
         lineHeightDeltaSp = settings.lineHeight.value,
@@ -136,6 +143,7 @@ fun ReaderTypographyPreview() {
         paragraphIndentationSetting = settings.paragraphIndentation.value,
         textAlignment = settings.textAlignment.value,
         italic = settings.italic.value,
+        synthesizeItalic = settings.fontFamily.value.userEntry != null,
         color = MaterialTheme.colorScheme.onSurface
     )
     val gapDp = readerParagraphGapDp(

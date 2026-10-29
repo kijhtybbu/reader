@@ -42,6 +42,7 @@ import ua.acclorite.book_story.presentation.reader.model.ReaderTapZones
 import ua.acclorite.book_story.presentation.reader.model.ReaderProgressCount
 import ua.acclorite.book_story.presentation.reader.model.ReaderScreenOrientation
 import ua.acclorite.book_story.presentation.reader.model.ReaderTextAlignment
+import ua.acclorite.book_story.ui.reader.data.FontRegistry
 import ua.acclorite.book_story.ui.reader.data.ReaderData
 import ua.acclorite.book_story.ui.reader.model.FontWithName
 import ua.acclorite.book_story.ui.theme.model.DarkTheme
@@ -141,7 +142,9 @@ class SettingsManager @Inject constructor(
     val fontFamily = setting<FontWithName, String>(
         key = stringPreferencesKey("font"), default = ReaderData.fonts[0],
         serialize = { it.id }, deserialize = { id ->
-            ReaderData.fonts.find { it.id == id } ?: ReaderData.fonts[0]
+            // fork: 用户字体索引是 filesDir/fonts/index.json，Application.onCreate 里已同步加载，
+            // 所以这里能读到导入字体；找不到（删除/索引损坏）才回落默认。
+            FontRegistry.findById(id)
         }
     )
     val fontThickness = setting<Int, String>(

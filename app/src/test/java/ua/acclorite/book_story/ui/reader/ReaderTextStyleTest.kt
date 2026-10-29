@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import ua.acclorite.book_story.presentation.reader.model.ReaderTextAlignment
 
@@ -28,6 +29,7 @@ class ReaderTextStyleTest {
     private fun style(
         alignment: ReaderTextAlignment = ReaderTextAlignment.JUSTIFY,
         italic: Boolean = false,
+        synthesizeItalic: Boolean = false,
         fontSize: Int = 16,
         lineHeightDelta: Int = 4,
         letterSpacing: Int = 0,
@@ -41,6 +43,7 @@ class ReaderTextStyleTest {
         paragraphIndentationSetting = indentation,
         textAlignment = alignment,
         italic = italic,
+        synthesizeItalic = synthesizeItalic,
         color = Color.Black
     )
 
@@ -76,6 +79,17 @@ class ReaderTextStyleTest {
     fun `italic setting is carried into the style`() {
         assertEquals(FontStyle.Italic, style(italic = true).fontStyle)
         assertEquals(FontStyle.Normal, style(italic = false).fontStyle)
+    }
+
+    @Test
+    fun `synthetic italic skew only applies when explicitly requested`() {
+        // fork: 用户字体没有 italic 字型，靠几何倾斜合成；内置字体不能被动到。
+        assertNull(style(italic = true, synthesizeItalic = false).textGeometricTransform)
+        assertNull(style(italic = false, synthesizeItalic = true).textGeometricTransform)
+        assertEquals(
+            -0.25f,
+            style(italic = true, synthesizeItalic = true).textGeometricTransform?.skewX
+        )
     }
 
     @Test

@@ -17,9 +17,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextGeometricTransform
 import ua.acclorite.book_story.domain.model.book.Node
 import ua.acclorite.book_story.domain.model.book.NodeContent
 import ua.acclorite.book_story.ui.common.components.common.getHighlightedText
+import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.reader.model.ReaderNode
 
 @Composable
@@ -43,6 +45,20 @@ internal fun rememberReaderNodes(
     ).map { it.fontWeight ?: FontWeight.Normal }
     val paragraphFontWeight = paragraphTextStyle.fontWeight ?: FontWeight.Normal
     val boldFontWeight = FontWeight((paragraphFontWeight.weight + boldFontThickness).coerceAtMost(900))
+
+    // fork: 用户字体是单 face，SpanStyle(fontWeight/fontStyle) 对 LoadedFontFamily 不生效
+    // （AndroidTypefaceWrapper 直接返回 typeface，不走 fontSynthesis）。正文里的 <b>/<i>
+    // 必须自带粗体 family / 几何倾斜，否则导入字体后加粗与斜体段落会静默变成正常体。
+    val settings = LocalSettings.current
+    val selectedFont = settings.fontFamily.value
+    val userFont = selectedFont.userEntry != null
+    val boldFontFamily = rememberFontFamily(
+        font = selectedFont,
+        fontWeight = boldFontWeight.weight,
+        italic = false
+    )
+    val userItalicSkew = if (userFont) TextGeometricTransform(skewX = -0.25f) else null
+
     return remember(
         nodes,
         density,
@@ -50,7 +66,9 @@ internal fun rememberReaderNodes(
         highlightedReadingThickness,
         paragraphFontWeight,
         boldFontWeight,
-        headerFontWeights
+        headerFontWeights,
+        boldFontFamily,
+        userFont
     ) {
         nodes.map { node ->
             when (val nodeContent = node.content) {
@@ -75,13 +93,19 @@ internal fun rememberReaderNodes(
                             nodeContent.styles.forEach { style ->
                                 when (style.style) {
                                     is NodeContent.TextStyle.Bold -> addStyle(
-                                        SpanStyle(fontWeight = boldFontWeight),
+                                        SpanStyle(
+                                            fontWeight = boldFontWeight,
+                                            fontFamily = if (userFont) boldFontFamily else null
+                                        ),
                                         style.start,
                                         style.end
                                     )
 
                                     is NodeContent.TextStyle.Italic -> addStyle(
-                                        SpanStyle(fontStyle = FontStyle.Italic),
+                                        SpanStyle(
+                                            fontStyle = FontStyle.Italic,
+                                            textGeometricTransform = userItalicSkew
+                                        ),
                                         style.start,
                                         style.end
                                     )

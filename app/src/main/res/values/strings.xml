@@ -207,6 +207,27 @@
 
     <!-- Reader -->
     <string name="font_family_option">Font family</string>
+    <string name="user_fonts_option">Imported fonts</string>
+    <string name="user_fonts_import">Import font file</string>
+    <string name="user_fonts_limit_note">Up to 10 fonts can be imported. Delete one to make room.</string>
+    <string name="user_font_delete">Delete font</string>
+    <string name="user_font_badge_cjk">Chinese glyphs</string>
+    <string name="user_font_badge_no_cjk">No Chinese glyphs</string>
+    <string name="user_font_badge_variable">Variable</string>
+    <string name="user_font_weight_note_static">Imported static font: thickness only synthesises bold at 700 and above; lower values keep the font\'s built-in weight. Italic is synthesised.</string>
+    <string name="user_font_weight_note_variable">Imported variable font: thickness uses the font\'s wght axis. Italic is synthesised.</string>
+    <string name="user_font_preview_cjk">读万卷书，行万里路。</string>
+    <string name="user_font_preview_latin">Reading is dreaming with eyes open. 123</string>
+    <string name="user_font_preview_punctuation">「引号、括号（全角）」</string>
+    <string name="font_import_success">Imported \"%1$s\".</string>
+    <string name="font_import_error_empty">The selected file is empty.</string>
+    <string name="font_import_error_too_large">Font file is larger than 40 MB.</string>
+    <string name="font_import_error_extension">Only .ttf and .otf font files are supported.</string>
+    <string name="font_import_error_not_font">This file is not a readable font.</string>
+    <string name="font_import_error_collection">Font collections (.ttc) are not supported yet. Export a single .ttf or .otf face and import that.</string>
+    <string name="font_import_error_woff">Web fonts (.woff/.woff2) are not supported. Convert the file to .ttf or .otf first.</string>
+    <string name="font_import_error_limit">Limit of 10 imported fonts reached. Delete one first.</string>
+    <string name="font_import_error_unreadable">Could not read the selected file.</string>
     <string name="font_thickness_option">Font thickness</string>
     <string name="bold_font_thickness_option">Bold font thickness</string>
     <string name="font_style_option">Font style</string>

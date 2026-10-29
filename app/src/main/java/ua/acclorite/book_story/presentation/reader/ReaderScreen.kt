@@ -59,6 +59,7 @@ import ua.acclorite.book_story.ui.common.helpers.setBrightness
 import ua.acclorite.book_story.ui.reader.ReaderContent
 import ua.acclorite.book_story.ui.reader.ReaderEffects
 import ua.acclorite.book_story.ui.reader.readerParagraphTextStyle
+import ua.acclorite.book_story.ui.reader.rememberFontFamily
 
 @Parcelize
 data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
@@ -219,6 +220,14 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
             (settings.progressBarFontSize.lastValue * 2).sp
         }
 
+        // fork: 用户字体的 FontFamily 由 (font, weight, italic) 在后台解析；内置字体直接返回。
+        // 这里用它作为 remember 的 key，Typeface 建好后会触发一次重组（并重新分页）。
+        val resolvedFontFamily = rememberFontFamily(
+            font = settings.fontFamily.value,
+            fontWeight = settings.fontThickness.value,
+            italic = settings.italic.value
+        )
+
         // fork: 正文样式抽到 readerParagraphTextStyle，与排版面板的样例预览共用同一份实现，
         // 避免预览显示书里并不存在的效果（曾漏掉斜体与「居中/右对齐取消缩进」）
         val paragraphTextStyle = remember(
@@ -230,10 +239,11 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
             settings.letterSpacing.value,
             settings.fontSize.value,
             settings.lineHeight.value,
-            fontColor.value
+            fontColor.value,
+            resolvedFontFamily
         ) {
             readerParagraphTextStyle(
-                fontFamily = settings.fontFamily.lastValue.font,
+                fontFamily = resolvedFontFamily,
                 fontWeight = FontWeight(settings.fontThickness.lastValue),
                 fontSizeSp = settings.fontSize.lastValue,
                 lineHeightDeltaSp = settings.lineHeight.lastValue,
@@ -241,6 +251,8 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
                 paragraphIndentationSetting = settings.paragraphIndentation.lastValue,
                 textAlignment = settings.textAlignment.lastValue,
                 italic = settings.italic.lastValue,
+                // fork: 用户字体没有 italic 字型，Android 也不做伪斜体，用几何倾斜合成
+                synthesizeItalic = settings.fontFamily.lastValue.userEntry != null,
                 color = fontColor.value
             )
         }
@@ -256,6 +268,8 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
                     lineHeight = (fontSize * 1.2f).sp,
                     fontWeight = FontWeight(fontWeight),
                     fontStyle = FontStyle.Normal,
+                    // fork: 标题永远不斜体；清掉正文为合成斜体加的 skew，否则标题也会被拉斜
+                    textGeometricTransform = null,
                     textAlign = textAlignment.textAlignment,
                     textIndent = if (textAlignment.textAlignment == TextAlign.Center) {
                         TextIndent.None
