@@ -9,7 +9,9 @@ package ua.acclorite.book_story.ui.reader
 import android.annotation.SuppressLint
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +41,7 @@ import ua.acclorite.book_story.presentation.reader.model.ReaderTapZones
 import ua.acclorite.book_story.presentation.settings.SettingsEvent
 import ua.acclorite.book_story.ui.common.components.common.AnimatedVisibility
 import ua.acclorite.book_story.ui.theme.LocalReaderPalette
+import ua.acclorite.book_story.ui.theme.Spacing
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
@@ -284,6 +287,16 @@ fun ReaderScaffold(
                     loadNodesBefore = loadNodesBefore
                 )
             }
+        }
+
+        // fork: 跨章提示。放在 Scaffold 内容区最上层，两种布局都覆盖。
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = contentPadding.calculateTopPadding() + Spacing.l),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            ReaderChapterHint(chapterTitle = currentChapterString)
         }
 
         ReaderPerceptionExpander(

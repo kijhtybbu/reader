@@ -255,14 +255,17 @@ Pager 把页面画在 offsetDistance * pageSize 处（reverseLayout 时取反）
 菜单开着时点击先收起菜单（与 `ReaderLayoutContinuous` 一致），否则会出现「点左三分之一既翻页又关不掉菜单」。
 连点用 `pendingTapTarget` 累积，避免两次点击只翻一页。
 
-### 5.3 其它手势
+### 5.3 其它手势（已按需求裁剪）
 
-- 双指上下滑调亮度（现在只有设置里的滑块 `customScreenBrightness` / `screenBrightness`）
-- 音量键翻页（检查是否已有；无则加，需 `Activity.dispatchKeyEvent`）
-- 章节切换提示：跨章时顶部 1.5s 淡出显示章名，替代现在的静默切换
-- `ReaderPerceptionExpander.kt` / `ReaderHorizontalLimiter.kt` 是已有的辅助阅读（行高亮/尺子）—— 这套交互很独特，视觉重做时**保留**，只统一 token
+**已明确不做**（用户决定）：
 
----
+| 功能 | 结论 |
+| --- | --- |
+| 双指上下滑调亮度 | **不做**。设置里已有亮度滑块；双指手势还要在 Pager 上再挂一个 drag 检测器，正是 5.2 刚踩过的坑（第二套检测器互相吃事件）。 |
+| 音量键翻页 | **不做**。需要 `Activity.dispatchKeyEvent` 拦截，会与系统音量调节、无障碍服务、外接键盘冲突，收益不抵复杂度。 |
+
+**保留：章节切换提示。** 跨章时在顶部短暂显示章名（约 1.5s 后淡出），
+因为跨章翻页时正文会重新分页并淡出，用户容易不知道「已经换章了」。
 
 ## 6. Phase 4 · 书架与收尾（Day 8）
 
