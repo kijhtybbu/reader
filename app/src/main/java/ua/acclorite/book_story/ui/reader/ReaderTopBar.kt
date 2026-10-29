@@ -149,15 +149,22 @@ fun ReaderTopBar(
                     showSettingsBottomSheet(ReaderEvent.OnShowSettingsBottomSheet)
                 }
             },
+            // fork: 必须显式给内容色。默认取的是 App 主题的 onSurfaceVariant，
+            // 而栏底已换成预设派生的 palette.bar —— 混搭时图标对比度会掉到 1.3:1。
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.Transparent
+                containerColor = Color.Transparent,
+                navigationIconContentColor = LocalReaderPalette.current.onBar,
+                actionIconContentColor = LocalReaderPalette.current.onBar,
+                titleContentColor = LocalReaderPalette.current.onBar
             )
         )
 
         if (currentChapter != null) {
             LinearProgressIndicator(
                 progress = { animatedChapterProgress.value },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                color = LocalReaderPalette.current.accent,
+                trackColor = LocalReaderPalette.current.onBarMuted.copy(0.25f)
             )
         }
     }

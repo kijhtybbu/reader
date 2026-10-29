@@ -9,9 +9,6 @@ package ua.acclorite.book_story.ui.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 
-val ColorScheme.readerBarsColor: Color
-    get() = surfaceContainer.copy(0.9f)
-
 fun ColorScheme.dynamicListItemColor(
     index: Int
 ): Color {

@@ -117,12 +117,21 @@ easingStandard / easingEmphasized
 
 > **已推迟到 Phase 2。** 它在 Phase 1 没有消费者，先落地就是死抽象；
 > 等到重做排版面板、真正需要「阅读配色不污染 App 主题」时再引入，
-> 才能把 `ReaderScreen.kt:196-212` 的 `BlendMode` 着色链路一并删掉。
-现状：阅读背景/文字色来自 `colorPreset` + `colorEffects`（`ColorMatrix` 饱和度 / `BlendMode.Color` 着色），链路绕。改为：
+> **注意（已核实并纠正）**：`ReaderScreen.kt:196-212` 的 `BlendMode` 链路作用于**插图**着色
+> （`ReaderColorEffects.FONT/BACKGROUND` 把图片按前景/背景染色），不是给背景或文字上色。
+> 那是独立功能，**不要**因为引入 `ReaderPalette` 而删除。
+现状：阅读背景/文字色来自 `colorPreset`；上下栏与栏内图标却取 App 主题（`readerBarsColor` /
+`onSurface` / `onSurfaceVariant`），两套配色互不相干。改为：
 ```
 ReaderPalette(bg, text, accent, contrastLevel)   // 阅读区专用
 ```
-应用主题（动态取色）只管书架与设置页；阅读页永远用 `ReaderPalette`。这样「羊皮纸 / 护眼绿 / 夜黑 / 纯黑」背景色不会污染 App 主题，也避免 `BlendMode` 着色带来的性能与色偏问题。
+应用主题（动态取色）只管书架与设置页；阅读页的栏、图标、进度条、强调色一律走 `ReaderPalette`。
+
+**实测修正**：早先以为旧代码「深色预设 + 浅色主题会让栏内文字不可读」，实测不成立——
+旧栏底是 App 主题 `surfaceContainer` 90% 透明，文字与栏底同属一套主题，最差组合也有约 11:1。
+真正的问题是**观感割裂**（夜间黑页上浮着一条亮栏）以及 `readerBarsColor` 的 10% 底色渗透。
+所以本次改动的价值是「配色统一」，不是「修不可读」。但迁移必须彻底：只迁文字不迁图标，
+反而会把图标对比度降到 1.3:1 —— 这正是 Round 1 抓到的 blocker。
 
 > 纪律：这一层只加映射，**不重写** `ui/theme/color/` 的 18 套色板。
 
@@ -166,7 +175,7 @@ ReaderPalette(bg, text, accent, contrastLevel)   // 阅读区专用
 
 ```
 ui/theme/ReaderPalette.kt                      阅读区配色（从 Phase 1 推迟而来，本阶段必须有消费者）
-ui/reader/ReaderScreen.kt                      接入 ReaderPalette，删掉 BlendMode 着色链路
+ui/reader/ReaderContent.kt                     提供 ReaderPalette（必须包住 bottom sheet，见下）
 ui/reader/ReaderSettingsBottomSheet.kt          重写为 2 Tab + 高频区
 ui/reader/ReaderSettingsBottomSheetTabRow.kt    2 个 Tab
 ui/reader/data/ReaderData.kt                    注册中文字体
@@ -272,7 +281,8 @@ data class BookmarkEntity(
 3. **排版核心回归风险**：`ReaderPagePaginator.kt` 是唯一保证「文字不丢、页不断错」的模块，任何改动都必须用「全章字数校验」（分页后所有 `ReaderPageItem.text` 拼回原文本必须完全相等）做断言。
 4. **Compose alpha 依赖**：`material3:1.5.0-alpha06`。改 UI 时避免依赖该版本独有 API，防止上游降版时冲突。
 5. **字体体积**：中文字体是 APK 膨胀主因，必须子集化；否则 3 款全量字体直接 +40MB。
-6. **`BlendMode` 着色**（`ReaderScreen.kt:196-212`）：`ColorFilter.tint + BlendMode.Color` 在部分 GPU 上有色偏，且与 `ReaderPalette` 方案重叠。改造时统一走 `ReaderPalette`，删掉这条链路可减少一类视觉 bug。
+6. **`BlendMode` 着色**（`ReaderScreen.kt:196-212`）：作用于**插图**染色（`imagesColorEffects`），
+   与 `ReaderPalette` 无关，**保留**。早先把它误判为「背景/文字着色」并计划删除，已纠正。
 7. **用户字体与 `saveable` 状态**：`ReaderLayoutPaged.kt:164-165` 用 `rememberSaveable(book.uuid)` 保存 `anchorNodeId/anchorOffset`。字体切换若导致 Typeface 重建失败（文件被删），必须回落到内置字体并保留 anchor，不能抛异常打断阅读。
 
 ---

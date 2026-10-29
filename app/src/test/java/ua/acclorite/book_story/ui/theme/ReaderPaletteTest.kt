@@ -3,10 +3,13 @@
  * Copyright (C) 2024-2026 Acclorite
  * SPDX-License-Identifier: GPL-3.0-only
  *
- * fork 新增：阅读区配色的对比度保证。
+ * fork 新增：阅读区配色的派生契约。
  *
- * 这类 bug 在真机上表现为「换了深色阅读背景后，上下栏文字看不清」，
- * 靠肉眼看截图很容易漏（尤其只测浅色预设时）。所以用断言把下限钉住。
+ * 说明能测与不能测：
+ *   - 能测：派生本身的保证（栏底抬升下限、强调色对比度、onBar 契约）
+ *   - 不能测：UI 里谁用了哪个颜色。上一轮的真实 bug 是顶栏图标仍取 App 主题的
+ *     onSurfaceVariant，palette 本身完全正确 —— 那类问题只能靠 review 或 UI 测试。
+ *     所以这里不做「假装的覆盖」。
  */
 
 package ua.acclorite.book_story.ui.theme
@@ -29,80 +32,107 @@ class ReaderPaletteTest {
     )
 
     @Test
-    fun `bar text stays readable on every preset`() {
+    fun `bar is always distinguishable from the page`() {
         presets.forEach { preset ->
             val palette = readerPalette(preset.background, preset.onBackground)
-            val ratio = contrastRatio(palette.onBar, palette.bar)
+            val ratio = contrastRatio(palette.bar, preset.background)
             assertTrue(
-                "${preset.name}: 栏内文字对比度 $ratio 低于 ${MinTextContrast}",
-                ratio >= MinTextContrast
+                "${preset.name}: 栏底与背景只有 $ratio:1，低于 $MinBarLift —— 暗色端会看不出分界",
+                ratio >= MinBarLift
             )
         }
     }
 
     @Test
-    fun `muted text stays readable on every preset`() {
+    fun `bar never drifts into a different colour family`() {
         presets.forEach { preset ->
             val palette = readerPalette(preset.background, preset.onBackground)
-            val ratio = contrastRatio(palette.onBarMuted, palette.bar)
-            // 次要文字放宽到 3:1（WCAG AA 对大字号/次要信息的底线）
             assertTrue(
-                "${preset.name}: 次要文字对比度 $ratio 过低",
-                ratio >= 3.0
+                "${preset.name}: 栏底与背景差异过大",
+                contrastRatio(palette.bar, preset.background) < 1.35
             )
         }
     }
 
     @Test
-    fun `bar stays in the same colour family as the page`() {
+    fun `onBar is the preset foreground, never overridden`() {
         presets.forEach { preset ->
             val palette = readerPalette(preset.background, preset.onBackground)
-            val ratio = contrastRatio(palette.bar, palette.background)
-            // 栏底色只是「略微抬起」，不应该变成另一套配色
-            assertTrue(
-                "${preset.name}: 栏底色与背景差异 $ratio 过大（应 < 1.35）",
-                ratio < 1.35
+            assertEquals(
+                "${preset.name}: onBar 必须等于用户选定的字色，不能悄悄改",
+                preset.onBackground,
+                palette.onBar
             )
+        }
+    }
+
+    @Test
+    fun `muted text keeps a readable floor on the bar`() {
+        presets.forEach { preset ->
+            val palette = readerPalette(preset.background, preset.onBackground)
             assertTrue(
-                "${preset.name}: 栏底色与背景几乎相同（$ratio），看不出层次",
-                ratio > 1.0
+                "${preset.name}: 次要文字在栏底上的对比度过低",
+                contrastRatio(palette.onBarMuted, palette.bar) >= 3.0
             )
         }
     }
 
     @Test
     fun `accent is kept when it already contrasts with the bar`() {
-        val palette = readerPalette(
-            background = Color(0xFFFAF8FF),
-            onBackground = Color(0xFF1B1B1F),
-            accentSeed = Color(0xFF0B57D0) // 深蓝，在浅背景上对比度足够
-        )
-        assertEquals(Color(0xFF0B57D0), palette.accent)
+        val seed = Color(0xFF0B57D0)
+        val palette = readerPalette(Color(0xFFFAF8FF), Color(0xFF1B1B1F), seed)
+        assertEquals(seed, palette.accent)
     }
 
     @Test
-    fun `accent falls back to onBar when the seed is unreadable`() {
-        // 与浅背景几乎同色的强调色：直接用会看不见
+    fun `accent stays readable when the seed is too close to the bar`() {
         val palette = readerPalette(
             background = Color(0xFFFAF8FF),
             onBackground = Color(0xFF1B1B1F),
-            accentSeed = Color(0xFFF0F0F5)
+            accentSeed = Color(0xFFF0F0F5) // 与浅背景几乎同色
         )
-        assertEquals(palette.onBar, palette.accent)
-        assertTrue(contrastRatio(palette.accent, palette.bar) >= MinTextContrast)
+        assertTrue(
+            "强调色必须达到 3:1 非文本对比度",
+            contrastRatio(palette.accent, palette.bar) >= 3.0
+        )
     }
 
     @Test
-    fun `default palette is self-consistent`() {
-        val palette = ReaderPalette.Default
-        assertTrue(contrastRatio(palette.onBackground, palette.background) >= MinTextContrast)
-        assertTrue(contrastRatio(palette.onBar, palette.bar) >= MinTextContrast)
+    fun `accent keeps some hue before falling back to plain text colour`() {
+        // 深紫在浅色栏底上对比度不足，但混向字色后仍应保留色相，而不是直接变成灰
+        val seed = Color(0xFFD0BCFF)
+        val palette = readerPalette(Color(0xFFF5EFE0), Color(0xFF3A3226), seed)
+        assertTrue(
+            "强调色不应该退化成与正文完全相同的颜色（那样就失去强调作用）",
+            palette.accent != palette.onBar
+        )
+        assertTrue(contrastRatio(palette.accent, palette.bar) >= 3.0)
+    }
+
+    @Test
+    fun `Default is exactly what the factory derives`() {
+        assertEquals(
+            readerPalette(Color(0xFFFAF8FF), Color(0xFF1B1B1F)),
+            ReaderPalette.Default
+        )
     }
 
     @Test
     fun `contrast ratio matches known reference values`() {
-        // 黑/白对比度是 21:1，同色是 1:1
         assertEquals(21.0, contrastRatio(Color.Black, Color.White), 0.01)
         assertEquals(1.0, contrastRatio(Color.Red, Color.Red), 0.001)
+    }
+
+    @Test
+    fun `mid tone presets are not silently promised to be readable`() {
+        // 中灰背景 + 白字：正文对比度本身就不够（3.95:1），palette 不负责修正，
+        // 但栏底与强调色仍须满足各自的契约。
+        val background = Color(0xFF808080)
+        val onBackground = Color(0xFFFFFFFF)
+        assertTrue("前提：该预设正文对比度本身就不达标", contrastRatio(onBackground, background) < MinTextContrast)
+
+        val palette = readerPalette(background, onBackground)
+        assertTrue(contrastRatio(palette.bar, background) >= MinBarLift)
+        assertTrue(contrastRatio(palette.accent, palette.bar) >= 3.0)
     }
 }

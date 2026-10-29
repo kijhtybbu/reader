@@ -263,6 +263,10 @@ private fun ReaderBottomBarSlider(
         interactionSource = interactionSource,
         colors = SliderDefaults.colors(
             // fork: 进度条改用阅读区配色，保证与阅读背景的对比度（原来是 App 主题的 primary/secondary）
+            // fork: 启用态才是常规路径（lockMenu 只在离开时置 true），
+            // 之前只迁了 disabled*，导致 palette.accent 在滑块上等于没用
+            thumbColor = LocalReaderPalette.current.accent,
+            activeTrackColor = LocalReaderPalette.current.accent,
             inactiveTrackColor = LocalReaderPalette.current.onBarMuted.copy(0.25f),
             disabledActiveTrackColor = LocalReaderPalette.current.accent,
             disabledThumbColor = LocalReaderPalette.current.accent,

@@ -7,7 +7,10 @@
 package ua.acclorite.book_story.ui.reader
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -29,6 +32,8 @@ import ua.acclorite.book_story.presentation.reader.model.ReaderLayout
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
 import ua.acclorite.book_story.presentation.settings.SettingsEvent
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
+import ua.acclorite.book_story.ui.theme.LocalReaderPalette
+import ua.acclorite.book_story.ui.theme.readerPalette
 
 @Composable
 fun ReaderContent(
@@ -114,6 +119,15 @@ fun ReaderContent(
     navigateBack: (ReaderEvent.OnNavigateBack) -> Unit,
     loadNodesBefore: suspend (NodeId, Int) -> List<Node>
 ) {
+    // fork: palette 必须在这里提供 —— ReaderBottomSheet 与 ReaderScaffold 是兄弟节点，
+    // 只包在 Scaffold 里会让底部面板拿到 ReaderPalette.Default（浅色），深色预设下正好是本次要修的 bug。
+    // MaterialTheme 的读取不能放进 remember 的 lambda（非 @Composable 作用域）。
+    val accentSeed = MaterialTheme.colorScheme.primary
+    val palette = remember(backgroundColor, fontColor, accentSeed) {
+        readerPalette(backgroundColor, fontColor, accentSeed)
+    }
+
+    CompositionLocalProvider(LocalReaderPalette provides palette) {
     ReaderBottomSheet(
         bottomSheet = bottomSheet,
         menuVisibility = menuVisibility,
@@ -229,4 +243,5 @@ fun ReaderContent(
         leave = leave,
         navigateBack = navigateBack
     )
+    }
 }

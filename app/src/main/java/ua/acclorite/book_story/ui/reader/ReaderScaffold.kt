@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,7 +38,6 @@ import ua.acclorite.book_story.presentation.settings.SettingsEvent
 import ua.acclorite.book_story.ui.common.components.common.AnimatedVisibility
 import ua.acclorite.book_story.ui.theme.LocalReaderPalette
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
-import ua.acclorite.book_story.ui.theme.readerPalette
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -118,17 +116,6 @@ fun ReaderScaffold(
     navigateBack: (ReaderEvent.OnNavigateBack) -> Unit,
     loadNodesBefore: suspend (NodeId, Int) -> List<Node>
 ) {
-    // 注意：MaterialTheme 的读取必须在 remember 的 lambda 之外，lambda 不是 @Composable 作用域
-    val accentSeed = MaterialTheme.colorScheme.primary
-    val palette = remember(backgroundColor, fontColor, accentSeed) {
-        readerPalette(
-            background = backgroundColor,
-            onBackground = fontColor,
-            accentSeed = accentSeed
-        )
-    }
-
-    CompositionLocalProvider(LocalReaderPalette provides palette) {
     Scaffold(
         Modifier
             .fillMaxSize()
@@ -136,7 +123,8 @@ fun ReaderScaffold(
                 if (layout == ReaderLayout.CONTINUOUS) Modifier.nestedScroll(nestedScrollConnection)
                 else Modifier
             ),
-        containerColor = MaterialTheme.colorScheme.surface,
+        // fork: 翻页间隙/栏动画期间露出的就是这层，必须用阅读背景而不是 App 主题 surface
+        containerColor = LocalReaderPalette.current.background,
         topBar = {
             AnimatedVisibility(
                 visible = showMenu,
@@ -298,6 +286,5 @@ fun ReaderScaffold(
             perceptionExpanderThickness = perceptionExpanderThickness,
             perceptionExpanderColor = fontColor
         )
-    }
     }
 }
