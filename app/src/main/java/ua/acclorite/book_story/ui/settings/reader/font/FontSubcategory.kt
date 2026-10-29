@@ -27,6 +27,11 @@ fun LazyListScope.FontSubcategory(
     title: @Composable () -> String = { stringResource(id = R.string.font_reader_settings) },
     showTitle: Boolean = true,
     showDivider: Boolean = true,
+    // fork: 阅读器底部面板把「字体/字号/字距」提到了常驻高频区，
+    // 这里用开关避免同一个设置在同一屏出现两个控件
+    includeFamily: Boolean = true,
+    includeSize: Boolean = true,
+    includeLetterSpacing: Boolean = true
 ) {
     SettingsSubcategory(
         titleColor = titleColor,
@@ -34,8 +39,10 @@ fun LazyListScope.FontSubcategory(
         showTitle = showTitle,
         showDivider = showDivider
     ) {
-        item {
-            FontFamilyOption()
+        if (includeFamily) {
+            item {
+                FontFamilyOption()
+            }
         }
 
         item {
@@ -50,12 +57,16 @@ fun LazyListScope.FontSubcategory(
             FontStyleOption()
         }
 
-        item {
-            FontSizeOption()
+        if (includeSize) {
+            item {
+                FontSizeOption()
+            }
         }
 
-        item {
-            LetterSpacingOption()
+        if (includeLetterSpacing) {
+            item {
+                LetterSpacingOption()
+            }
         }
     }
 }

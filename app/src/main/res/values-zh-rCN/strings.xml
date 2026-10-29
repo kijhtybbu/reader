@@ -90,6 +90,8 @@
     <string name="sort_settings">排序</string>
     <string name="blue_color">蓝色</string>
     <string name="paragraph_height_option">段落间距</string>
+    <string name="typography_tab">排版</string>
+    <string name="more_tab">更多</string>
     <string name="color_tab">颜色</string>
     <string name="filter_tab">过滤</string>
     <string name="general_settings_desc">应用语言</string>

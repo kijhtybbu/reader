@@ -37,7 +37,6 @@ import ua.acclorite.book_story.ui.settings.reader.progress.ProgressSubcategory
 import ua.acclorite.book_story.ui.settings.reader.reading_mode.ReadingModeSubcategory
 import ua.acclorite.book_story.ui.settings.reader.reading_speed.ReadingSpeedSubcategory
 import ua.acclorite.book_story.ui.settings.reader.system.SystemSubcategory
-import ua.acclorite.book_story.ui.settings.reader.text.TextSubcategory
 import ua.acclorite.book_story.ui.settings.reader.translator.TranslatorSubcategory
 import ua.acclorite.book_story.ui.theme.Motion
 
@@ -59,7 +58,8 @@ fun ReaderSettingsBottomSheet(
         animationSpec = Motion.long()
     )
     val animatedHeight by animateFloatAsState(
-        targetValue = if (pagerState.currentPage == 2) 0.6f else 0.7f,
+        // fork: 排版页压到 0.62，让面板上方露出更多正文用于实时预览
+        targetValue = if (pagerState.currentPage == 2) 0.6f else 0.62f,
         animationSpec = Motion.long()
     )
 
@@ -97,6 +97,35 @@ fun ReaderSettingsBottomSheet(
             when (page) {
                 0 -> {
                     LazyColumnWithScrollbar(Modifier.fillMaxSize()) {
+                        // 常驻高频区：字号/行距/段距/字距/缩进/对齐/字体
+                        ReaderTypographyQuickSettings()
+                        // 字体子页只保留「字重/粗体字重/斜体」，避免同一屏出现重复控件；
+                        // TextSubcategory 的四项已全部上移，不再重复渲染
+                        FontSubcategory(
+                            titleColor = { MaterialTheme.colorScheme.onSurface },
+                            includeFamily = false,
+                            includeSize = false,
+                            includeLetterSpacing = false
+                        )
+                        ImagesSubcategory(
+                            titleColor = { MaterialTheme.colorScheme.onSurface }
+                        )
+                        HeadersSubcategory(
+                            titleColor = { MaterialTheme.colorScheme.onSurface },
+                            backgroundColor = { MaterialTheme.colorScheme.surfaceContainer }
+                        )
+                        ProgressSubcategory(
+                            titleColor = { MaterialTheme.colorScheme.onSurface }
+                        )
+                        TranslatorSubcategory(
+                            titleColor = { MaterialTheme.colorScheme.onSurface },
+                            showDivider = false
+                        )
+                    }
+                }
+
+                1 -> {
+                    LazyColumnWithScrollbar(Modifier.fillMaxSize()) {
                         ReadingModeSubcategory(
                             titleColor = { MaterialTheme.colorScheme.onSurface }
                         )
@@ -110,31 +139,6 @@ fun ReaderSettingsBottomSheet(
                             titleColor = { MaterialTheme.colorScheme.onSurface }
                         )
                         MiscSubcategory(
-                            titleColor = { MaterialTheme.colorScheme.onSurface },
-                            showDivider = false
-                        )
-                    }
-                }
-
-                1 -> {
-                    LazyColumnWithScrollbar(Modifier.fillMaxSize()) {
-                        FontSubcategory(
-                            titleColor = { MaterialTheme.colorScheme.onSurface }
-                        )
-                        TextSubcategory(
-                            titleColor = { MaterialTheme.colorScheme.onSurface }
-                        )
-                        ImagesSubcategory(
-                            titleColor = { MaterialTheme.colorScheme.onSurface }
-                        )
-                        HeadersSubcategory(
-                            titleColor = { MaterialTheme.colorScheme.onSurface },
-                            backgroundColor = { MaterialTheme.colorScheme.surfaceContainer }
-                        )
-                        ProgressSubcategory(
-                            titleColor = { MaterialTheme.colorScheme.onSurface }
-                        )
-                        TranslatorSubcategory(
                             titleColor = { MaterialTheme.colorScheme.onSurface },
                             showDivider = false
                         )
