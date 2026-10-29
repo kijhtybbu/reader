@@ -30,6 +30,7 @@ android {
         // LineBreak 的 strictness / wordBreak 部分依赖 android.graphics.text.LineBreakConfig（API 33），
         // 在 29~32 上会退化；但断行策略（HIGH_QUALITY）从 API 23 就有。
         // rebase upstream 后务必检查此行，冲突不会导致编译失败，只会静默退回 26。
+        // fork: rebase-critical — 见 REBASE.md 第 1 节
         minSdk = 29
         targetSdk = 36
         versionCode = 14

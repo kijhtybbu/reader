@@ -7,7 +7,6 @@
 package ua.acclorite.book_story.ui.theme
 
 import android.app.Activity
-import android.os.Build
 import android.view.View
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -42,9 +41,8 @@ fun BookStoryTheme(
                 View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
 
             // Fix for nav bar being semi transparent in api 29+
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = false
-            }
+            // fork: minSdk 已是 29，原 `SDK_INT >= Q` 判断是死代码，直接去掉
+            window.isNavigationBarContrastEnforced = false
 
             // fork: 阅读页会用预设派生色覆盖系统栏区域，此时图标明暗必须跟着那块底色走
             val lightBars = systemBarsOverride ?: !isDark

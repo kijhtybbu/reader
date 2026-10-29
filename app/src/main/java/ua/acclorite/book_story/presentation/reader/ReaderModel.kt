@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -38,6 +39,29 @@ import kotlin.coroutines.coroutineContext
 
 private const val TAG = "ReaderModel"
 
+/**
+ * fork: 「重新加载节点窗口」的触发信号。
+ *
+ * 必须是 SharedFlow 而不是 StateFlow：StateFlow 会合并相等值，而跳转目标完全可能等于
+ * 当前值 —— 从远处跳回 NodeId(0)（书签、目录、检查点都走这条路径），或检查点恰好就是
+ * 当前位置时，`update { NodeId(0) }` 什么都不发射，[GetBookContentUseCase] 里的
+ * `nodeId.collectLatest` 就不会重发 Nodes，被 `combined.drop(100)` 逐出的节点永远回不到
+ * `ReaderState.nodes`；分页布局的 `pageNodes.none { it.id == scrollTarget.nodeId }` 于是
+ * 永久成立，页面停在 alpha 0、scrollEnabled=false、scrollConsumed 不回调 —— 空白且不响应。
+ * SharedFlow 不比较值，同一个目标发几次就是几次重新加载。
+ *
+ * replay = 1：保留「打开阅读页即有值」的语义（OnLoadContent 先 emit 再 collect），
+ * 重试（OnRetry → 重新 collect）时也能立刻拿到当前目标。
+ * extraBufferCapacity = 1 + DROP_OLDEST：连续跳转时不阻塞调用者；只有最新目标有意义，
+ * 中间目标被丢弃是正确行为。
+ */
+internal fun newPaginationNodeRequests(): MutableSharedFlow<NodeId> =
+    MutableSharedFlow(
+        replay = 1,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
 @HiltViewModel
 class ReaderModel @Inject constructor(
     private val updateBookUseCase: UpdateBookUseCase,
@@ -55,7 +79,7 @@ class ReaderModel @Inject constructor(
     private val _effects = MutableSharedFlow<ReaderEffect>()
     val effects = _effects.asSharedFlow()
 
-    private val _paginationNodeId = MutableStateFlow(NodeId(0))
+    private val paginationNodeRequests = newPaginationNodeRequests()
 
     private var scrollJob: Job? = null
     private val eventStack = mutableListOf<Job>()
@@ -76,14 +100,14 @@ class ReaderModel @Inject constructor(
                             )
                         }
                         updateBookUseCase(_state.value.book)
-                        _paginationNodeId.update { _state.value.book.progress.currentNodeId }
+                        paginationNodeRequests.emit(_state.value.book.progress.currentNodeId)
 
                         LibraryScreen.refreshListChannel.trySend(0)
                         HistoryScreen.refreshListChannel.trySend(0)
 
                         getBookContentUseCase(
                             _state.value.book,
-                            _paginationNodeId
+                            paginationNodeRequests
                         ).collect { state ->
                             when (state) {
                                 is GetBookContentState.Loading -> {
@@ -294,8 +318,8 @@ class ReaderModel @Inject constructor(
                         return@launch
                     }
 
-                    // fork: 与 OnRestoreCheckpoint 一致 —— 除了设 scrollTarget，还必须移动
-                    // _paginationNodeId，否则 GetBookContentUseCase 不会重新加载节点窗口：
+                    // fork: 与 OnRestoreCheckpoint 一致 —— 除了设 scrollTarget，还必须向
+                    // paginationNodeRequests 发一次目标节点，否则 GetBookContentUseCase 不会重新加载节点窗口：
                     // 目标节点（例如 ±200 节点之外的旧书签）永远不会出现在 nodes 里，
                     // 分页模式就停在 reflowing/currentScrollTarget 上（空白页、contentAlpha=0、
                     // scrollConsumed 永不回调），lazy 模式则只能盲滑。
@@ -328,7 +352,7 @@ class ReaderModel @Inject constructor(
                             )
                         }
                         // 跳转当下就落库：否则万一在这之前离开阅读页，下次打开还是旧位置
-                        _paginationNodeId.update { event.nodeId }
+                        paginationNodeRequests.emit(event.nodeId)
                         updateBookUseCase(_state.value.book)
 
                         LibraryScreen.refreshListChannel.trySend(300)
@@ -357,7 +381,7 @@ class ReaderModel @Inject constructor(
                                 )
                             )
                         }
-                        _paginationNodeId.update { targetNodeId }
+                        paginationNodeRequests.emit(targetNodeId)
                         updateBookUseCase(_state.value.book)
 
                         LibraryScreen.refreshListChannel.trySend(300)
@@ -392,7 +416,7 @@ class ReaderModel @Inject constructor(
                                 )
                             )
                         }
-                        _paginationNodeId.update { node.id }
+                        paginationNodeRequests.emit(node.id)
                         updateBookUseCase(_state.value.book)
 
                         LibraryScreen.refreshListChannel.trySend(300)
@@ -421,7 +445,7 @@ class ReaderModel @Inject constructor(
                                 )
                             )
                         }
-                        _paginationNodeId.update { event.checkpoint.nodeId }
+                        paginationNodeRequests.emit(event.checkpoint.nodeId)
                         updateBookUseCase(_state.value.book)
 
                         LibraryScreen.refreshListChannel.trySend(300)

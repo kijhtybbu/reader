@@ -2,6 +2,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Removing DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, which is not used -->
+    <!-- fork: rebase-critical — 这三条靠名字精确匹配 applicationId（dev.jia.reader / .debug /
+         .release.debug）才生效，名字对上时才 remove 成功，对不上不报错。详见 REBASE.md 第 2 节 -->
     <uses-permission
         android:name="dev.jia.reader.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         tools:node="remove" />

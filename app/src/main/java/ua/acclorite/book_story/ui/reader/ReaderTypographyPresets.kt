@@ -37,6 +37,7 @@ import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.components.settings.ChipsWithTitle
 import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.model.ListItem
+import ua.acclorite.book_story.ui.theme.Spacing
 
 /**
  * 一组预设值。
@@ -146,7 +147,7 @@ fun ReaderTypographyPreview() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = sidePaddingDp.dp, vertical = 12.dp)
+            .padding(horizontal = sidePaddingDp.dp, vertical = Spacing.m)
     ) {
         StyledText(
             text = stringResource(id = R.string.typography_preview_sample),

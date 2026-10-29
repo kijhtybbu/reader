@@ -97,10 +97,11 @@ git checkout -b ui-redesign
 
 `ui/theme/Dimens.kt`
 ```
-间距：4 / 8 / 12 / 16 / 18(≈仓库事实标准) / 24 / 32
-圆角：sheet 28.dp / pill；其余优先用 M3 MaterialTheme.shapes
-固定尺寸：topBarHeight 64.dp（M3 TopAppBar）、coverAspect 1f/1.5f
-只收有真实出处的值；写不准的宁可不收
+间距：4 / 8 / 12 / 16 / 18(≈仓库事实标准) / 24
+圆角：pill（999.dp）+ 角色别名 cover(12dp)；4/8/12/16 直接用 M3 MaterialTheme.shapes
+固定尺寸：coverAspect 1f/1.5f、hintMaxWidth、coverProgressRing 及其描边
+只收有真实出处的值；写不准的宁可不收；没人用的随时删（Phase 4 收尾时删了
+`topBarHeight`、`Spacing.xxl`、`Spacing.pageInset`、`Radius.xs/s/m/l/sheet`）
 ```
 
 `ui/theme/Typography.kt`
@@ -278,38 +279,64 @@ Pager 把页面画在 offsetDistance * pageSize 处（reverseLayout 时取反）
 
 ## 6. Phase 4 · 书架与收尾（Day 8）
 
-- `ui/library/LibraryGridItem.kt`：加阅读进度环（现在 `libraryShowProgress` 是文字/条状，具体实现需确认）、封面圆角与阴影走 token
-- 「最近阅读」置顶分区
-- 长按多选批处理（`ui/library/` 现有选择逻辑，改造为可视化批处理栏）
-- 全局 `Snapshot` 回归测试：书架 → 打开 → 翻页 → 改字号 → 退出 → 重进，位置不漂
+**已交付（Phase 4b，见 `e7b4a00`）：**
+
+- `ui/library/LibraryGridItem.kt`：网格封面加阅读进度环（`Dimens.coverProgressRing` 16dp +
+  `coverProgressRingStroke` 2dp，配 scrim 底衬，白/黑/灰封面都已实测可读），`libraryShowProgress` 仍然总闸。
+- 封面圆角走 token：`Radius.cover`（12dp）由 `LibraryGridItem` 与 `LibraryListItem` 共用，
+  网格与列表的同一张封面不再是两个形状。
+- 顶栏副标题：当前生效排序是「最近阅读」时显示 `sort_order_last_read`，
+  解决了「书为什么是这个顺序」；逐分类排序的解析与 `LibraryPager` 一致。
+
+**未做（明确不是遗漏，是没排进本轮）：**
+
+- 「最近阅读」置顶分区 —— 默认排序本来就是 `LAST_READ`（`SettingsManager.kt:346`），
+  再单独置顶一段会和分类 Tab 的排序语义重叠；原始诉求（顺序不可解释）已由顶栏副标题满足。
+- 长按多选批处理 —— 上游的多选本身可用（长按选中、顶栏切换），改造为常驻批处理栏是纯打磨，
+  没有功能阻塞，本轮未开始。
+- 全局 `Snapshot` 回归测试 —— 需要 instrumentation 环境与固定测试书；本轮只有 JVM 单测
+  （`assembleDebug` + `testDebugUnitTest`）可以跟随时跑，既未开始也未验收，
+  「位置不漂」目前只靠手工在 API 34 模拟器上验过。
 
 ---
 
 ## 7. 唯一新增功能：多书签（精确到行）
 
-现状 `Checkpoint(nodeId, nodeIntraOffset, offset)` 只在会话内用于「回到上次位置」，不落盘、无列表。
+**已交付。** 上游的 `Checkpoint(nodeId, nodeIntraOffset, offset)` 只在会话内用于「回到上次位置」，
+不落盘、无列表；书签是独立的第二套，以下为**实际落地形态**（下面就是仓库里的真实签名）。
 
-设计：
 ```kotlin
 // data/storage/room/entity/BookmarkEntity.kt
 @Entity(
-  tableName = "bookmark",
-  indices = [Index(value = ["bookId", "nodeId", "nodeIntraOffset"], unique = true)]
+  tableName = "bookmarkentity",                                  // 不是 "bookmark"
+  indices = [
+    Index(value = ["bookId", "nodeId", "nodeIntraOffset"], unique = true),
+    Index(value = ["bookId"])                                     // 按书查询用
+  ]
 )
 data class BookmarkEntity(
-  @PrimaryKey(autoGenerate = true) val id: Long = 0,
-  val bookId: Long,
+  @PrimaryKey(autoGenerate = true) val id: Int = 0,               // Int，不是 Long
+  val bookId: Int,                                                // Int，与 Book.id 一致
   val nodeId: Int,             // 对应 ReaderNode 的 NodeId
   val nodeIntraOffset: Int,    // 段内偏移
   val chapterTitle: String,    // 冗余，列表直接显示
-  val snippet: String,         // 该行前 40 字
+  val snippet: String,         // 该行起始若干字
   val createdAt: Long
 )
 ```
-- 唯一索引放在 `(bookId, nodeId, nodeIntraOffset)`，天然去重（同一行重复加书签不会产生两条）
-- 跳转：`ReaderPagePosition(nodeId, offset)` → 现有 `scrollTarget` 机制已有（`ScrollTarget` + `ReaderPagePosition`（`ReaderEvent` 里没有 `OnScrollToPosition`，别去找）），直接复用
-- UI：`ReaderTopBar` 加书签按钮（已加/未加两态）+ 侧边 `BookmarkSheet` 列表（仿 `ReaderChaptersDrawer`）
-- 复用 `ReaderLayoutContinuous.kt` 里已有的段落定位逻辑，避免新写一套
+
+- 唯一索引在 `(bookId, nodeId, nodeIntraOffset)`：同一行重复添加不会产生两条记录。
+  Room schema 版本仍为 19，未新增迁移。
+- 去重粒度实际是**段落级**：图标与 toggle 都用 `bookmarkForNode`（只看 nodeId），
+  因为重排会让同一行的段内偏移变化；存下来的 offset 仍然精确，跳转还是行级。
+  同一段落里给另一行加书签 = 把这一段已有的那条挪过去，不新增。
+- 跳转：`ReaderEvent.OnScrollToPosition(nodeId, nodeIntraOffset)` ——
+  这个事件**存在**（`ReaderEvent.kt:52`，fork 新增），由 `ReaderContent.kt:181` 的书签面板调用，
+  走现有的 `ScrollTarget` 机制。
+- UI：`ReaderTopBar` 的书签按钮是**三态**，由 `BookmarkButtonState` 决定：
+  `NONE`（加书签）/ `HERE`（取消这个书签）/ `ELSEWHERE`（这一段已有书签但在别的行 → 移动到这里）。
+  列表在 `ReaderBookmarksBottomSheet`（底部面板，不是侧边抽屉）。
+- 复用 `ReaderLayoutContinuous.kt` 的段落定位思路，没有另写一套。
 
 工作量：实体 + DAO + Repository（复用现有 Hilt 模块）+ Sheet UI ≈ 1 天。
 

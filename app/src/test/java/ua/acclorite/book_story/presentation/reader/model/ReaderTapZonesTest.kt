@@ -68,4 +68,45 @@ class ReaderTapZonesTest {
         assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.SIDES, 0f, 0.5f))
         assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.SIDES, 1f, 0.5f))
     }
+
+    @Test
+    fun `normal direction maps next to +1 and previous to -1`() {
+        assertEquals(1, pageDeltaFor(ReaderTapAction.NEXT, reversed = false))
+        assertEquals(-1, pageDeltaFor(ReaderTapAction.PREVIOUS, reversed = false))
+        // 右按右侧三分之一应是下一页（页码 +1）
+        val right = action(ReaderTapZones.SIDES, 0.9f, 0.5f)
+        assertEquals(1, pageDeltaFor(right, reversed = false))
+    }
+
+    @Test
+    fun `reversed direction flips the delta, not the zone`() {
+        // RIGHT_TO_LEFT：页码向左递增，所以左边那三分之一才是「下一页」
+        assertEquals(-1, pageDeltaFor(ReaderTapAction.NEXT, reversed = true))
+        assertEquals(1, pageDeltaFor(ReaderTapAction.PREVIOUS, reversed = true))
+
+        // 分区本身不变：左边仍然是 PREVIOUS（位置性），只是它对应的页码增量是 +1
+        assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.SIDES, 0.1f, 0.5f))
+        assertEquals(1, pageDeltaFor(action(ReaderTapZones.SIDES, 0.1f, 0.5f), reversed = true))
+        assertEquals(-1, pageDeltaFor(action(ReaderTapZones.SIDES, 0.9f, 0.5f), reversed = true))
+    }
+
+    @Test
+    fun `menu and none never move the page`() {
+        listOf(true, false).forEach { reversed ->
+            assertEquals(0, pageDeltaFor(ReaderTapAction.MENU, reversed = reversed))
+            assertEquals(0, pageDeltaFor(ReaderTapAction.NONE, reversed = reversed))
+        }
+    }
+
+    @Test
+    fun `vertical directions respect the same reversed flag`() {
+        // BOTTOM_TO_TOP（vertical + reversed）：下方那个三分之一的 PREVIOUS 应得到 +1
+        val bottom = action(ReaderTapZones.TOP_BOTTOM, 0.5f, 0.9f)
+        assertEquals(ReaderTapAction.PREVIOUS, bottom)
+        assertEquals(1, pageDeltaFor(bottom, reversed = true))
+        // TOP_TO_BOTTOM（vertical，未反转）：中间三分之一的 NEXT 就是页码 +1
+        val middle = action(ReaderTapZones.TOP_BOTTOM, 0.5f, 0.5f)
+        assertEquals(ReaderTapAction.NEXT, middle)
+        assertEquals(1, pageDeltaFor(middle, reversed = false))
+    }
 }

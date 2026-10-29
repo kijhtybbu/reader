@@ -123,6 +123,8 @@ fun ReaderTopBar(
                     maxLines = 1
                 )
             },
+            // fork: rebase-critical — subtitle 是 material3 的 experimental slot，升版可能改名/改形状；
+            // 不要为了「先让 build 过」把章节名降级成一行的 title。详见 REBASE.md 第 3 节
             subtitle = {
                 StyledText(
                     text = currentChapterString

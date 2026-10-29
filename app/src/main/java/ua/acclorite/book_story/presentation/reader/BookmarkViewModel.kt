@@ -47,6 +47,12 @@ class BookmarkViewModel @Inject constructor(
     fun load(bookId: Int) {
         if (currentBookId == bookId) return
         currentBookId = bookId
+        // fork: 切书时同步清空，不等异步读库。
+        // BookmarkViewModel 是 Activity 作用域（ReaderContent 里 hiltViewModel()），
+        // 打开 B 书时会先重组一次，此时 _bookmarks 里还是 A 书的列表 ——
+        // 顶栅的书签图标会显示成 A 书的状态，书签面板里列出 A 书的条目且跳转/删除可用。
+        // 旧书那次尚未完成的刷新由 reload() 里的 currentBookId 校验拦住，不会把它写回来。
+        _bookmarks.value = emptyList()
         refresh()
     }
 
@@ -114,7 +120,12 @@ class BookmarkViewModel @Inject constructor(
     // fork: 刷新失败时保留上一份列表，不要清空 —— 一次读库失败不该让书签面板凭空变空
     private suspend fun reload(bookId: Int) {
         bookmarkRepository.getBookmarks(bookId).fold(
-            onSuccess = { _bookmarks.value = it },
+            onSuccess = {
+                // fork: 切书后旧书的读结果不能落地。load() 已经同步清空过列表，
+                // 此时再写入就是「A 书的书签出现在 B 书里」，且会一直留到 B 书读库完成。
+                // 比对在锁内进行：load() 改 currentBookId 后本协程才会拿到锁，所以不会漏判。
+                if (bookId == currentBookId) _bookmarks.value = it
+            },
             onFailure = {
                 logW(TAG, "Could not reload bookmarks of [$bookId] with error: ${it.message}")
             }

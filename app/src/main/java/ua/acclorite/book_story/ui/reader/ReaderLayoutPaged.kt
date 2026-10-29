@@ -76,6 +76,7 @@ import ua.acclorite.book_story.presentation.reader.model.ReaderPagedAnimation
 import ua.acclorite.book_story.presentation.reader.model.pagerPageTransform
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
 import ua.acclorite.book_story.presentation.reader.model.ReaderTapAction
+import ua.acclorite.book_story.presentation.reader.model.pageDeltaFor
 import ua.acclorite.book_story.presentation.reader.model.ReaderTapZones
 import ua.acclorite.book_story.presentation.reader.model.tapActionFor
 import ua.acclorite.book_story.ui.common.components.common.SelectionContainer
@@ -148,6 +149,10 @@ fun ReaderLayoutPaged(
     val activity = LocalActivity.current
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
+    // fork: pager 的实际反向状态（下面 Vertical/HorizontalPager 的 reverseLayout）。
+    // 点击分区要拿同一个值去算页码增量 —— 反向布局下页码向左递增，
+    // 不翻转 delta 就会出现「点左边翻到上一页」（见 pageDeltaFor）。
+    val reversed = direction.reversed xor (!direction.vertical && layoutDirection == LayoutDirection.Rtl)
     val fontFamilyResolver = LocalFontFamilyResolver.current
     var pageNodes by remember(book.uuid) { mutableStateOf(emptyList<Node>()) }
     var windowInput by remember(book.uuid) {
@@ -371,11 +376,6 @@ fun ReaderLayoutPaged(
                         } else {
                             // fork: 翻页动画。约定见 ReaderPagedAnimation.kt：
                             // offsetDistance = page - currentPage - currentPageOffsetFraction（正数在前方）
-                            val reversed = if (direction.vertical) {
-                                direction.reversed
-                            } else {
-                                direction.reversed xor (layoutDirection == LayoutDirection.Rtl)
-                            }
                             val offsetDistance = index - pagerState.currentPage -
                                 pagerState.currentPageOffsetFraction
                             key(page) {
@@ -456,7 +456,9 @@ fun ReaderLayoutPaged(
                                             ReaderTapAction.NEXT, ReaderTapAction.PREVIOUS -> {
                                                 // 连点两次时，第二次从「已排队的目标」继续，
                                                 // 而不是从 currentPage 重新算（否则两次点击只翻一页）
-                                                val delta = if (action == ReaderTapAction.NEXT) 1 else -1
+                                                // fork: 分区 → 语义动作（tapActionFor）→ 页码增量（pageDeltaFor）。
+                                                // 反向阅读方向下翻转的是 delta，不是分区。
+                                                val delta = pageDeltaFor(action, reversed = reversed)
                                                 // 目标距当前页超过 1 页说明上一次连点被用户滚动打断了，丢弃
                                                 val from = pendingTapTarget
                                                     ?.takeIf { kotlin.math.abs(it - pagerState.currentPage) <= 1 }
@@ -482,7 +484,7 @@ fun ReaderLayoutPaged(
                         VerticalPager(
                             state = pagerState,
                             modifier = pagerModifier,
-                            reverseLayout = direction.reversed,
+                            reverseLayout = reversed,
                             horizontalAlignment = Alignment.Start,
                             userScrollEnabled = scrollEnabled,
                             pageContent = pageContent
@@ -491,7 +493,7 @@ fun ReaderLayoutPaged(
                         HorizontalPager(
                             state = pagerState,
                             modifier = pagerModifier,
-                            reverseLayout = direction.reversed xor (layoutDirection == LayoutDirection.Rtl),
+                            reverseLayout = reversed,
                             verticalAlignment = Alignment.Top,
                             userScrollEnabled = scrollEnabled,
                             pageContent = pageContent
