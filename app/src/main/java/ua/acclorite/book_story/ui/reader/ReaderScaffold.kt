@@ -293,7 +293,7 @@ fun ReaderScaffold(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = contentPadding.calculateTopPadding() + Spacing.l),
+                .padding(top = contentPadding.calculateTopPadding() + verticalPadding + Spacing.s),
             contentAlignment = Alignment.TopCenter
         ) {
             ReaderChapterHint(chapterTitle = currentChapterString)

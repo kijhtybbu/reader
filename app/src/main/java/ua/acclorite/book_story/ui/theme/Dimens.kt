@@ -67,4 +67,6 @@ object Dimens {
     val topBarHeight = 64.dp
     /** 封面宽高比，与 LibraryGridItem.kt:82 的 aspectRatio(1f / 1.5f) 一致 */
     val coverAspect = 1f / 1.5f
+    /** 顶部浮层（章节提示）的最大宽度，避免长章名横贯整屏 */
+    val hintMaxWidth = 280.dp
 }

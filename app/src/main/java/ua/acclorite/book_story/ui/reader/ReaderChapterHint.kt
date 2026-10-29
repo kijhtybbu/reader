@@ -18,13 +18,16 @@ package ua.acclorite.book_story.ui.reader
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import ua.acclorite.book_story.ui.theme.Dimens
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +49,31 @@ import ua.acclorite.book_story.ui.theme.Spacing
 /** 提示停留时长；跨章本身还有一次重新分页，太短会看不见 */
 private const val HintDurationMillis = 1500L
 
+/** 提示的完整状态。抽出来是为了能测「arm/disarm」与「标题变 null 时收起」两条真实路径 */
+internal data class ChapterHintState(val lastShown: String?, val visible: Boolean) {
+    companion object {
+        val Initial = ChapterHintState(lastShown = null, visible = false)
+    }
+}
+
+/**
+ * 状态转移。
+ *
+ * 三条规则：
+ *  - 标题变 null（章节表尚未加载完 / 章名被清洗成空串）→ 收起。否则胶囊会永远挂在屏幕上，
+ *    因为那次 LaunchedEffect 的 delay 已被取消，没有别人会把它关掉。
+ *  - 章名与上次相同 → 原样返回（不要打断正在进行的 1.5s 显示）
+ *  - 章名变化 → 记录并显示；首次（lastShown 为 null）只记录不显示
+ */
+internal fun chapterHintTransition(state: ChapterHintState, title: String?): ChapterHintState {
+    if (title == null) return state.copy(visible = false)
+    if (title == state.lastShown) return state
+    return ChapterHintState(
+        lastShown = title,
+        visible = shouldShowChapterHint(state.lastShown, title)
+    )
+}
+
 /**
  * 是否应该弹提示。
  *
@@ -65,21 +93,19 @@ fun ReaderChapterHint(
     chapterTitle: String?,
     modifier: Modifier = Modifier
 ) {
-    var visible by remember { mutableStateOf(false) }
-    var lastShown by remember { mutableStateOf<String?>(null) }
+    var state by remember { mutableStateOf(ChapterHintState.Initial) }
 
     LaunchedEffect(chapterTitle) {
-        val title = chapterTitle ?: return@LaunchedEffect
-        if (!shouldShowChapterHint(lastShown, title)) {
-            // 首次进入只记录不弹；章名没变也不弹
-            lastShown = title
-            return@LaunchedEffect
+        val previous = state
+        val next = chapterHintTransition(previous, chapterTitle)
+        state = next
+        // 只在「由不显示变为显示」时挂计时器，避免重复进入时打断计时
+        if (next.visible && !previous.visible) {
+            delay(HintDurationMillis)
+            state = state.copy(visible = false)
         }
-        lastShown = title
-        visible = true
-        delay(HintDurationMillis)
-        visible = false
     }
+    val visible = state.visible
 
     AnimatedVisibility(
         visible = visible,
@@ -87,10 +113,13 @@ fun ReaderChapterHint(
         enter = fadeIn(Motion.short()),
         exit = fadeOut(Motion.medium())
     ) {
-        Surface(
-            shape = RoundedCornerShape(Radius.pill),
-            color = LocalReaderPalette.current.bar,
-            contentColor = LocalReaderPalette.current.onBar
+        // 注意：不能用 M3 Surface —— 它会安装一个空的 pointerInput 节点，
+        // 胶囊显示的 1.5s 内会吞掉落在这一条的点击（顶部中央正好是「呼出菜单」区）。
+        // Box + clip + background 没有输入节点，点击会穿透到 Pager。
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(Radius.pill))
+                .background(LocalReaderPalette.current.bar)
         ) {
             Row(
                 modifier = Modifier.padding(
@@ -101,12 +130,12 @@ fun ReaderChapterHint(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 StyledText(
-                    text = chapterTitle.orEmpty(),
+                    text = state.lastShown.orEmpty(),
                     style = MaterialTheme.typography.labelLarge.copy(
                         color = LocalReaderPalette.current.onBar,
                         textAlign = TextAlign.Center
                     ),
-                    modifier = Modifier.widthIn(max = 280.dp),
+                    modifier = Modifier.widthIn(max = Dimens.hintMaxWidth),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

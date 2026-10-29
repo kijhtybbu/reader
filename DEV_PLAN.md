@@ -267,6 +267,15 @@ Pager 把页面画在 offsetDistance * pageSize 处（reverseLayout 时取反）
 **保留：章节切换提示。** 跨章时在顶部短暂显示章名（约 1.5s 后淡出），
 因为跨章翻页时正文会重新分页并淡出，用户容易不知道「已经换章了」。
 
+语义说明：提示跟随的是「当前章名变化」，因此**目录跳转、进度条拖动、书签/断点恢复**也会触发。
+这是刻意的——那些操作同样会让用户失去位置感。若将来只想在「跨边界」时提示，需要在事件源上区分。
+
+实现要点（Round 1 评审后修正）：
+- 不能用 M3 `Surface` 做胶囊：它会装一个空的 `pointerInput` 节点，显示期间吞掉落在顶部中央的点击
+  （而那里正是「呼出菜单」区）。改用 `Box + clip + background`。
+- 章名变 `null` 时必须主动收起胶囊：那次 `LaunchedEffect` 的 `delay` 已被取消，
+  没有别人会关它，会永远挂在屏幕上。
+
 ## 6. Phase 4 · 书架与收尾（Day 8）
 
 - `ui/library/LibraryGridItem.kt`：加阅读进度环（现在 `libraryShowProgress` 是文字/条状，具体实现需确认）、封面圆角与阴影走 token
@@ -298,7 +307,7 @@ data class BookmarkEntity(
 )
 ```
 - 唯一索引放在 `(bookId, nodeId, nodeIntraOffset)`，天然去重（同一行重复加书签不会产生两条）
-- 跳转：`ReaderPagePosition(nodeId, offset)` → 现有 `scrollTarget` 机制已有（`ReaderLayoutPaged.kt` 的 `OnScrollToPosition`），直接复用
+- 跳转：`ReaderPagePosition(nodeId, offset)` → 现有 `scrollTarget` 机制已有（`ScrollTarget` + `ReaderPagePosition`（`ReaderEvent` 里没有 `OnScrollToPosition`，别去找）），直接复用
 - UI：`ReaderTopBar` 加书签按钮（已加/未加两态）+ 侧边 `BookmarkSheet` 列表（仿 `ReaderChaptersDrawer`）
 - 复用 `ReaderLayoutContinuous.kt` 里已有的段落定位逻辑，避免新写一套
 
@@ -314,7 +323,7 @@ data class BookmarkEntity(
 | Phase 1 设计 token | 2 | `Motion` / `Typography` / `Dimens`（`ReaderPalette` 推迟到 Phase 2） |
 | Phase 2 排版面板 | 2 | 排版/更多/颜色 三 Tab + 高频区 + 预设 + 面板内样例预览（内置中文字体推迟，见 §4.4） |
 | Phase 2.5 用户导入字体 | 1.5 | 见附录 A |
-| Phase 3 手势动效 | 2 | 4 种翻页动效、分区可配、双指亮度、章节提示 |
+| Phase 3 手势动效 | 2 | 翻页动效（平移/淡入淡出）、点击分区、章节提示（双指亮度与音量键翻页已裁掉，见 §5.3） |
 | Phase 4 书架 + 书签 | 1 | 书签完整功能、书架视觉、回归 |
 | **合计** | **10.5** | |
 
