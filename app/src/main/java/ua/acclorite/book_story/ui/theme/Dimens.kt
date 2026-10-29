@@ -26,10 +26,12 @@ object Spacing {
     val s = 8.dp
     val m = 12.dp
     val l = 16.dp
+    /** 本仓库事实上的标准内边距：设置行、阅读页侧边留白都是 18dp（见下方 pageInset） */
+    val page = 18.dp
     val xl = 24.dp
     val xxl = 32.dp
     /** 阅读页左右留白基准（对应 sidePadding 设置默认 6 × 3dp） */
-    val pageInset = 18.dp
+    val pageInset = page
 }
 
 /** 圆角阶梯 */
@@ -46,10 +48,11 @@ object Radius {
 
 /** 固定尺寸 */
 object Dimens {
-    val topBarHeight = 56.dp
+    /** M3 TopAppBar 单行容器高，不是 56dp（仓库里所有顶栅都是 M3 组件） */
+    val topBarHeight = 64.dp
     val iconButton = 40.dp
     /** 最小可点击区域，无障碍下限 */
     val touchTarget = 48.dp
-    val listRow = 64.dp
-    val coverAspect = 0.68f
+    /** 封面宽高比，与 LibraryGridItem.kt:82 的 aspectRatio(1f / 1.5f) 一致 */
+    val coverAspect = 1f / 1.5f
 }

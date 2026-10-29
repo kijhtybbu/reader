@@ -56,9 +56,11 @@ fun BookStoryTheme(
 
     MaterialTheme(
         colorScheme = animatedColorScheme,
-        // fork: 必须 remember。BookStoryTheme 在配色动画期间每帧都会重组（animateColorScheme），
-        // 而 MaterialTheme 是按引用比较 CompositionLocal 的 —— 每帧新建 Typography/Shapes 会让
-        // 整棵文本子树每帧全量重组。上游的 `Shapes()` 也有同样问题，一并修。
+        // fork: 意在**降低分配**，不是为了减少重组。
+        // 配色动画期间（animateColorScheme 逐帧插值全部 slot）BookStoryTheme 本来就会每帧重执行，
+        // 且文本子树会因 LocalContentColor 变化而重组 —— 这一点 remember 改不了。
+        // 真正省下的只是每帧两次 Shapes/Typography 实例分配（上游 inline 的 Shapes() 同样有这问题）。
+        // 无 key：目前只依赖常量；若将来依赖设置项，必须补 key。
         shapes = remember { Shapes() },
         typography = remember { appTypography() },
         content = content

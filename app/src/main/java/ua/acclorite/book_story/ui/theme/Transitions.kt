@@ -7,7 +7,6 @@
 package ua.acclorite.book_story.ui.theme
 
 import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically

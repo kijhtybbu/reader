@@ -106,6 +106,10 @@ easingStandard / easingEmphasized
 把现有散落的 `tween(300)` 全部替换（`ui/theme/Animations.kt`、`ReaderSettingsBottomSheet.kt:67-76`、`ReaderLayoutPaged.kt` 的 `animateFloatAsState`）。
 
 `ui/theme/ReaderPalette.kt`（阅读主题与应用主题解耦）
+
+> **已推迟到 Phase 2。** 它在 Phase 1 没有消费者，先落地就是死抽象；
+> 等到重做排版面板、真正需要「阅读配色不污染 App 主题」时再引入，
+> 才能把 `ReaderScreen.kt:196-212` 的 `BlendMode` 着色链路一并删掉。
 现状：阅读背景/文字色来自 `colorPreset` + `colorEffects`（`ColorMatrix` 饱和度 / `BlendMode.Color` 着色），链路绕。改为：
 ```
 ReaderPalette(bg, text, accent, contrastLevel)   // 阅读区专用
@@ -240,7 +244,7 @@ data class BookmarkEntity(
 | 阶段 | 天 | 产出 |
 | --- | --- | --- |
 | Phase 0 基座 + 实测 | 1 | 可运行 fork、五项实测结论、中文补齐 |
-| Phase 1 设计 token | 2 | `Dimens` / `Typography` / `Motion` / `ReaderPalette` |
+| Phase 1 设计 token | 2 | `Motion` / `Typography` / `Dimens`（`ReaderPalette` 推迟到 Phase 2） |
 | Phase 2 排版面板 | 2 | 2 Tab 面板 + 高频区 + 内置中文字体 |
 | Phase 2.5 用户导入字体 | 1.5 | 见附录 A |
 | Phase 3 手势动效 | 2 | 4 种翻页动效、分区可配、双指亮度、章节提示 |
