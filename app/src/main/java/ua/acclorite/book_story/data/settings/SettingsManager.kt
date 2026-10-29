@@ -130,6 +130,7 @@ class SettingsManager @Inject constructor(
     val pagedAnimation = setting<ReaderPagedAnimation, String>(
         key = stringPreferencesKey("paged_animation"), default = ReaderPagedAnimation.SLIDE,
         serialize = { it.name },
+        // 旧版本若存过已删除的 COVER，会回落到 SLIDE
         deserialize = { name -> ReaderPagedAnimation.entries.find { it.name == name } ?: ReaderPagedAnimation.SLIDE }
     )
     val tapZones = setting<ReaderTapZones, String>(

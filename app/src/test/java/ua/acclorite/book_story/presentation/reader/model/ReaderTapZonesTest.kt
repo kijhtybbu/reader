@@ -41,6 +41,15 @@ class ReaderTapZonesTest {
     }
 
     @Test
+    fun `top bottom layout ignores the horizontal position`() {
+        listOf(0.05f, 0.5f, 0.95f).forEach { x ->
+            assertEquals(ReaderTapAction.MENU, action(ReaderTapZones.TOP_BOTTOM, x, 0.1f))
+            assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.TOP_BOTTOM, x, 0.5f))
+            assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.TOP_BOTTOM, x, 0.9f))
+        }
+    }
+
+    @Test
     fun `centre only responds inside the middle ninth`() {
         assertEquals(ReaderTapAction.MENU, action(ReaderTapZones.CENTER_ONLY, 0.5f, 0.5f))
         // 横向中间但纵向靠边 → 不响应

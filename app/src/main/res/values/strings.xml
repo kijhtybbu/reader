@@ -533,7 +533,6 @@
 
     <string name="paged_animation_option">Page turn animation</string>
     <string name="paged_animation_slide">Slide</string>
-    <string name="paged_animation_cover">Cover</string>
     <string name="paged_animation_fade">Fade</string>
     <string name="tap_zones_option">Tap zones</string>
     <string name="tap_zones_sides">Left / centre / right</string>

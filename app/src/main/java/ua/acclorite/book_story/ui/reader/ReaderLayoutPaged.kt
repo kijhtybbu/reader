@@ -203,6 +203,7 @@ fun ReaderLayoutPaged(
                 // fork: 点击分区。挂在内容区而不是外层 Column，这样坐标就是正文区坐标，
                 // 也不会和上下栏的留白混在一起。只处理「点」，拖拽由 Pager 自己消费。
                 val tapScope = rememberCoroutineScope()
+                var pendingTapTarget by remember { mutableStateOf<Int?>(null) }
                 val width = (constraints.maxWidth - with(density) { sidePadding.roundToPx() * 2 })
                     .coerceAtLeast(0)
                 val height = constraints.maxHeight
@@ -321,6 +322,7 @@ fun ReaderLayoutPaged(
                     snapshotFlow { pagerState.settledPage to reflowing }
                         .distinctUntilChanged()
                         .collect { (index, loading) ->
+                            pendingTapTarget = null
                             if (loading || !windowReady || scrollTarget != null || nodes.isEmpty()) return@collect
                             if (pages.isEmpty()) {
                                 if (!paginating && !reachedLast) {
@@ -367,18 +369,29 @@ fun ReaderLayoutPaged(
                         if (page == null) {
                             Box(Modifier.fillMaxSize())
                         } else {
-                            // fork: 翻页动画。offset 为 -1..1 的页间进度（Pager 自己会把页面平移
-                            // offset*宽，所以这里要「抵消」才能得到覆盖/淡入的观感）。
-                            val pageOffset = (index - pagerState.currentPage) + pagerState.currentPageOffsetFraction
+                            // fork: 翻页动画。约定见 ReaderPagedAnimation.kt：
+                            // offsetDistance = page - currentPage - currentPageOffsetFraction（正数在前方）
+                            val offsetDistance = index - pagerState.currentPage -
+                                pagerState.currentPageOffsetFraction
+                            val reversed = if (direction.vertical) {
+                                direction.reversed
+                            } else {
+                                direction.reversed xor (layoutDirection == LayoutDirection.Rtl)
+                            }
                             key(page) {
                                 Box(
                                     Modifier.graphicsLayer {
                                         val transform = pagerPageTransform(
                                             animation = animation,
-                                            offset = pageOffset,
-                                            pageWidth = size.width
+                                            offsetDistance = offsetDistance,
+                                            pageSize = if (direction.vertical) size.height else size.width,
+                                            reversed = reversed
                                         )
-                                        translationX = transform.translationX
+                                        if (direction.vertical) {
+                                            translationY = transform.translation
+                                        } else {
+                                            translationX = transform.translation
+                                        }
                                         alpha = transform.alpha
                                     }
                                 ) {
@@ -389,11 +402,7 @@ fun ReaderLayoutPaged(
                                     imagesCornersRoundness = imagesCornersRoundness,
                                     imagesAlignment = imagesAlignment,
                                     imagesColorEffects = imagesColorEffects,
-                                    toolbarHidden = toolbarHidden,
-                                    doubleClickTranslation = doubleClickTranslation,
-                                    showMenu = showMenu,
-                                    menuVisibility = menuVisibility,
-                                    openTranslator = openTranslator
+                                    toolbarHidden = toolbarHidden
                                 )
                                 }
                             }
@@ -405,7 +414,32 @@ fun ReaderLayoutPaged(
                         .then(
                             if (toolbarHidden) {
                                 Modifier.pointerInput(tapZones, showMenu) {
-                                    detectTapGestures { offset ->
+                                    detectTapGestures(
+                                        onDoubleTap = { offset ->
+                                            // fork: 双击翻译原来挂在段落自己的 combinedClickable 上，
+                                            // 那是个「第二套点击检测器」，会把单击吞掉，导致正文上的
+                                            // 分区点击失效。现在统一在这里处理。
+                                            if (doubleClickTranslation) {
+                                                val page = pages.getOrNull(
+                                                    pagerState.currentPage - leadingPages
+                                                )
+                                                val node = page?.let { readerNodeAtY(it, offset.y) }
+                                                if (node is ReaderNode.Paragraph) {
+                                                    openTranslator(
+                                                        ReaderEvent.OnOpenTranslator(
+                                                            textToTranslate = node.text.text,
+                                                            translateWholeParagraph = true
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    ) { offset ->
+                                        // 菜单开着时，点任意位置先收起菜单（与 ReaderLayoutContinuous 一致）
+                                        if (showMenu) {
+                                            menuVisibility(ReaderEvent.OnMenuVisibility(false, true))
+                                            return@detectTapGestures
+                                        }
                                         val action = tapActionFor(
                                             zones = tapZones,
                                             x = (offset.x / size.width).coerceIn(0f, 1f),
@@ -416,12 +450,15 @@ fun ReaderLayoutPaged(
                                                 menuVisibility(ReaderEvent.OnMenuVisibility(!showMenu, true))
                                             ReaderTapAction.NONE -> Unit
                                             ReaderTapAction.NEXT, ReaderTapAction.PREVIOUS -> {
-                                                val target = pagerState.currentPage +
-                                                    if (action == ReaderTapAction.NEXT) 1 else -1
-                                                if (target in 0 until pagerState.pageCount) {
-                                                    tapScope.launch {
-                                                        pagerState.animateScrollToPage(target)
-                                                    }
+                                                // 连点两次时，第二次从「已排队的目标」继续，
+                                                // 而不是从 currentPage 重新算（否则两次点击只翻一页）
+                                                val delta = if (action == ReaderTapAction.NEXT) 1 else -1
+                                                val from = pendingTapTarget ?: pagerState.currentPage
+                                                val target = (from + delta)
+                                                    .coerceIn(0, (pagerState.pageCount - 1).coerceAtLeast(0))
+                                                pendingTapTarget = target
+                                                tapScope.launch {
+                                                    pagerState.animateScrollToPage(target)
                                                 }
                                             }
                                         }
@@ -475,11 +512,7 @@ private fun ReaderPagedPage(
     imagesCornersRoundness: Dp,
     imagesAlignment: HorizontalAlignment,
     imagesColorEffects: ColorFilter?,
-    toolbarHidden: Boolean,
-    doubleClickTranslation: Boolean,
-    showMenu: Boolean,
-    menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit,
-    openTranslator: (ReaderEvent.OnOpenTranslator) -> Unit
+    toolbarHidden: Boolean
 ) {
     val density = LocalDensity.current
     Column(
@@ -497,20 +530,11 @@ private fun ReaderPagedPage(
                 item.text != null -> StyledText(
                     text = item.text,
                     style = requireNotNull(item.style).copy(color = fontColor),
+                    // fork: 去掉逐项点击检测器（见 ReaderLayoutContentParagraph 的说明），
+                    // 单击与双击统一交给 Pager 上那一个检测器
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(height)
-                        .then(
-                            if (doubleClickTranslation && toolbarHidden && item.node is ReaderNode.Paragraph) {
-                                Modifier.noRippleClickable(
-                                    onDoubleClick = {
-                                        val original = item.node.node.content as NodeContent.Paragraph
-                                        openTranslator(ReaderEvent.OnOpenTranslator(original.text, true))
-                                    },
-                                    onClick = { menuVisibility(ReaderEvent.OnMenuVisibility(!showMenu, true)) }
-                                )
-                            } else Modifier
-                        ),
+                        .height(height),
                     overflow = TextOverflow.Clip
                 )
 

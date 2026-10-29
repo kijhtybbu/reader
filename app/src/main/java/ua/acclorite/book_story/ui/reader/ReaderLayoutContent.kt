@@ -66,13 +66,8 @@ fun ReaderLayoutContent(
             ReaderLayoutContentParagraph(
                 paragraph = readerNode,
                 paragraphTextStyle = paragraphTextStyle,
-                showMenu = showMenu,
                 horizontalAlignment = horizontalAlignment,
-                sidePadding = sidePadding,
-                doubleClickTranslation = doubleClickTranslation,
-                toolbarHidden = toolbarHidden,
-                openTranslator = openTranslator,
-                menuVisibility = menuVisibility
+                sidePadding = sidePadding
             )
         }
 
@@ -104,13 +99,8 @@ fun ReaderLayoutContent(
                             }
                         ),
                         paragraphTextStyle = paragraphTextStyle,
-                        showMenu = showMenu,
                         horizontalAlignment = horizontalAlignment,
-                        sidePadding = sidePadding,
-                        doubleClickTranslation = doubleClickTranslation,
-                        toolbarHidden = toolbarHidden,
-                        openTranslator = openTranslator,
-                        menuVisibility = menuVisibility
+                        sidePadding = sidePadding
                     )
                 }
             }

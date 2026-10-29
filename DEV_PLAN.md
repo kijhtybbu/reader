@@ -213,18 +213,32 @@ res/font/ + ReaderData.kt                       内置中文字体 —— 推迟
 
 ## 5. Phase 3 · 手势与翻页动效（Day 6–7）
 
-### 5.1 翻页动效
+### 5.1 翻页动效（已实现，含一处删减）
 
-现状：`ReaderLayoutPaged.kt` 用 `HorizontalPager` 默认滑动，无转场选项。新增 `pagedAnimation` 设置项：
+现状：`ReaderLayoutPaged.kt` 用 `HorizontalPager` 默认滑动，无转场选项。新增 `pagedAnimation` 设置：
 
 | 模式 | 实现 |
 | --- | --- |
-| 滑动（默认） | 保持 `HorizontalPager` |
-| 覆盖 | `graphicsLayer { translationX = offset * width * 0.25f }` + 阴影，下一页盖住当前页 |
-| 淡入淡出 | `graphicsLayer { alpha = 1 - |offset| }` |
-| 无动画 | `pagerState.scrollToPage` 瞬时切换 |
+| 平移（默认） | 保持 Pager 默认行为，不做任何额外变换 |
+| 淡入淡出 | 两页都抵消 Pager 位移，再按 `1 - |offsetDistance|` 交叉淡变 |
 
-都通过 `Modifier.graphicsLayer` 挂在 pager 页上，**不改动分页与跨章逻辑**。
+**删减：不做「覆盖」。** 覆盖要求「离场页静止、新页滑入盖住它」，而 Pager 的 `currentPage`
+在拖动过中点时就翻转，单凭 `(index, currentPage, offsetFraction)` 无法可靠判断「这次手势从哪页开始」。
+试写版本在翻转点会跳半页或在两页间露出背景色——都是肉眼可见的破绽。想要「页面替换」观感，
+FADE 已能提供且数学无歧义。**也不做「无动画」**：跟手拖拽本身就是动画，二者互斥。
+
+关键约定（写错不会崩，只会「看着不对」，所以必须钉死）：
+
+```
+offsetDistance = page - currentPage - currentPageOffsetFraction   // Compose 源码定义，正数在前方
+Pager 把页面画在 offsetDistance * pageSize 处（reverseLayout 时取反）
+⇒ 抵消位移 = -offsetDistance * pageSize * (reverseLayout ? -1 : 1)
+```
+
+第一版把 `offsetFraction` 的符号写成了 `+`，Round 1 评审据 Compose 源码指出并判定 blocker。
+现在由 `PagerPageTransformTest` 钉住：核心不变量是 `offsetDistance * pageSize + translation == 0`
+（否则两页会分离），另有 reverseLayout 反号、alpha 夹取、纵向轴长取 `size.height`。
+纵向 pager（TOP_TO_BOTTOM / BOTTOM_TO_TOP）与反向布局都必须覆盖，否则只有四分之一的方向是对的。
 
 ### 5.2 点击分区可配
 
@@ -233,7 +247,13 @@ res/font/ + ReaderData.kt                       内置中文字体 —— 推迟
 - 上下中（上/中/下：菜单 / 下一页 / 上一页）
 - 仅中间（其余区域不响应）
 
-实现要点：用单个 `pointerInput` + `awaitEachGesture` 判 `touchSlop`，**不要**拆成 tap 和 drag 两个 detector（会互相吃事件）。现有 `noRippleClickable` 换成统一手势 Modifier。
+实现要点（已按此落地）：**只能有一个点击检测器**。原来段落自己挂的 `combinedClickable`
+（单击切菜单 + 双击翻译）等于第二套检测器，会把单击吞掉，导致「点右三分之一翻页」在文字区域失效。
+现在单击/双击统一挂在 Pager 的 modifier 上：单击走 `tapActionFor`，双击用 `readerNodeAtY`
+把 y 坐标换算成段落再翻译。
+
+菜单开着时点击先收起菜单（与 `ReaderLayoutContinuous` 一致），否则会出现「点左三分之一既翻页又关不掉菜单」。
+连点用 `pendingTapTarget` 累积，避免两次点击只翻一页。
 
 ### 5.3 其它手势
 

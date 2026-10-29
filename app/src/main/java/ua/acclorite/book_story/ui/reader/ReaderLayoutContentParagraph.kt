@@ -24,13 +24,8 @@ import ua.acclorite.book_story.ui.reader.model.ReaderNode
 fun ReaderLayoutContentParagraph(
     paragraph: ReaderNode.Paragraph,
     paragraphTextStyle: TextStyle,
-    showMenu: Boolean,
     horizontalAlignment: Alignment.Horizontal,
-    sidePadding: Dp,
-    doubleClickTranslation: Boolean,
-    toolbarHidden: Boolean,
-    openTranslator: (ReaderEvent.OnOpenTranslator) -> Unit,
-    menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit
+    sidePadding: Dp
 ) {
     Column(
         modifier = Modifier
@@ -41,28 +36,9 @@ fun ReaderLayoutContentParagraph(
     ) {
         StyledText(
             text = paragraph.text,
-            modifier = Modifier.then(
-                if (doubleClickTranslation && toolbarHidden) {
-                    Modifier.noRippleClickable(
-                        onDoubleClick = {
-                            openTranslator(
-                                ReaderEvent.OnOpenTranslator(
-                                    textToTranslate = paragraph.text.text,
-                                    translateWholeParagraph = true
-                                )
-                            )
-                        },
-                        onClick = {
-                            menuVisibility(
-                                ReaderEvent.OnMenuVisibility(
-                                    show = !showMenu,
-                                    saveCheckpoint = true
-                                )
-                            )
-                        }
-                    )
-                } else Modifier
-            ),
+            // fork: 这里原本挂 combinedClickable（单击切菜单 + 双击翻译），
+            // 那等于在正文上放了第二套点击检测器，会把单击吞掉，让「点右三分之一翻页」
+            // 在文字区域失效。现在单击/双击统一由 ReaderLayoutPaged 的单个检测器处理。
             style = paragraphTextStyle
         )
     }
