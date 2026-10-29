@@ -241,7 +241,10 @@ class BookRepositoryImpl @Inject constructor(
                         ).onFailure {
                             logE("BookRepository", "Could not cache nodes: ${it.javaClass.simpleName}: ${it.message}")
                         }.getOrNull()
-                    }
+                    },
+                    // fork: TXT 编码由书自己决定（手动覆盖优先，其次上次探测的结果）。
+                    // 两者都没有时由解析器探测并通过 ContentParserState.CharsetDetected 报告回来。
+                    charsetName = book.charsetName
                 )
             }.getOrThrow()
         }

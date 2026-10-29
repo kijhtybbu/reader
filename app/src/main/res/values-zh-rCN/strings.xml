@@ -394,4 +394,8 @@
     <string name="remove_bookmark_content_desc">取消收藏</string>
     <string name="move_bookmark_content_desc">将书签移到此行</string>
     <string name="delete_bookmark_content_desc">删除书签</string>
+
+    <string name="txt_encoding_option">文本编码</string>
+    <string name="txt_encoding_auto">自动</string>
+    <string name="txt_encoding_fallback_note">自动识别无法可靠确定本文件的编码，正文可能是乱码。请在上方选择正确的编码。</string>
 </resources>

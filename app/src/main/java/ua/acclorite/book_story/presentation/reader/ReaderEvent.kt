@@ -94,4 +94,12 @@ sealed class ReaderEvent {
     data class OnNavigateToBookInfo(
         val changePath: Boolean
     ) : ReaderEvent()
+
+    /**
+     * fork 新增：手动指定 TXT 编码（null = 自动识别）。
+     * 会落库、作废已缓存内容，并复用重解析路径立即重新解析。
+     */
+    data class OnChangeCharset(
+        val charsetName: String?
+    ) : ReaderEvent()
 }

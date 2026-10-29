@@ -12,6 +12,7 @@ import ua.acclorite.book_story.core.ui.UIText
 import ua.acclorite.book_story.data.storage.room.entity.BookEntity
 import ua.acclorite.book_story.domain.model.book.Book
 import ua.acclorite.book_story.domain.model.book.BookProgress
+import ua.acclorite.book_story.domain.model.book.CharsetConfidence
 import ua.acclorite.book_story.domain.model.book.NodeId
 import javax.inject.Inject
 
@@ -31,6 +32,8 @@ class BookMapperImpl @Inject constructor() : BookMapper {
             description = book.description,
             image = book.coverImage?.toString(),
             categories = book.categories,
+            charsetName = book.charsetName,
+            charsetConfidence = book.charsetConfidence?.name,
             scrollIndex = book.scrollIndex,
             scrollOffset = book.scrollOffset,
             progress = book.oldProgress
@@ -58,6 +61,8 @@ class BookMapperImpl @Inject constructor() : BookMapper {
             lastOpened = null,
             coverImage = bookEntity.image?.toUri(),
             categories = bookEntity.categories,
+            charsetName = bookEntity.charsetName,
+            charsetConfidence = CharsetConfidence.fromPersistedName(bookEntity.charsetConfidence),
             scrollIndex = bookEntity.scrollIndex,
             scrollOffset = bookEntity.scrollOffset,
             oldProgress = bookEntity.progress

@@ -31,6 +31,16 @@ data class Book(
     val lastOpened: Long?,
     val categories: List<Int>,
 
+    /**
+     * fork 新增：TXT 文件的编码（手动覆盖或自动探测的结果），null = 自动。
+     */
+    val charsetName: String? = null,
+    /**
+     * fork 新增：上面那个编码的可信度。为 [CharsetConfidence.FALLBACK] 时
+     * 正文可能是乱码，UI 必须把这一点告诉用户。
+     */
+    val charsetConfidence: CharsetConfidence? = null,
+
     // Obsolete variables, will be deleted
     // at some point
     val scrollIndex: Int = -1,

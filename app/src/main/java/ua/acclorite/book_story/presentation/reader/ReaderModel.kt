@@ -22,9 +22,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import ua.acclorite.book_story.core.log.logE
 import ua.acclorite.book_story.core.log.logW
 import ua.acclorite.book_story.domain.model.book.Node
 import ua.acclorite.book_story.domain.model.book.NodeId
+import ua.acclorite.book_story.domain.use_case.book.ChangeBookCharsetUseCase
 import ua.acclorite.book_story.domain.use_case.book.GetBookContentNodeByOffsetUseCase
 import ua.acclorite.book_story.domain.use_case.book.GetBookContentState
 import ua.acclorite.book_story.domain.use_case.book.GetBookContentUseCase
@@ -68,7 +70,8 @@ class ReaderModel @Inject constructor(
     private val getBookContentUseCase: GetBookContentUseCase,
     private val getBookUseCase: GetBookUseCase,
     private val getHistoryForBookUseCase: GetHistoryForBookUseCase,
-    private val getBookContentNodeByOffsetUseCase: GetBookContentNodeByOffsetUseCase
+    private val getBookContentNodeByOffsetUseCase: GetBookContentNodeByOffsetUseCase,
+    private val changeBookCharsetUseCase: ChangeBookCharsetUseCase
 ) : ViewModel() {
 
     private val mutex = Mutex()
@@ -549,6 +552,29 @@ class ReaderModel @Inject constructor(
 
                 is ReaderEvent.OnNavigateToBookInfo -> {
                     _effects.emit(ReaderEffect.OnNavigateToBookInfo(event.changePath))
+                }
+
+                is ReaderEvent.OnChangeCharset -> {
+                    if (_state.value.book.id == -1) return@launch
+
+                    val updatedBook = withContext(Dispatchers.IO) {
+                        changeBookCharsetUseCase(_state.value.book, event.charsetName)
+                    }.getOrElse {
+                        logE(TAG, "Could not change charset with exception: ${it.message}")
+                        return@launch
+                    }
+
+                    _state.update {
+                        it.copy(book = updatedBook)
+                    }
+
+                    LibraryScreen.refreshListChannel.trySend(0)
+                    HistoryScreen.refreshListChannel.trySend(0)
+
+                    // fork: 复用既有的重解析路径（OnRetry 走的也是 init）。内容已被清空，
+                    // GetBookContentUseCase 会按新编码重新解析并重建节点/章节，
+                    // 不需要为「换编码重解析」再写一条平行流程。
+                    init(updatedBook.id)
                 }
             }
         }.also { eventStack.add(it) }

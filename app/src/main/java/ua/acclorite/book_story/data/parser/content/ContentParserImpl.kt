@@ -35,7 +35,8 @@ class ContentParserImpl @Inject constructor(
     override fun parse(
         cachedFile: CachedFile,
         cacheImage: suspend (filename: String, inputStream: InputStream) -> ImageMetadata?,
-        cacheNodes: suspend (List<NodeContent>) -> FilePath?
+        cacheNodes: suspend (List<NodeContent>) -> FilePath?,
+        charsetName: String?
     ): Flow<ContentParserState> = flow {
         if (!cachedFile.canAccess()) {
             logE(TAG, "File does not exist or no read access is granted.")
@@ -54,7 +55,7 @@ class ContentParserImpl @Inject constructor(
             }
 
             ".txt" -> {
-                emitAll(txtContentParser.parse(cachedFile, cacheImage, cacheNodes))
+                emitAll(txtContentParser.parse(cachedFile, cacheImage, cacheNodes, charsetName))
             }
 
             ".fb2" -> {

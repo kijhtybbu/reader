@@ -28,6 +28,18 @@ data class BookEntity(
     @ColumnInfo(defaultValue = "0") val totalLength: Int,
     val image: String? = null,
     @ColumnInfo(defaultValue = "[]") val categories: List<Int>,
+    /**
+     * fork 新增：TXT 文件的编码（用户手动覆盖或自动探测的结果）。
+     *
+     * null = 未设置/自动（下次解析时重新探测）。没有默认值，是为了让已有的书
+     * 保持「未探测」语义：迁移后旧书会走一次探测，GBK 书因此自愈。
+     */
+    val charsetName: String? = null,
+    /**
+     * fork 新增：编码的可信度（[ua.acclorite.book_story.domain.model.book.CharsetConfidence] 的名字）。
+     * 存字符串而不是序号：以后增加级别不必再迁移一次数据库；读取时按名字还原，未知值退回 FALLBACK。
+     */
+    val charsetConfidence: String? = null,
 
     // Obsolete variables, will be deleted
     // at some point

@@ -41,7 +41,8 @@ class PdfContentParser @Inject constructor(
     override fun parse(
         cachedFile: CachedFile,
         cacheImage: suspend (filename: String, inputStream: InputStream) -> ImageMetadata?,
-        cacheNodes: suspend (List<NodeContent>) -> FilePath?
+        cacheNodes: suspend (List<NodeContent>) -> FilePath?,
+        charsetName: String?
     ): Flow<ContentParserState> = flow {
         try {
             logI(TAG, "Started PDF parsing of [${cachedFile.name}].")

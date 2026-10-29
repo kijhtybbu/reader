@@ -25,6 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
+import ua.acclorite.book_story.domain.model.book.Book
 import ua.acclorite.book_story.presentation.reader.ReaderEvent
 import ua.acclorite.book_story.ui.common.components.common.LazyColumnWithScrollbar
 import ua.acclorite.book_story.ui.common.components.modal_bottom_sheet.ModalBottomSheet
@@ -46,7 +47,9 @@ private var initialPage = 0
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderSettingsBottomSheet(
+    book: Book,
     menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit,
+    changeCharset: (ReaderEvent.OnChangeCharset) -> Unit,
     dismissBottomSheet: (ReaderEvent.OnDismissBottomSheet) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -149,6 +152,14 @@ fun ReaderSettingsBottomSheet(
                         ReadingSpeedSubcategory(
                             titleColor = { MaterialTheme.colorScheme.onSurface }
                         )
+                        // fork: TXT 编码覆盖放在「更多」Tab，紧挨杂项设置。
+                        // ReaderEncodingOption 自己对非 TXT 书返回空内容。
+                        item {
+                            ReaderEncodingOption(
+                                book = book,
+                                changeCharset = changeCharset
+                            )
+                        }
                         MiscSubcategory(
                             titleColor = { MaterialTheme.colorScheme.onSurface },
                             showDivider = false

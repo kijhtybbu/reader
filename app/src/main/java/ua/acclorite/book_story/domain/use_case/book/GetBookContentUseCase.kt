@@ -22,6 +22,7 @@ import ua.acclorite.book_story.core.ui.UIText
 import ua.acclorite.book_story.data.parser.content.ContentParserState
 import ua.acclorite.book_story.domain.model.book.Book
 import ua.acclorite.book_story.domain.model.book.Chapter
+import ua.acclorite.book_story.domain.model.book.CharsetConfidence
 import ua.acclorite.book_story.domain.model.book.Node
 import ua.acclorite.book_story.domain.model.book.NodeId
 import ua.acclorite.book_story.domain.model.file.FilePath
@@ -105,6 +106,8 @@ class GetBookContentUseCase @Inject constructor(
 
             var error = false
             var nodePaths = emptyList<FilePath>()
+            var charsetName: String? = null
+            var charsetConfidence: CharsetConfidence? = null
             bookRepository.parseBookContent(book).getOrElse {
                 logE(TAG, "Could not parse book content with exception: ${it.message}")
                 send(
@@ -121,6 +124,13 @@ class GetBookContentUseCase @Inject constructor(
                 when (parserState) {
                     is ContentParserState.Progress -> {
                         send(GetBookContentState.Parsing(parserState.progress))
+                    }
+
+                    is ContentParserState.CharsetDetected -> {
+                        // fork: 解析器用哪个编码解的，就存哪个编码 —— 由 SaveBookContentUseCase
+                        // 与节点一起落库，避免「内容已更新、编码还是旧的」。
+                        charsetName = parserState.charsetName
+                        charsetConfidence = parserState.confidence
                     }
 
                     is ContentParserState.Success -> {
@@ -150,7 +160,12 @@ class GetBookContentUseCase @Inject constructor(
             )
             send(GetBookContentState.Saving)
 
-            saveBookContentUseCase(book, nodePaths).getOrElse {
+            saveBookContentUseCase(
+                book = book,
+                nodePaths = nodePaths,
+                charsetName = charsetName,
+                charsetConfidence = charsetConfidence
+            ).getOrElse {
                 logE(TAG, "Could not save book content with exception: ${it.message}")
                 send(
                     GetBookContentState.Error(

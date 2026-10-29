@@ -17,6 +17,7 @@ import ua.acclorite.book_story.domain.model.book.BookProgress
 import ua.acclorite.book_story.domain.model.book.Chapter
 import ua.acclorite.book_story.domain.model.book.ChapterId
 import ua.acclorite.book_story.domain.model.book.ChapterPosition
+import ua.acclorite.book_story.domain.model.book.CharsetConfidence
 import ua.acclorite.book_story.domain.model.book.LinkId
 import ua.acclorite.book_story.domain.model.book.Metadata
 import ua.acclorite.book_story.domain.model.book.Node
@@ -46,7 +47,17 @@ class SaveBookContentUseCase @Inject constructor(
     private val nodeHandler: NodeHandler,
     private val fileHandler: FileHandler
 ) {
-    suspend operator fun invoke(book: Book, nodePaths: List<FilePath>): Result<Unit> = runCatching {
+    /**
+     * @param charsetName TXT 解析时实际使用的编码（探测结果或手动覆盖）。null 表示这次没有探测
+     * （非 TXT、或书本来就有手动覆盖的编码），此时保留书里已有的值。
+     * @param charsetConfidence 上面那个编码的可信度，随编码一起落库，供 UI 提示「识别不可靠」。
+     */
+    suspend operator fun invoke(
+        book: Book,
+        nodePaths: List<FilePath>,
+        charsetName: String? = null,
+        charsetConfidence: CharsetConfidence? = null
+    ): Result<Unit> = runCatching {
         logI(TAG, "Saving [${book.title}] with [${nodePaths.size}] node paths.")
 
         val chapterHeaders = mutableListOf<ChapterHeader>()
@@ -214,7 +225,11 @@ class SaveBookContentUseCase @Inject constructor(
             ),
             oldProgress = -1f,
             scrollIndex = -1,
-            scrollOffset = -1
+            scrollOffset = -1,
+            // fork: 编码与进度在同一次 updateBook 里写入 —— 解析用的编码必须和这份内容绑定，
+            // 分两次写会出现「内容已换、编码还是旧的」的窗口。
+            charsetName = charsetName ?: book.charsetName,
+            charsetConfidence = charsetConfidence ?: book.charsetConfidence
         )
         bookRepository.updateBook(book = updatedBook)
     }

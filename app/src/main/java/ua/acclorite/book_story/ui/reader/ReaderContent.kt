@@ -127,6 +127,7 @@ fun ReaderContent(
     openDictionary: (ReaderEvent.OnOpenDictionary) -> Unit,
     scrollToChapter: (ReaderEvent.OnScrollToChapter) -> Unit,
     showSettingsBottomSheet: (ReaderEvent.OnShowSettingsBottomSheet) -> Unit,
+    changeCharset: (ReaderEvent.OnChangeCharset) -> Unit,
     dismissBottomSheet: (ReaderEvent.OnDismissBottomSheet) -> Unit,
     showChaptersDrawer: (ReaderEvent.OnShowChaptersDrawer) -> Unit,
     dismissDrawer: (ReaderEvent.OnDismissDrawer) -> Unit,
@@ -192,7 +193,9 @@ fun ReaderContent(
     CompositionLocalProvider(LocalReaderPalette provides palette) {
         ReaderBottomSheet(
             bottomSheet = bottomSheet,
+            book = book,
             menuVisibility = menuVisibility,
+            changeCharset = changeCharset,
             dismissBottomSheet = dismissBottomSheet
         )
 

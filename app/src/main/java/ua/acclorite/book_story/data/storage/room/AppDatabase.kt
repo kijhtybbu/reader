@@ -40,7 +40,7 @@ import java.util.UUID
         CategoryEntity::class,
         BookmarkEntity::class
     ],
-    version = 19,
+    version = 20,
     autoMigrations = [
         AutoMigration(1, 2),
         AutoMigration(2, 3),
@@ -59,7 +59,10 @@ import java.util.UUID
         AutoMigration(15, 16, spec = AppDatabaseMigrationHelper.AUTO_MIGRATION_15_16::class),
         AutoMigration(16, 17),
         AutoMigration(17, 18),
-        AutoMigration(18, 19)
+        AutoMigration(18, 19),
+        // fork: BookEntity 新增两个可空列 charsetName / charsetConfidence。
+        // 旧书迁移后两者都是 NULL，即「未探测」，下次打开重新解析时就会自愈。
+        AutoMigration(19, 20)
     ],
     exportSchema = true
 )

@@ -547,6 +547,7 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
             openDictionary = screenModel::onEvent,
             scrollToChapter = screenModel::onEvent,
             showSettingsBottomSheet = screenModel::onEvent,
+            changeCharset = screenModel::onEvent,
             dismissBottomSheet = screenModel::onEvent,
             showChaptersDrawer = screenModel::onEvent,
             dismissDrawer = screenModel::onEvent,

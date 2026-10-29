@@ -11,7 +11,10 @@ object ParsersData {
     private const val EPUB_PARSER = 1
     private const val PDF_PARSER = 1
     private const val HTML_PARSER = 1
-    private const val TXT_PARSER = 1
+    // fork: 1 → 2。TXT 解析器不再无条件按 UTF-8 解码（新增编码探测）。
+    // 提版本号让已经缓存的旧内容失教：已导入的 GBK 书在下次打开时会重新解析，
+    // 从而自动修好乱码 —— 不必等用户自己找到手动编码选项。
+    private const val TXT_PARSER = 2
     private const val XML_PARSER = 1
 
     fun getCurrentParserVersion(parser: String): Int {

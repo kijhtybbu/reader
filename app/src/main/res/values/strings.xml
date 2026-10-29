@@ -544,4 +544,8 @@
     <string name="remove_bookmark_content_desc">Remove bookmark</string>
     <string name="move_bookmark_content_desc">Move bookmark to this line</string>
     <string name="delete_bookmark_content_desc">Delete bookmark</string>
+
+    <string name="txt_encoding_option">Text encoding</string>
+    <string name="txt_encoding_auto">Auto</string>
+    <string name="txt_encoding_fallback_note">Automatic detection could not reliably identify this file\'s encoding, so the text may read as garbage. Choose the right encoding above.</string>
 </resources>
