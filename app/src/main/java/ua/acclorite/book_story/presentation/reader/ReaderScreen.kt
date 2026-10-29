@@ -477,6 +477,7 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
             layout = settings.readerLayout.value,
             pagedDirection = settings.pagedDirection.value,
             pagedAnimation = settings.pagedAnimation.value,
+            tapZones = settings.tapZones.value,
             layoutState = state.value.layoutState,
             nodes = state.value.nodes,
             chapters = state.value.chapters,

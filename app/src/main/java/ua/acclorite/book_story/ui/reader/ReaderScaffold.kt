@@ -35,6 +35,7 @@ import ua.acclorite.book_story.presentation.reader.model.Checkpoint
 import ua.acclorite.book_story.presentation.reader.model.ReaderLayout
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedAnimation
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
+import ua.acclorite.book_story.presentation.reader.model.ReaderTapZones
 import ua.acclorite.book_story.presentation.settings.SettingsEvent
 import ua.acclorite.book_story.ui.common.components.common.AnimatedVisibility
 import ua.acclorite.book_story.ui.theme.LocalReaderPalette
@@ -46,6 +47,7 @@ fun ReaderScaffold(
     layout: ReaderLayout,
     pagedDirection: ReaderPagedDirection,
     pagedAnimation: ReaderPagedAnimation,
+    tapZones: ReaderTapZones,
     nodes: List<Node>,
     book: Book,
     paginating: Boolean,
@@ -235,6 +237,7 @@ fun ReaderScaffold(
                 ReaderLayoutPaged(
                     direction = pagedDirection,
                     animation = pagedAnimation,
+                    tapZones = tapZones,
                     book = book,
                     nodes = nodes,
                     paginating = paginating,

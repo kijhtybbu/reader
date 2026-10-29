@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.PagerScope
@@ -32,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -43,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -59,6 +62,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 import ua.acclorite.book_story.R
@@ -71,6 +75,9 @@ import ua.acclorite.book_story.presentation.reader.ScrollTarget
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedAnimation
 import ua.acclorite.book_story.presentation.reader.model.pagerPageTransform
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
+import ua.acclorite.book_story.presentation.reader.model.ReaderTapAction
+import ua.acclorite.book_story.presentation.reader.model.ReaderTapZones
+import ua.acclorite.book_story.presentation.reader.model.tapActionFor
 import ua.acclorite.book_story.ui.common.components.common.SelectionContainer
 import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.helpers.LocalActivity
@@ -92,6 +99,7 @@ import ua.acclorite.book_story.ui.theme.Motion
 fun ReaderLayoutPaged(
     direction: ReaderPagedDirection,
     animation: ReaderPagedAnimation,
+    tapZones: ReaderTapZones,
     book: Book,
     nodes: List<Node>,
     paginating: Boolean,
@@ -182,11 +190,6 @@ fun ReaderLayoutPaged(
             Modifier
                 .fillMaxSize()
                 .background(backgroundColor)
-                .then(
-                    if (toolbarHidden) Modifier.noRippleClickable {
-                        menuVisibility(ReaderEvent.OnMenuVisibility(!showMenu, true))
-                    } else Modifier
-                )
                 .padding(contentPadding)
                 .padding(vertical = verticalPadding)
         ) {
@@ -197,6 +200,9 @@ fun ReaderLayoutPaged(
                     .padding(vertical = 18.dp)
                     .clipToBounds()
             ) {
+                // fork: 点击分区。挂在内容区而不是外层 Column，这样坐标就是正文区坐标，
+                // 也不会和上下栏的留白混在一起。只处理「点」，拖拽由 Pager 自己消费。
+                val tapScope = rememberCoroutineScope()
                 val width = (constraints.maxWidth - with(density) { sidePadding.roundToPx() * 2 })
                     .coerceAtLeast(0)
                 val height = constraints.maxHeight
@@ -396,6 +402,35 @@ fun ReaderLayoutPaged(
                     val pagerModifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer { alpha = contentAlpha }
+                        .then(
+                            if (toolbarHidden) {
+                                Modifier.pointerInput(tapZones, showMenu) {
+                                    detectTapGestures { offset ->
+                                        val action = tapActionFor(
+                                            zones = tapZones,
+                                            x = (offset.x / size.width).coerceIn(0f, 1f),
+                                            y = (offset.y / size.height).coerceIn(0f, 1f)
+                                        )
+                                        when (action) {
+                                            ReaderTapAction.MENU ->
+                                                menuVisibility(ReaderEvent.OnMenuVisibility(!showMenu, true))
+                                            ReaderTapAction.NONE -> Unit
+                                            ReaderTapAction.NEXT, ReaderTapAction.PREVIOUS -> {
+                                                val target = pagerState.currentPage +
+                                                    if (action == ReaderTapAction.NEXT) 1 else -1
+                                                if (target in 0 until pagerState.pageCount) {
+                                                    tapScope.launch {
+                                                        pagerState.animateScrollToPage(target)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Modifier
+                            }
+                        )
                     val scrollEnabled = windowReady && !reflowing && toolbarHidden && scrollTarget == null
 
                     if (direction.vertical) {

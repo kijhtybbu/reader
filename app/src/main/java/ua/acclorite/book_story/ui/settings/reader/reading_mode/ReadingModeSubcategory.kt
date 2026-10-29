@@ -18,6 +18,7 @@ import ua.acclorite.book_story.ui.settings.components.SettingsSubcategory
 import ua.acclorite.book_story.ui.settings.reader.reading_mode.components.ReaderLayoutOption
 import ua.acclorite.book_story.ui.settings.reader.reading_mode.components.PagedAnimationOption
 import ua.acclorite.book_story.ui.settings.reader.reading_mode.components.PagedDirectionOption
+import ua.acclorite.book_story.ui.settings.reader.reading_mode.components.TapZonesOption
 
 fun LazyListScope.ReadingModeSubcategory(
     titleColor: @Composable () -> Color = { MaterialTheme.colorScheme.primary },
@@ -41,6 +42,10 @@ fun LazyListScope.ReadingModeSubcategory(
 
         item {
             PagedAnimationOption()
+        }
+
+        item {
+            TapZonesOption()
         }
     }
 }

@@ -38,6 +38,7 @@ import ua.acclorite.book_story.presentation.reader.model.ReaderFontThickness
 import ua.acclorite.book_story.presentation.reader.model.ReaderLayout
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedAnimation
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
+import ua.acclorite.book_story.presentation.reader.model.ReaderTapZones
 import ua.acclorite.book_story.presentation.reader.model.ReaderProgressCount
 import ua.acclorite.book_story.presentation.reader.model.ReaderScreenOrientation
 import ua.acclorite.book_story.presentation.reader.model.ReaderTextAlignment
@@ -130,6 +131,11 @@ class SettingsManager @Inject constructor(
         key = stringPreferencesKey("paged_animation"), default = ReaderPagedAnimation.SLIDE,
         serialize = { it.name },
         deserialize = { name -> ReaderPagedAnimation.entries.find { it.name == name } ?: ReaderPagedAnimation.SLIDE }
+    )
+    val tapZones = setting<ReaderTapZones, String>(
+        key = stringPreferencesKey("tap_zones"), default = ReaderTapZones.SIDES,
+        serialize = { it.name },
+        deserialize = { name -> ReaderTapZones.entries.find { it.name == name } ?: ReaderTapZones.SIDES }
     )
     val fontFamily = setting<FontWithName, String>(
         key = stringPreferencesKey("font"), default = ReaderData.fonts[0],
