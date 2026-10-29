@@ -40,6 +40,7 @@ class TxtContentParser @Inject constructor() : ContentParser {
             emit(ContentParserState.Progress(0.0f))
 
             val nodePaths = mutableListOf<FilePath>()
+            var cacheFailures = 0
 
             currentCoroutineContext().ensureActive()
 
@@ -52,15 +53,26 @@ class TxtContentParser @Inject constructor() : ContentParser {
                             if (!line.containsVisibleText()) return@mapNotNull null
                             NodeContent.Paragraph(text = line, styles = emptyList())
                         }
-                    )?.let { path -> nodePaths.add(path) }
+                    )?.let { path -> nodePaths.add(path) } ?: run { cacheFailures++ }
                 }
             } ?: throw IllegalStateException("Could not open Input Stream in TXT.")
 
             currentCoroutineContext().ensureActive()
 
             if (nodePaths.isEmpty()) {
-                emit(ContentParserState.Error(UIText.StringResource(R.string.error_empty_file)))
-                logE(TAG, "Could not extract nodes from TXT (file is empty).")
+                // fork: 区分两种完全不同的失败。缓存写失败被报成「文件似乎为空」会把用户
+                // 引向错误的排查方向（release 构建里 R8 破坏 protobuf 序列化时正是如此）。
+                if (cacheFailures > 0) {
+                    emit(
+                        ContentParserState.Error(
+                            UIText.StringResource(R.string.error_could_not_save_file, "")
+                        )
+                    )
+                    logE(TAG, "Could not cache nodes for TXT (cache write failed $cacheFailures time(s)).")
+                } else {
+                    emit(ContentParserState.Error(UIText.StringResource(R.string.error_empty_file)))
+                    logE(TAG, "Could not extract nodes from TXT (file is empty).")
+                }
                 return@flow
             }
 

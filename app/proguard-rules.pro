@@ -46,3 +46,11 @@
 -keepclassmembernames class org.xmlpull.** { *; }
 -keepnames class kotlin.reflect.jvm.internal.impl.builtins.PrimitiveType { values(); }
 -keepnames class * implements android.os.Parcelable { ** CREATOR; }
+# fork: protobuf-javalite 用反射按**字段名**读写消息（GeneratedMessageLite / ReflectionHelper），
+# 而它自身不带 consumer proguard 规则。R8 把 `text_` 改名成 `e` 之后，
+# NodeContentListProto.parseFrom 抛 "Field text_ for ParagraphProto not found"，
+# 被 cacheNodes 的 runCatching 吞掉 → 解析器以为没有节点 → 报「文件似乎为空」。
+# 已用对照实验确认：未改动的上游 minified 构建同样失败，debug 构建正常。
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
+}

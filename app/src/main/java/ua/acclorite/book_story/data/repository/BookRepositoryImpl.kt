@@ -35,6 +35,7 @@ import ua.acclorite.book_story.domain.service.ImageHandler
 import ua.acclorite.book_story.domain.service.NodeHandler
 import javax.inject.Inject
 import javax.inject.Singleton
+import ua.acclorite.book_story.core.log.logE
 
 @Singleton
 class BookRepositoryImpl @Inject constructor(
@@ -231,10 +232,15 @@ class BookRepositoryImpl @Inject constructor(
                         ).getOrNull()
                     },
                     cacheNodes = { nodes ->
+                        // fork: 不要静默吞掉失败。上游这里是 .getOrNull()，缓存写失败会让解析器
+                        // 认为「没有任何节点」并报「文件似乎为空」，用户被引向完全错误的方向
+                        // （release 构建里 protobuf 序列化被 R8 破坏时就是这个表现）。
                         nodeHandler.cacheNodes(
                             nodes,
                             tempDirectory
-                        ).getOrNull()
+                        ).onFailure {
+                            logE("BookRepository", "Could not cache nodes: ${it.javaClass.simpleName}: ${it.message}")
+                        }.getOrNull()
                     }
                 )
             }.getOrThrow()
