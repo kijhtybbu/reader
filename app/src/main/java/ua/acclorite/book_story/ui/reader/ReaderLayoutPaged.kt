@@ -68,6 +68,8 @@ import ua.acclorite.book_story.domain.model.book.NodeContent
 import ua.acclorite.book_story.domain.model.book.NodeId
 import ua.acclorite.book_story.presentation.reader.ReaderEvent
 import ua.acclorite.book_story.presentation.reader.ScrollTarget
+import ua.acclorite.book_story.presentation.reader.model.ReaderPagedAnimation
+import ua.acclorite.book_story.presentation.reader.model.pagerPageTransform
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
 import ua.acclorite.book_story.ui.common.components.common.SelectionContainer
 import ua.acclorite.book_story.ui.common.components.common.StyledText
@@ -89,6 +91,7 @@ import ua.acclorite.book_story.ui.theme.Motion
 @Composable
 fun ReaderLayoutPaged(
     direction: ReaderPagedDirection,
+    animation: ReaderPagedAnimation,
     book: Book,
     nodes: List<Node>,
     paginating: Boolean,
@@ -358,7 +361,21 @@ fun ReaderLayoutPaged(
                         if (page == null) {
                             Box(Modifier.fillMaxSize())
                         } else {
+                            // fork: 翻页动画。offset 为 -1..1 的页间进度（Pager 自己会把页面平移
+                            // offset*宽，所以这里要「抵消」才能得到覆盖/淡入的观感）。
+                            val pageOffset = (index - pagerState.currentPage) + pagerState.currentPageOffsetFraction
                             key(page) {
+                                Box(
+                                    Modifier.graphicsLayer {
+                                        val transform = pagerPageTransform(
+                                            animation = animation,
+                                            offset = pageOffset,
+                                            pageWidth = size.width
+                                        )
+                                        translationX = transform.translationX
+                                        alpha = transform.alpha
+                                    }
+                                ) {
                                 ReaderPagedPage(
                                     page = page,
                                     sidePadding = sidePadding,
@@ -372,6 +389,7 @@ fun ReaderLayoutPaged(
                                     menuVisibility = menuVisibility,
                                     openTranslator = openTranslator
                                 )
+                                }
                             }
                         }
                     }

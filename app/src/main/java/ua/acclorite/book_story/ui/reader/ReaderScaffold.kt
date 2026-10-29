@@ -33,6 +33,7 @@ import ua.acclorite.book_story.presentation.reader.ReaderEvent
 import ua.acclorite.book_story.presentation.reader.ScrollTarget
 import ua.acclorite.book_story.presentation.reader.model.Checkpoint
 import ua.acclorite.book_story.presentation.reader.model.ReaderLayout
+import ua.acclorite.book_story.presentation.reader.model.ReaderPagedAnimation
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
 import ua.acclorite.book_story.presentation.settings.SettingsEvent
 import ua.acclorite.book_story.ui.common.components.common.AnimatedVisibility
@@ -44,6 +45,7 @@ import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
 fun ReaderScaffold(
     layout: ReaderLayout,
     pagedDirection: ReaderPagedDirection,
+    pagedAnimation: ReaderPagedAnimation,
     nodes: List<Node>,
     book: Book,
     paginating: Boolean,
@@ -232,6 +234,7 @@ fun ReaderScaffold(
             ReaderLayout.PAGED -> {
                 ReaderLayoutPaged(
                     direction = pagedDirection,
+                    animation = pagedAnimation,
                     book = book,
                     nodes = nodes,
                     paginating = paginating,

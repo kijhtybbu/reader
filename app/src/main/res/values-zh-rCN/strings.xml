@@ -381,4 +381,8 @@
     <string name="progress_count_characters">字数</string>
     <string name="retry">重试</string>
     <string name="saving_content">正在保存已处理的内容，通常不超过一分钟。</string>
+    <string name="paged_animation_option">翻页动画</string>
+    <string name="paged_animation_slide">平移</string>
+    <string name="paged_animation_cover">覆盖</string>
+    <string name="paged_animation_fade">淡入淡出</string>
 </resources>

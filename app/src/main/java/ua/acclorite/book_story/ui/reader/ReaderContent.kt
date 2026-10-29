@@ -29,6 +29,7 @@ import ua.acclorite.book_story.presentation.reader.ReaderEvent
 import ua.acclorite.book_story.presentation.reader.ScrollTarget
 import ua.acclorite.book_story.presentation.reader.model.Checkpoint
 import ua.acclorite.book_story.presentation.reader.model.ReaderLayout
+import ua.acclorite.book_story.presentation.reader.model.ReaderPagedAnimation
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
 import ua.acclorite.book_story.presentation.settings.SettingsEvent
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
@@ -41,6 +42,7 @@ import androidx.compose.ui.graphics.luminance
 fun ReaderContent(
     layout: ReaderLayout,
     pagedDirection: ReaderPagedDirection,
+    pagedAnimation: ReaderPagedAnimation,
     layoutState: LayoutState,
     nodes: List<Node>,
     chapters: List<Chapter>,
@@ -161,6 +163,7 @@ fun ReaderContent(
                 ReaderScaffold(
                     layout = layout,
                     pagedDirection = pagedDirection,
+                    pagedAnimation = pagedAnimation,
                     nodes = nodes,
                     book = book,
                     paginating = paginating,
