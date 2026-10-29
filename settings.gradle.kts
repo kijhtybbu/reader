@@ -18,4 +18,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "Book's Story"
 include(":app")
- 
+include(":dict-engine")
+
+// Vendored juicedict engine sources live under third_party/.
+project(":dict-engine").projectDir = file("third_party/juicedict-engine")

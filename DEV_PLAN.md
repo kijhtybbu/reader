@@ -386,7 +386,7 @@ data class BookmarkEntity(
 | 阶段 | 内容 |
 | --- | --- |
 | S1 | 设计文档、`phase-2` 分支、依赖与 Spike（openai-kotlin/Ktor、Tink、7z） |
-| S2 | `:dict-engine` 模块 + `EngineFactory` + 上游测试 |
+| S2 | `:dict-engine` 模块 + `DictionaryEngines` + 上游测试 |
 | S3 | ECDICT `stardict.7z` 资产 + 首次解压 + 内置词典注册 |
 | S4 | 词典仓库、MDX/StarDict 导入、设置页词典管理 |
 | S5 | 取词手势、文本布局命中、取词卡片 |

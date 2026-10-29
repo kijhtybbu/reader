@@ -203,6 +203,11 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("org.tukaani:xz:1.10")
 
+    // Dictionary engine (fork: phase 2, vendored GPL-3.0 juicedict engine)
+    // 纯 JVM 模块（third_party/juicedict-engine），S3 起由词典仓库实际调用；
+    // 现在先接上依赖，保证模块与 app 一起参与构建/测试。
+    implementation(project(":dict-engine"))
+
     // Language Switcher
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.appcompat:appcompat-resources:1.7.1")

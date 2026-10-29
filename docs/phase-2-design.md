@@ -104,8 +104,10 @@ ReaderLayout (Paged/Continuous)
   `com.qiuminal.juicedict.engine`。
 - 同目录保留 `LICENSE`（GPL-3.0）与 `PROVENANCE.md`：仓库、commit、复制范围、本地改动。
 - 新建 `:dict-engine` 模块（`kotlin("jvm")`，JVM 17，纯 JVM 测试，不依赖 Android）。
-- 只新增 `EngineFactory` 适配层（public），用于访问上游 `internal` 的
-  `MdxDictionary` / `MdxProbe`，并提供 `openMdx` / `openStarDict` / `probeMdx`。
+- 只新增 `DictionaryEngines` 适配层（public，实现名；早期草稿叫 `EngineFactory`），用于访问上游
+  `internal` 的 `MdxDictionary` / `MdxProbe` / `MdxResourceFiles`，并提供
+  `openMdx` / `openStarDict` / `probeMdx` / `probeMdxHead` / `mddFilesFor` 与
+  `logSink`（诊断出口）。
 - 解析、LZO、RIPEMD128、dictzip、链接改写、词形/模糊逻辑一律不修改。
 
 ### 4.2 内置 ECDICT
@@ -120,8 +122,9 @@ ReaderLayout (Paged/Continuous)
 
 ### 4.3 导入与查询
 
-- 导入 `.mdx`：先读头部用 `MdxProbe.readFromHead` 预检（版本、加密位、资源包、条目数），
-  再流式复制并校验；`.mdd` 作为附属资源复制，本期不渲染。
+- 导入 `.mdx`：先读头部用 `DictionaryEngines.probeMdxHead`（内部 `MdxProbe.readFromHead`）预检
+  （版本、加密位、资源包、条目数），再流式复制并校验；`.mdd` 由
+  `DictionaryEngines.mddFilesFor` 按 `<base>.mdd` / `<base>.1.mdd` … 顺序配对复制，本期不渲染。
 - StarDict 导入：`OpenDocumentTree` 选目录，校验 `.ifo/.idx/.dict(.dz)` 后复制。
 - 元数据 `index.json`：id、type、files、title、entries、size、enabled、importedAt。
 - 引擎实例 LRU（内置 + 最近 2 个导入词典），删除/禁用时 `close()`。
@@ -269,7 +272,7 @@ cacheKey = SHA-256(
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
 | S1 | 设计文档、`phase-2` 分支、依赖与 Spike（openai-kotlin/Ktor、Tink、7z） | Debug/Release-debug 可编译；MockEngine 流式测试；Tink 存取测试；7z 解压测试；R8 通过 |
-| S2 | `:dict-engine` 模块 + `EngineFactory` + 上游测试 | 引擎单测通过；MDX/StarDict fixture 查询/渲染通过 |
+| S2 | `:dict-engine` 模块 + `DictionaryEngines` + 上游测试 | 引擎单测通过；MDX/StarDict fixture 查询/渲染通过（fixture 在测试运行时合成，不依赖外部语料） |
 | S3 | ECDICT `stardict.7z` 资产 + 首次解压 + 内置词典注册 | 首次启动解压成功；`apple`/`perceive` 可查；重启不重复解压 |
 | S4 | 词典仓库、MDX/StarDict 导入、设置页词典管理 | 导入/启用/删除；损坏/加密/空间不足错误明确 |
 | S5 | 取词手势、文本布局命中、取词卡片 | 两种布局单击/长按取词；空白区翻页/菜单不回归；RTL/夜间正常 |
@@ -283,7 +286,9 @@ cacheKey = SHA-256(
 ### JVM / 单元
 
 - 引擎：上游 `Lzo1xTest`、`MdxHeaderTest`、`MdxKeyOrderTest`、`MdxLinkRewriteTest`、
-  `MdxBytesTest`、`Ripemd128Test`、`StarDict*Test`。
+  `MdxBytesTest`、`Ripemd128Test`、`StarDict*Test`；本地适配层 `DictionaryEnginesTest`
+  （StarDict `.idx` / `.idx.gz` + `.syn`、`.mdd` 配对、`logSink`）与 `MdxFixtureTest`
+  （运行时合成的合法 MDX 2.0，覆盖 probe → open → lookup → 渲染）。
 - 缓存键：模型/语言/提示词/空白变化；SHA-256 稳定。
 - `TranslationModel`：缓存命中、miss、并发去重、取消、重新生成（fake repository）。
 - AI：Ktor `MockEngine` 的流式拼接、`[DONE]`、错误码、JSON 围栏、取消。

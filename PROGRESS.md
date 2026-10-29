@@ -80,6 +80,38 @@ minified 构建里 Tink / commons-compress / xz / openai 的类被**整体 shrin
 S6 必须在 minified 构建/设备上真跑一次 Tink 存取，否则不得认为这两个依赖已验证。
 在此之前**不**加任何 speculative 的 keep 规则（无条件 keep 会把整个库拉进包，体积无法评估）。
 
+### 3.2 第二阶段（翻译与词典）/ S2
+
+| 项 | 内容 |
+| --- | --- |
+| 模块 | `:dict-engine`（`third_party/juicedict-engine/`，`kotlin("jvm")`，纯 JVM，无 Android 依赖） |
+| 来源 | `qiuminal/juicedict` @ `7bbcb874`，GPL-3.0；28 个引擎源码 + 12 个上游测试逐字复制，改动范围见 `third_party/juicedict-engine/PROVENANCE.md` |
+| 适配层 | `DictionaryEngines`（设计文档早期叫 `EngineFactory`）：`openStarDict` / `openMdx` / `probeMdx` / `probeMdxHead` / `mddFilesFor` / `logSink` |
+| 状态 | ✅ 引擎单测 **101 个用例全绿**（`./gradlew :dict-engine:test --rerun-tasks`）；`:app:assembleDebug` 通过 |
+
+S2 的 fixture 覆盖（**都不依赖外部语料**，测试运行时现场生成）：
+
+| 测试 | 钉住什么 |
+| --- | --- |
+| `MdxFixtureTest.probesAndRendersSyntheticMdx` | 用 `java.util.zip.Deflater` 合成的合法 MDX 2.0（单 key block + 单 record block）：`probeMdx` 的 title/description/entryCount、`openMdx` → `lookupSmart("hello")` → `article().toHtml()`，外加一条 `@@@LINK=` 重定向 |
+| `DictionaryEnginesTest.openStarDictReadsDirectoryAndRendersArticle` | `.ifo` + `.idx` + `.dict` 装配、`.jidx` 缓存写入 |
+| `DictionaryEnginesTest.openStarDictReadsGzippedIndexAndSynAlias` | `.idx.gz`（`GZIPInputStream`）+ `.syn` 别名命中 + `.jidx` 缓存重开 |
+| `DictionaryEnginesTest.mddFilesForPairsBaseAndNumberedPacks` | `.mdd` 配对顺序（`<base>.mdd` → `.1.mdd` → `.2.mdd` → `.10.mdd`） |
+| `DictionaryEnginesTest.openStarDictReportsSwallowedFailureThroughLogSink` | 坏文件仍返回 `null`，但失败原因经 `logSink` 上报 |
+
+上游 5 个未复制测试（`StarDictEngineTest` / `BigEcdictTest` / `FuzzyPerfTest` /
+`MdxSmoke` / `MdxVerify`）与保留测试里以本机语料为输入的方法（`E:\dictionary\MDict`、
+`../internal-dicts/dict`）都在 `PROVENANCE.md` 里逐条记录了原因与实际期望路径；
+这些方法在无目录时直接 `return`，报告里显示为 passed 而非 skipped。
+
+有意留到后续阶段的：
+
+- `.dict.dz`（dictzip）在适配层里的装配分支 → S3，用真实 ECDICT 资产覆盖。
+- 引擎实例的线程安全：适配层 KDoc 已声明「非线程安全，调用方按引擎加锁」，
+  真正的 LRU + 每引擎锁 → S4（上游 `DictionaryRepository` 的做法）。
+- `openMdx` 在构造失败时的 fd 泄漏是上游既有问题（`MdxFileReader` 先打开后 `error`），
+  未在 vendored 副本里改；S4 按「先 `probeMdx` 预检再构造」规避，真修回上游。
+
 ---
 
 ## 4. 真机验证结果
