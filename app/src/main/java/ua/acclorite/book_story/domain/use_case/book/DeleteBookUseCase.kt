@@ -11,6 +11,7 @@ import ua.acclorite.book_story.core.log.logI
 import ua.acclorite.book_story.core.log.logW
 import ua.acclorite.book_story.domain.model.book.Book
 import ua.acclorite.book_story.domain.repository.BookRepository
+import ua.acclorite.book_story.domain.repository.BookmarkRepository
 import ua.acclorite.book_story.domain.repository.HistoryRepository
 import ua.acclorite.book_story.domain.service.ImageHandler
 import javax.inject.Inject
@@ -20,6 +21,7 @@ private const val TAG = "DeleteBook"
 class DeleteBookUseCase @Inject constructor(
     private val bookRepository: BookRepository,
     private val historyRepository: HistoryRepository,
+    private val bookmarkRepository: BookmarkRepository,
     private val imageHandler: ImageHandler
 ) {
 
@@ -34,6 +36,13 @@ class DeleteBookUseCase @Inject constructor(
         // Deleting history
         historyRepository.deleteHistoryForBook(bookId = book.id).onFailure {
             logW(TAG, "Could not delete history for [${book.title}] with error: ${it.message}")
+        }
+
+        // fork: 书签跟着书一起删。书表主键是 INTEGER PRIMARY KEY AUTOINCREMENT（见 schema 19），
+        // id 不会被新书复用，所以孤儿书签不会「串」到别的书上 —— 这是数据卫生问题，不是正确性问题。
+        // 仍然要删：否则表会随删书无限增长，而 BookmarkRepository.deleteBookmarksForBook 一直是死代码。
+        bookmarkRepository.deleteBookmarksForBook(bookId = book.id).onFailure {
+            logW(TAG, "Could not delete bookmarks for [${book.title}] with error: ${it.message}")
         }
 
         // Deleting book

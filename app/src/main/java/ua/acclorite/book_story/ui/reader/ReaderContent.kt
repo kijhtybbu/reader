@@ -41,11 +41,13 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import ua.acclorite.book_story.domain.model.book.NodeContent
 import ua.acclorite.book_story.domain.model.bookmark.Bookmark
+import ua.acclorite.book_story.domain.model.bookmark.bookmarkForNode
 import ua.acclorite.book_story.presentation.reader.BookmarkViewModel
 
 @Composable
@@ -139,25 +141,25 @@ fun ReaderContent(
     // fork: palette 必须在这里提供 —— ReaderBottomSheet 与 ReaderScaffold 是兄弟节点，
     // 只包在 Scaffold 里会让底部面板拿到 ReaderPalette.Default（浅色），深色预设下正好是本次要修的 bug。
     // MaterialTheme 的读取不能放进 remember 的 lambda（非 @Composable 作用域）。
-    // fork: 书签。定位用 (nodeId, nodeIntraOffset)，改字号后仍然有效。
+    // fork: 书签。图标指示与去重都按 nodeId（段落）判断，跳转仍然用精确的 nodeIntraOffset。
     val bookmarkViewModel: BookmarkViewModel = hiltViewModel()
     val bookmarks by bookmarkViewModel.bookmarks.collectAsStateWithLifecycle()
     LaunchedEffect(book.id) { bookmarkViewModel.load(book.id) }
-    var showBookmarks by remember { mutableStateOf(false) }
+    // fork: 用 rememberSaveable —— 普通 remember 会把面板状态丢掉，旋转屏幕时面板自己关掉
+    var showBookmarks by rememberSaveable { mutableStateOf(false) }
 
     val currentNodeId = book.progress.currentNodeId
     val currentNodeOffset = book.progress.currentNodeIntraOffset
-    val currentBookmark = bookmarks.firstOrNull {
-        it.nodeId == currentNodeId.id && it.nodeIntraOffset == currentNodeOffset
-    }
-    // 摘录：取当前节点的前若干字，便于在列表里辨认
-    val currentSnippet = remember(nodes, currentNodeId) {
+    val currentBookmark = bookmarkForNode(bookmarks, currentNodeId.id)
+    // 摘录：从当前这一行（段内偏移）开始取若干字；只看段首的话，段落中间的书签会显示成无关的文字
+    val currentSnippet = remember(nodes, currentNodeId, currentNodeOffset) {
         nodes.firstOrNull { it.id == currentNodeId }
             ?.content
             ?.let { it as? NodeContent.Paragraph }
             ?.text
-            ?.trim()
+            ?.drop(currentNodeOffset)
             ?.take(60)
+            ?.trim()
             .orEmpty()
     }
 

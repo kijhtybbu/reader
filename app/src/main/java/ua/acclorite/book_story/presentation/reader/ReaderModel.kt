@@ -279,13 +279,41 @@ class ReaderModel @Inject constructor(
                 }
 
                 is ReaderEvent.OnScrollToPosition -> {
-                    _state.update {
-                        it.copy(
-                            scrollTarget = ScrollTarget(
-                                nodeId = event.nodeId,
-                                nodeIntraOffset = event.nodeIntraOffset
+                    // fork: 与 OnRestoreCheckpoint 一致 —— 除了设 scrollTarget，还必须移动
+                    // _paginationNodeId，否则 GetBookContentUseCase 不会重新加载节点窗口：
+                    // 目标节点（例如 ±200 节点之外的旧书签）永远不会出现在 nodes 里，
+                    // 分页模式就停在 reflowing/currentScrollTarget 上（空白页、contentAlpha=0、
+                    // scrollConsumed 永不回调），lazy 模式则只能盲滑。
+                    withContext(Dispatchers.Default) {
+                        _state.update {
+                            // 目标节点若已在当前窗口内，可算出绝对偏移；窗口外的偏移无从得知，
+                            // 先保留旧值，等重排后阅读页发 OnUpdateProgress 时校正
+                            val nodeOffset = it.nodes
+                                .find { node -> node.id == event.nodeId }
+                                ?.position?.offset
+
+                            it.copy(
+                                scrollTarget = ScrollTarget(
+                                    nodeId = event.nodeId,
+                                    nodeIntraOffset = event.nodeIntraOffset
+                                ),
+                                book = it.book.copy(
+                                    progress = it.book.progress.copy(
+                                        currentNodeId = event.nodeId,
+                                        currentNodeIntraOffset = event.nodeIntraOffset,
+                                        currentOffset = nodeOffset
+                                            ?.plus(event.nodeIntraOffset)
+                                            ?: it.book.progress.currentOffset
+                                    )
+                                )
                             )
-                        )
+                        }
+                        // 跳转当下就落库：否则万一在这之前离开阅读页，下次打开还是旧位置
+                        _paginationNodeId.update { event.nodeId }
+                        updateBookUseCase(_state.value.book)
+
+                        LibraryScreen.refreshListChannel.trySend(300)
+                        HistoryScreen.refreshListChannel.trySend(300)
                     }
                 }
 

@@ -69,7 +69,12 @@ fun ReaderBookmarksBottomSheet(
                 )
             } else {
                 LazyColumnWithScrollbar(Modifier.fillMaxWidth()) {
-                    items(bookmarks.size) { index ->
+                    // fork: key 用书签 id（与 ReaderChaptersDrawer 一致）—— 删掉中间一项后
+                    // 若按位置复用状态，下面的行会错位
+                    items(
+                        count = bookmarks.size,
+                        key = { bookmarks[it].id }
+                    ) { index ->
                         val bookmark = bookmarks[index]
                         Row(
                             modifier = Modifier
