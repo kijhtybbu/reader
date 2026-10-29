@@ -87,6 +87,8 @@ fun LibraryScaffold(
                 isRefreshing = isRefreshing,
                 categories = categories,
                 showDefaultCategory = showDefaultCategory,
+                perCategorySort = perCategorySort,
+                sortOrder = sortOrder,
                 searchVisibility = searchVisibility,
                 requestFocus = requestFocus,
                 searchQueryChange = searchQueryChange,

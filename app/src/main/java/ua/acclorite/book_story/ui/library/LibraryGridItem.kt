@@ -20,14 +20,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +47,9 @@ import ua.acclorite.book_story.presentation.library.model.LibraryTitlePosition
 import ua.acclorite.book_story.presentation.library.model.SelectableBook
 import ua.acclorite.book_story.ui.common.components.common.AsyncCoverImage
 import ua.acclorite.book_story.ui.common.components.common.StyledText
+import ua.acclorite.book_story.ui.theme.Dimens
+import ua.acclorite.book_story.ui.theme.Radius
+import ua.acclorite.book_story.ui.theme.Spacing
 
 @Composable
 fun LibraryGridItem(
@@ -69,6 +75,10 @@ fun LibraryGridItem(
     val progress = rememberSaveable(book.data.progress) {
         "${book.data.progress.getPercentage().calculateProgress(1)}%"
     }
+    // fork: 进度环需要原始比例，文字百分比格式化后无法反推。
+    val progressFraction = remember(book.data.progress) {
+        book.data.progress.getPercentage()
+    }
 
     Column(
         Modifier
@@ -79,9 +89,9 @@ fun LibraryGridItem(
     ) {
         Box(
             modifier = Modifier
-                .aspectRatio(1f / 1.5f)
+                .aspectRatio(Dimens.coverAspect)
                 .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
+                .clip(RoundedCornerShape(Radius.cover))
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 .combinedClickable(
                     onClick = {
@@ -98,7 +108,7 @@ fun LibraryGridItem(
                     uri = book.data.coverImage,
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(MaterialTheme.shapes.medium)
+                        .clip(RoundedCornerShape(Radius.cover))
                 )
             } else {
                 Icon(
@@ -115,18 +125,34 @@ fun LibraryGridItem(
             }
 
             if (showProgress) {
-                StyledText(
-                    text = progress,
+                // fork: 用进度环 + 百分比文字代替原来只有文字的胶囊。
+                // 胶囊底色换成 scrim：封面可能是纯白的，环和文字必须自带压暗背景。
+                Row(
                     modifier = Modifier
                         .padding(6.dp)
                         .clip(MaterialTheme.shapes.small)
-                        .background(MaterialTheme.colorScheme.tertiary)
+                        .background(MaterialTheme.colorScheme.scrim.copy(0.55f))
                         .padding(horizontal = 6.dp, vertical = 3.dp),
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onTertiary,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        progress = { progressFraction },
+                        modifier = Modifier.size(Dimens.coverProgressRing),
+                        color = Color.White,
+                        trackColor = Color.White.copy(0.3f),
+                        strokeWidth = Dimens.coverProgressRingStroke
                     )
-                )
+
+                    Spacer(modifier = Modifier.width(Spacing.xs))
+
+                    StyledText(
+                        text = progress,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            textAlign = TextAlign.Center,
+                            color = Color.White
+                        )
+                    )
+                }
             }
 
             Row(

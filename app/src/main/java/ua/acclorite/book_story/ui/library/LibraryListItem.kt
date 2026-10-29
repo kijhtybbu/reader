@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
@@ -37,6 +38,7 @@ import ua.acclorite.book_story.core.helpers.calculateProgress
 import ua.acclorite.book_story.presentation.library.model.SelectableBook
 import ua.acclorite.book_story.ui.common.components.common.AsyncCoverImage
 import ua.acclorite.book_story.ui.common.components.common.StyledText
+import ua.acclorite.book_story.ui.theme.Radius
 
 @Composable
 fun LibraryListItem(
@@ -78,7 +80,7 @@ fun LibraryListItem(
         Box(
             modifier = Modifier
                 .size(50.dp)
-                .clip(MaterialTheme.shapes.small)
+                .clip(RoundedCornerShape(Radius.cover))
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
         ) {
             if (book.data.coverImage != null) {
@@ -86,7 +88,7 @@ fun LibraryListItem(
                     uri = book.data.coverImage,
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(MaterialTheme.shapes.small)
+                        .clip(RoundedCornerShape(Radius.cover))
                 )
             } else {
                 Icon(

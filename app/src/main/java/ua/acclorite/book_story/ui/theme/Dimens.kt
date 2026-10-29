@@ -44,6 +44,9 @@ object Spacing {
  * 注意：这里的 4/8/12/16 与 M3 `Shapes()`（`Theme.kt` 已提供）完全重叠。
  * 新代码优先用 `MaterialTheme.shapes`；本对象只用于 M3 表达不了的场合
  * （例如 sheet 顶部圆角 28dp、胶囊控件）。存在两个真相源是刻意的，别双写。
+ *
+ * 例外是「角色别名」（如 [cover]）：数值 M3 有，但同一个角色必须跨布局取同一个值，
+ * 用语义名把「这就是封面」写下来，以免下一个布局又自己挑一个 shapes 档。
  */
 object Radius {
     val xs = 4.dp
@@ -54,6 +57,11 @@ object Radius {
     val sheet = 28.dp
     /** 胶囊/芯片 */
     val pill = 999.dp
+    /**
+     * 书架封面圆角。上游网格用 shapes.medium（12dp）、列表缩略图用 shapes.small（8dp），
+     * 同一张封面在两种布局里不是同一个形状。取 12dp（= [m]）：网格保持原样，列表跟过来。
+     */
+    val cover = m
 }
 
 /**
@@ -65,8 +73,15 @@ object Radius {
 object Dimens {
     /** M3 TopAppBar 单行容器高（仓库里所有顶栅都是 M3 TopAppBar，不是 56dp） */
     val topBarHeight = 64.dp
-    /** 封面宽高比，与 LibraryGridItem.kt:82 的 aspectRatio(1f / 1.5f) 一致 */
+    /** 封面宽高比 2:3，网格项用它；不要在调用处再写字面量 */
     val coverAspect = 1f / 1.5f
     /** 顶部浮层（章节提示）的最大宽度，避免长章名横贯整屏 */
     val hintMaxWidth = 280.dp
+    /**
+     * 书架封面上的阅读进度环直径。取 16dp = bodySmall 行高，
+     * 因此进度胶囊的高度与原先纯文字版本完全一致，网格项尺寸不变。
+     */
+    val coverProgressRing = 16.dp
+    /** 进度环描边：16dp 环上的可辨识下限，再细在高密度屏上几乎看不见 */
+    val coverProgressRingStroke = 2.dp
 }

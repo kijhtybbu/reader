@@ -12,6 +12,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.domain.model.library.Category
 import ua.acclorite.book_story.presentation.library.LibraryEvent
+import ua.acclorite.book_story.presentation.library.model.LibrarySortOrder
 import ua.acclorite.book_story.presentation.library.model.SelectableBook
 import ua.acclorite.book_story.ui.common.components.common.AnimatedVisibility
 import ua.acclorite.book_story.ui.common.components.common.IconButton
@@ -69,6 +71,8 @@ fun LibraryTopBar(
     isRefreshing: Boolean,
     categories: List<Category>,
     showDefaultCategory: Boolean,
+    perCategorySort: Boolean,
+    sortOrder: LibrarySortOrder,
     searchVisibility: (LibraryEvent.OnSearchVisibility) -> Unit,
     requestFocus: (LibraryEvent.OnRequestFocus) -> Unit,
     searchQueryChange: (LibraryEvent.OnSearchQueryChange) -> Unit,
@@ -111,6 +115,12 @@ fun LibraryTopBar(
         }
     }
 
+    // fork: 书架默认按「最近阅读」排序，但界面上没有任何地方说明这一点，用户看不出
+    // 书为什么是这个顺序。规则与 LibraryPager.kt:88-110 保持一致：
+    // 开启「按分类排序」时以当前分类自己的设置为准。
+    val activeSortOrder = if (perCategorySort) currentCategory.value.first.sortOrder
+    else sortOrder
+
     val animatedItemCountBackgroundColor = animateColorAsState(
         if (hasSelectedItems) MaterialTheme.colorScheme.surfaceContainerHighest
         else MaterialTheme.colorScheme.surfaceContainer,
@@ -131,27 +141,41 @@ fun LibraryTopBar(
                 contentID = 0,
                 contentNavigationIcon = {},
                 contentTitle = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        StyledText(
-                            text = if (showCategoryTabs) stringResource(id = R.string.library_screen)
-                            else currentCategory.value.first.title
-                        )
-
-                        if (showBookCount) {
-                            Spacer(modifier = Modifier.width(6.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             StyledText(
-                                text = if (showCategoryTabs) bookCount.toString()
-                                else currentCategory.value.second.size.toString(),
-                                modifier = Modifier
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceContainer,
-                                        RoundedCornerShape(14.dp)
+                                text = if (showCategoryTabs) stringResource(id = R.string.library_screen)
+                                else currentCategory.value.first.title
+                            )
+
+                            if (showBookCount) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                StyledText(
+                                    text = if (showCategoryTabs) bookCount.toString()
+                                    else currentCategory.value.second.size.toString(),
+                                    modifier = Modifier
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceContainer,
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                                    style = LocalTextStyle.current.copy(
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 16.sp
                                     )
-                                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                                style = LocalTextStyle.current.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 16.sp
                                 )
+                            }
+                        }
+
+                        // fork: 只在「最近阅读」时提示——它是默认排序，用户没主动选过；
+                        // 其它排序是用户刚在筛选面板里改的，不需要再占一行。
+                        if (activeSortOrder == LibrarySortOrder.LAST_READ) {
+                            StyledText(
+                                text = stringResource(id = R.string.sort_order_last_read),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                maxLines = 1
                             )
                         }
                     }
