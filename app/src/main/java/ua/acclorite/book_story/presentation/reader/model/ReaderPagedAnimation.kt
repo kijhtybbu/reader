@@ -47,6 +47,26 @@ enum class ReaderPagedAnimation(@StringRes val title: Int) {
  */
 data class PagerPageTransform(val translation: Float, val alpha: Float)
 
+/**
+ * Pager 把第 [index] 页画在什么位置（像素）。
+ *
+ * 这是 Round 1 那个 blocker 真正藏身的地方：第一版在调用处把 fraction 的符号写成了 `+`。
+ * 把它抽成函数，就能用「硬编码的期望值」把它钉住，而不是靠一个代数恒等式自我验证。
+ *
+ * @param offsetFraction PagerState.currentPageOffsetFraction，取值 [-0.5, 0.5]，
+ *   在 currentPage 翻转的那一刻从 +0.5 跳到 -0.5
+ */
+fun pagerDrawOffset(
+    index: Int,
+    currentPage: Int,
+    offsetFraction: Float,
+    pageSize: Float,
+    reversed: Boolean
+): Float {
+    val direction = if (reversed) -1f else 1f
+    return (index - currentPage - offsetFraction) * pageSize * direction
+}
+
 fun pagerPageTransform(
     animation: ReaderPagedAnimation,
     /** page - currentPage - currentPageOffsetFraction */

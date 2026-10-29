@@ -371,20 +371,21 @@ fun ReaderLayoutPaged(
                         } else {
                             // fork: 翻页动画。约定见 ReaderPagedAnimation.kt：
                             // offsetDistance = page - currentPage - currentPageOffsetFraction（正数在前方）
-                            val offsetDistance = index - pagerState.currentPage -
-                                pagerState.currentPageOffsetFraction
                             val reversed = if (direction.vertical) {
                                 direction.reversed
                             } else {
                                 direction.reversed xor (layoutDirection == LayoutDirection.Rtl)
                             }
+                            val offsetDistance = index - pagerState.currentPage -
+                                pagerState.currentPageOffsetFraction
                             key(page) {
                                 Box(
                                     Modifier.graphicsLayer {
+                                        val pageSize = if (direction.vertical) size.height else size.width
                                         val transform = pagerPageTransform(
                                             animation = animation,
                                             offsetDistance = offsetDistance,
-                                            pageSize = if (direction.vertical) size.height else size.width,
+                                            pageSize = pageSize,
                                             reversed = reversed
                                         )
                                         if (direction.vertical) {
@@ -413,9 +414,12 @@ fun ReaderLayoutPaged(
                         .graphicsLayer { alpha = contentAlpha }
                         .then(
                             if (toolbarHidden) {
-                                Modifier.pointerInput(tapZones, showMenu) {
+                                Modifier.pointerInput(tapZones, showMenu, doubleClickTranslation) {
                                     detectTapGestures(
-                                        onDoubleTap = { offset ->
+                                        // 关键：onDoubleTap 非 null 时 detectTapGestures 会把单击
+                                        // 延后到双击超时（~300ms）再回调。默认关闭双击翻译，
+                                        // 所以这里必须传 null，否则每次翻页都慢一拍。
+                                        onDoubleTap = if (!doubleClickTranslation) null else { offset ->
                                             // fork: 双击翻译原来挂在段落自己的 combinedClickable 上，
                                             // 那是个「第二套点击检测器」，会把单击吞掉，导致正文上的
                                             // 分区点击失效。现在统一在这里处理。
@@ -433,8 +437,8 @@ fun ReaderLayoutPaged(
                                                     )
                                                 }
                                             }
-                                        }
-                                    ) { offset ->
+                                        },
+                                        onTap = { offset ->
                                         // 菜单开着时，点任意位置先收起菜单（与 ReaderLayoutContinuous 一致）
                                         if (showMenu) {
                                             menuVisibility(ReaderEvent.OnMenuVisibility(false, true))
@@ -453,7 +457,10 @@ fun ReaderLayoutPaged(
                                                 // 连点两次时，第二次从「已排队的目标」继续，
                                                 // 而不是从 currentPage 重新算（否则两次点击只翻一页）
                                                 val delta = if (action == ReaderTapAction.NEXT) 1 else -1
-                                                val from = pendingTapTarget ?: pagerState.currentPage
+                                                // 目标距当前页超过 1 页说明上一次连点被用户滚动打断了，丢弃
+                                                val from = pendingTapTarget
+                                                    ?.takeIf { kotlin.math.abs(it - pagerState.currentPage) <= 1 }
+                                                    ?: pagerState.currentPage
                                                 val target = (from + delta)
                                                     .coerceIn(0, (pagerState.pageCount - 1).coerceAtLeast(0))
                                                 pendingTapTarget = target
@@ -462,7 +469,8 @@ fun ReaderLayoutPaged(
                                                 }
                                             }
                                         }
-                                    }
+                                        }
+                                    )
                                 }
                             } else {
                                 Modifier

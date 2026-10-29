@@ -64,8 +64,9 @@ class ReaderNodeHitTestTest {
     }
 
     @Test
-    fun `hit below the last paragraph clamps to the last node`() {
-        assertEquals(1, (readerNodeAtY(page, 999f) as ReaderNode.Paragraph).node.id.id)
+    fun `hit below the last paragraph hits nothing`() {
+        // 页面下方空白处双击不应该翻译最后一段
+        assertNull(readerNodeAtY(page, 999f))
     }
 
     @Test

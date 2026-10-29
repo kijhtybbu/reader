@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.Dp
 import ua.acclorite.book_story.presentation.reader.ReaderEvent
 import ua.acclorite.book_story.ui.reader.model.ReaderNode
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
+import ua.acclorite.book_story.domain.model.book.NodeContent
 
 @Composable
 fun ReaderLayoutContent(
@@ -46,7 +47,12 @@ fun ReaderLayoutContent(
     toolbarHidden: Boolean,
     paragraphHeight: Dp,
     openTranslator: (ReaderEvent.OnOpenTranslator) -> Unit,
-    menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit
+    menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit,
+    /**
+     * fork: 是否给段落挂点击处理。仅连续布局为 true —— 分页布局的单击/双击
+     * 统一由 Pager 上的单一检测器处理，段落再挂一个会把单击吞掉。
+     */
+    paragraphClickEnabled: Boolean = false
 ) {
     when (readerNode) {
         is ReaderNode.Header -> {
@@ -67,7 +73,16 @@ fun ReaderLayoutContent(
                 paragraph = readerNode,
                 paragraphTextStyle = paragraphTextStyle,
                 horizontalAlignment = horizontalAlignment,
-                sidePadding = sidePadding
+                sidePadding = sidePadding,
+                onClick = if (paragraphClickEnabled) {
+                    { menuVisibility(ReaderEvent.OnMenuVisibility(!showMenu, true)) }
+                } else null,
+                onDoubleClick = if (paragraphClickEnabled) {
+                    {
+                        val content = readerNode.node.content as NodeContent.Paragraph
+                        openTranslator(ReaderEvent.OnOpenTranslator(content.text, true))
+                    }
+                } else null
             )
         }
 

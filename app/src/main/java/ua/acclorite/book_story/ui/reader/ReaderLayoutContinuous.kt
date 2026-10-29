@@ -407,7 +407,9 @@ fun ReaderLayoutContinuous(
                                     fontColor = fontColor,
                                     horizontalAlignment = horizontalAlignment,
                                     sidePadding = sidePadding,
-                                    doubleClickTranslation = doubleClickTranslation,
+                                    // 连续布局没有分区翻页，段落点击仍由段落自己处理（单击切菜单 + 双击翻译）
+                paragraphClickEnabled = doubleClickTranslation && toolbarHidden,
+                doubleClickTranslation = doubleClickTranslation,
                                     toolbarHidden = toolbarHidden,
                                     paragraphHeight = paragraphHeight,
                                     openTranslator = openTranslator,

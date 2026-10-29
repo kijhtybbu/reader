@@ -26,5 +26,6 @@ internal fun readerNodeAtY(page: ReaderPage, y: Float): ReaderNode? {
         if (y <= cursor + item.height) return item.node
         cursor += item.height
     }
-    return page.items.lastOrNull()?.node
+    // 越过最后一项 = 点到页面下方的空白，不应翻译最后一段
+    return null
 }

@@ -78,6 +78,31 @@ class PagerPageTransformTest {
     }
 
     @Test
+    fun `draw offset follows the Compose convention with hard-coded values`() {
+        // currentPage=0, fraction=0.3（向前拖了 0.3 页）
+        // 第 0 页应在 -300，第 1 页应在 +700
+        assertEquals(-300f, pagerDrawOffset(0, 0, 0.3f, 1000f, reversed = false), 0.001f)
+        assertEquals(700f, pagerDrawOffset(1, 0, 0.3f, 1000f, reversed = false), 0.001f)
+        // 上一页在 -1300
+        assertEquals(-1300f, pagerDrawOffset(-1, 0, 0.3f, 1000f, reversed = false), 0.001f)
+    }
+
+    @Test
+    fun `draw offset is continuous across the currentPage flip`() {
+        // currentPage 翻转的那一刻：fraction 从 +0.5 跳到 -0.5，
+        // 同一页的屏幕位置必须不变，否则翻页会「跳半页」
+        val before = pagerDrawOffset(1, 0, 0.5f, 1000f, reversed = false)
+        val after = pagerDrawOffset(1, 1, -0.5f, 1000f, reversed = false)
+        assertEquals("翻转点不连续，翻页会跳半页", before, after, 0.001f)
+        assertEquals(500f, before, 0.001f)
+    }
+
+    @Test
+    fun `draw offset is mirrored in reversed layouts`() {
+        assertEquals(300f, pagerDrawOffset(0, 0, 0.3f, 1000f, reversed = true), 0.001f)
+    }
+
+    @Test
     fun `translation scales with page size`() {
         val t = pagerPageTransform(ReaderPagedAnimation.FADE, -0.5f, pageSize = 400f, reversed = false)
         assertEquals(200f, t.translation, 0.001f)
