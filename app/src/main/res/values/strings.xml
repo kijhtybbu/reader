@@ -542,5 +542,6 @@
     <string name="bookmarks_empty">No bookmarks yet</string>
     <string name="add_bookmark_content_desc">Bookmark this line</string>
     <string name="remove_bookmark_content_desc">Remove bookmark</string>
+    <string name="move_bookmark_content_desc">Move bookmark to this line</string>
     <string name="delete_bookmark_content_desc">Delete bookmark</string>
 </resources>

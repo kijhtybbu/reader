@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import ua.acclorite.book_story.core.log.logW
 import ua.acclorite.book_story.domain.model.book.Node
 import ua.acclorite.book_story.domain.model.book.NodeId
 import ua.acclorite.book_story.domain.use_case.book.GetBookContentNodeByOffsetUseCase
@@ -34,6 +35,8 @@ import ua.acclorite.book_story.presentation.library.LibraryScreen
 import ua.acclorite.book_story.presentation.reader.model.Checkpoint
 import javax.inject.Inject
 import kotlin.coroutines.coroutineContext
+
+private const val TAG = "ReaderModel"
 
 @HiltViewModel
 class ReaderModel @Inject constructor(
@@ -279,6 +282,18 @@ class ReaderModel @Inject constructor(
                 }
 
                 is ReaderEvent.OnScrollToPosition -> {
+                    // fork: 书签里存的 nodeId 是上一次解析分配的，重新解析时节点 id 从 0 重排，而书签不做重映射。
+                    // 越界的 id 永远不会出现在 nodes 里，ReaderLayoutPaged 会一直等目标节点
+                    // （空白页、scrollConsumed 不回调），所以直接丢弃这次跳转，也不落库。
+                    val totalNodes = _state.value.book.progress.totalNodes
+                    if (event.nodeId.id !in 0 until totalNodes) {
+                        logW(
+                            TAG,
+                            "Ignoring scroll target [${event.nodeId.id}] outside 0 until $totalNodes"
+                        )
+                        return@launch
+                    }
+
                     // fork: 与 OnRestoreCheckpoint 一致 —— 除了设 scrollTarget，还必须移动
                     // _paginationNodeId，否则 GetBookContentUseCase 不会重新加载节点窗口：
                     // 目标节点（例如 ±200 节点之外的旧书签）永远不会出现在 nodes 里，
@@ -299,6 +314,10 @@ class ReaderModel @Inject constructor(
                                 ),
                                 book = it.book.copy(
                                     progress = it.book.progress.copy(
+                                        // fork: 已知局限：目标节点不在已加载窗口内时，下面拿不到它的绝对
+                                        // offset，于是 currentNodeId 已指向目标、currentOffset 还是旧的。
+                                        // 这一瞬间书架上的百分比可能不准；重排后阅读页发 OnUpdateProgress
+                                        // 会把它改对，所以这里不再额外算一次。
                                         currentNodeId = event.nodeId,
                                         currentNodeIntraOffset = event.nodeIntraOffset,
                                         currentOffset = nodeOffset

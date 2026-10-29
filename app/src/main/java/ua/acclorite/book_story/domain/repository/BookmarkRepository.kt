@@ -21,6 +21,12 @@ interface BookmarkRepository {
 
     suspend fun addBookmark(bookmark: Bookmark): Result<Unit>
 
+    /**
+     * fork 新增：把已有的书签 [id] 挪到 [bookmark] 的位置，单事务完成。
+     * 失败时旧书签必须原样保留 —— 一次移动失败不能让书签凭空消失。
+     */
+    suspend fun moveBookmark(id: Int, bookmark: Bookmark): Result<Unit>
+
     suspend fun deleteBookmark(id: Int): Result<Unit>
 
     suspend fun deleteBookmarksForBook(bookId: Int): Result<Unit>

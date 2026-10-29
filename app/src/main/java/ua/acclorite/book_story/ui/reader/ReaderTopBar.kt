@@ -57,7 +57,7 @@ fun ReaderTopBar(
     switchColorPreset: (SettingsEvent.OnSwitchColorPreset) -> Unit,
     showSettingsBottomSheet: (ReaderEvent.OnShowSettingsBottomSheet) -> Unit,
     showChaptersDrawer: (ReaderEvent.OnShowChaptersDrawer) -> Unit,
-    isBookmarked: Boolean,
+    bookmarkState: BookmarkButtonState,
     onToggleBookmark: () -> Unit,
     onShowBookmarks: () -> Unit,
     navigateToBookInfo: (ReaderEvent.OnNavigateToBookInfo) -> Unit,
@@ -136,11 +136,15 @@ fun ReaderTopBar(
             },
             actions = {
                 IconButton(
-                    icon = if (isBookmarked) Icons.Rounded.Bookmark else Icons.Outlined.BookmarkBorder,
-                    contentDescription = if (isBookmarked) {
-                        R.string.remove_bookmark_content_desc
-                    } else {
-                        R.string.add_bookmark_content_desc
+                    icon = if (bookmarkState == BookmarkButtonState.NONE)
+                        Icons.Outlined.BookmarkBorder
+                    else Icons.Rounded.Bookmark,
+                    // fork: 描述必须说清楚点下去会发生什么。段落里已有书签但不在当前行时
+                    // （改过字号就会出现），点一下是移动而不是取消。
+                    contentDescription = when (bookmarkState) {
+                        BookmarkButtonState.NONE -> R.string.add_bookmark_content_desc
+                        BookmarkButtonState.HERE -> R.string.remove_bookmark_content_desc
+                        BookmarkButtonState.ELSEWHERE -> R.string.move_bookmark_content_desc
                     },
                     disableOnClick = false,
                     enabled = !lockMenu

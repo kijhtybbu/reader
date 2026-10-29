@@ -139,7 +139,9 @@ fun LibraryGridItem(
                         progress = { progressFraction },
                         modifier = Modifier.size(Dimens.coverProgressRing),
                         color = Color.White,
-                        trackColor = Color.White.copy(0.3f),
+                        // fork: 轨道色直接叠在压暗胶囊上，0.3f 的白色算下来约 2.7:1，
+                        // 低于非文本元素 3:1 的门槛；0.4f 约 3.4:1。
+                        trackColor = Color.White.copy(0.4f),
                         strokeWidth = Dimens.coverProgressRingStroke
                     )
 

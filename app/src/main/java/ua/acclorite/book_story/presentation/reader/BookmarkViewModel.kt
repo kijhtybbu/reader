@@ -78,15 +78,13 @@ class BookmarkViewModel @Inject constructor(
                     existing.nodeIntraOffset == bookmark.nodeIntraOffset ->
                         bookmarkRepository.deleteBookmark(existing.id)
 
-                    // 挪到新的一行：删掉旧的再插新的。保留原来的 createdAt ——
+                    // 挪到新的一行：交给仓库的单事务方法完成（先插后删）。
+                    // 以前这里是“先删后插”，插入失败就什么都不剩；而且插入撞唯一索引（IGNORE）
+                    // 时删掉的旧书签再也回不来。保留原来的 createdAt ——
                     // 列表按 nodeId 排序，「什么时候收藏的这一段」不该因为换了行而重置。
-                    else -> bookmarkRepository.deleteBookmark(existing.id).fold(
-                        onSuccess = {
-                            bookmarkRepository.addBookmark(
-                                bookmark.copy(createdAt = existing.createdAt)
-                            )
-                        },
-                        onFailure = { Result.failure(it) }
+                    else -> bookmarkRepository.moveBookmark(
+                        existing.id,
+                        bookmark.copy(createdAt = existing.createdAt)
                     )
                 }
                 result.onFailure {

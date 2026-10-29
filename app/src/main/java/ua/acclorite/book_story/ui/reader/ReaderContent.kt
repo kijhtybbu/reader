@@ -219,7 +219,7 @@ fun ReaderContent(
                     pagedDirection = pagedDirection,
                     pagedAnimation = pagedAnimation,
                     tapZones = tapZones,
-                    isBookmarked = currentBookmark != null,
+                    bookmarkState = bookmarkButtonState(currentBookmark, currentNodeOffset),
                     onToggleBookmark = {
                         bookmarkViewModel.toggle(
                             Bookmark(

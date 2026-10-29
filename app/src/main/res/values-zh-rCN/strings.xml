@@ -392,5 +392,6 @@
     <string name="bookmarks_empty">还没有书签</string>
     <string name="add_bookmark_content_desc">收藏当前行</string>
     <string name="remove_bookmark_content_desc">取消收藏</string>
+    <string name="move_bookmark_content_desc">将书签移到此行</string>
     <string name="delete_bookmark_content_desc">删除书签</string>
 </resources>

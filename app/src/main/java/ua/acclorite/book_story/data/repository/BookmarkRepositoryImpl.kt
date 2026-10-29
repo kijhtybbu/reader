@@ -23,8 +23,17 @@ class BookmarkRepositoryImpl @Inject constructor(
     }
 
     override suspend fun addBookmark(bookmark: Bookmark): Result<Unit> = runCatching {
-        appDatabase.bookmarkDao.insertBookmark(bookmark.toEntity())
-        Unit
+        // fork: insertBookmark 用 OnConflictStrategy.IGNORE，撞上唯一索引时返回 -1 而不抛异常。
+        // 不看这个返回值就把“没写进去”报成了成功，界面以为已收藏，列表里却没有。
+        check(appDatabase.bookmarkDao.insertBookmark(bookmark.toEntity()) != -1L) {
+            "Bookmark insert was ignored, a row at the same position already exists"
+        }
+    }
+
+    override suspend fun moveBookmark(id: Int, bookmark: Bookmark): Result<Unit> = runCatching {
+        check(appDatabase.bookmarkDao.moveBookmark(id, bookmark.toEntity()) != -1L) {
+            "Bookmark move was ignored, a row at the same position already exists"
+        }
     }
 
     override suspend fun deleteBookmark(id: Int): Result<Unit> = runCatching {

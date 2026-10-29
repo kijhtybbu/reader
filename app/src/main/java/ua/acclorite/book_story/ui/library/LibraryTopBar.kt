@@ -96,12 +96,19 @@ fun LibraryTopBar(
             }.toMutableList().apply {
                 if (showDefaultCategory) {
                     val categoryIds = categories.map { it.id }.toSet()
+                    // fork: 不能凭空造一条 Category —— 默认分类行是用户可改、且会落库的：
+                    // 它的 sortOrder/sortOrderDescending 在数据库里，LibraryPager 排序用的就是那一行，
+                    // 而合成行的 sortOrder 恒为 LAST_READ。用户在筛选面板把默认分类改成按名称排序后，
+                    // 顶部仍会显示「最近阅读」。所以这里取真实行，只覆盖标签
+                    // （数据库里该行的 title 存的是空串）。
                     add(
                         0,
-                        Category(
-                            id = -1,
-                            title = defaultCategory
-                        ) to books.filter { book ->
+                        (categories.firstOrNull { it.id == -1 }
+                            ?: Category(
+                                id = -1,
+                                title = defaultCategory
+                            ))
+                            .copy(title = defaultCategory) to books.filter { book ->
                             book.data.categories.none { category -> category in categoryIds }
                         }
                     )
@@ -143,9 +150,12 @@ fun LibraryTopBar(
                 contentTitle = {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            // fork: 分类名是用户输入（最长 200 字），字体放大后两行标题会把 64dp 的
+                            // app bar 内容区撑破。标题行锁成一行，超出按默认行为省略。
                             StyledText(
                                 text = if (showCategoryTabs) stringResource(id = R.string.library_screen)
-                                else currentCategory.value.first.title
+                                else currentCategory.value.first.title,
+                                maxLines = 1
                             )
 
                             if (showBookCount) {
@@ -167,8 +177,9 @@ fun LibraryTopBar(
                             }
                         }
 
-                        // fork: 只在「最近阅读」时提示——它是默认排序，用户没主动选过；
-                        // 其它排序是用户刚在筛选面板里改的，不需要再占一行。
+                        // fork: 只要当前生效的排序是「最近阅读」就提示 —— 默认排序本身不是可见设置，
+                        // 用户需要这行字才能知道书为什么是这个顺序；用户主动在筛选面板里选
+                        // 「最近阅读」时同理。
                         if (activeSortOrder == LibrarySortOrder.LAST_READ) {
                             StyledText(
                                 text = stringResource(id = R.string.sort_order_last_read),
