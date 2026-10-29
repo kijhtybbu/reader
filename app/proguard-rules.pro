@@ -50,7 +50,9 @@
 # 而它自身不带 consumer proguard 规则。R8 把 `text_` 改名成 `e` 之后，
 # NodeContentListProto.parseFrom 抛 "Field text_ for ParagraphProto not found"，
 # 被 cacheNodes 的 runCatching 吞掉 → 解析器以为没有节点 → 报「文件似乎为空」。
-# 已用对照实验确认：未改动的上游 minified 构建同样失败，debug 构建正常。
+# 已用四组对照确认：官方发布版 v1.8.0（无 protobuf）正常；未改动的 upstream/master 的
+# release-debug 失败、debug 正常；加上本规则后 minified 构建正常。
+# 即：这是 upstream/master 上一个尚未发布的回归（protobuf 是在 v1.8.0 之后引入的）。
 -keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
     <fields>;
 }

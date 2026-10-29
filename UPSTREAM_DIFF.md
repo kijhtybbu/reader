@@ -29,7 +29,18 @@
 
 ## 2. 上游缺陷修复（本 fork 修的是上游的 bug）
 
-这两条不是"我们的新功能"，而是**上游在这个仓库里的构建本身就是坏的**。第一条已在实体机上用未改动的上游构建做过对照实验确认。
+这两条不是"我们的新功能"，而是**上游 `master` 上已经存在、但尚未发布出去的缺陷**。
+
+准确范围（已用官方发布包 + 未改动的上游源码双向验证）：
+
+| | 官方发布版 **v1.8.0** | `upstream/master`（本 fork 的基线） |
+| --- | --- | --- |
+| `.proto` 文件 | 0 个 | 1 个 |
+| `protobuf-javalite` | 无 | 4.33.2 |
+| minified 构建能否打开书籍 | ✅ 正常 | ❌ **失败** |
+
+protobuf 是在 `upstream/master` 那唯一一个超出 v1.8.0 的提交（`464891ec`，提交信息写的是 "feat: update translations"）里引入的。
+也就是说：**这是一个会随上游下一个版本发布出去的回归**，而本 fork 因为基于 `master` 才踩到它。
 
 ### 2.1 minified 构建完全无法打开书籍
 
@@ -42,7 +53,13 @@ RuntimeException: Field text_ for ...ParagraphProto not found.
 Known fields are [... e, ... f, ... g, ... h]
 ```
 
-**对照实验**：未改动的 `upstream/master` 构建 `release-debug`，同一台设备、同一个文件，同样失败（`Could not parse book content.`），且上游 `proguard-rules.pro` 里也没有任何 protobuf 规则。
+**对照实验**：
+- 官方发布的 **v1.8.0** APK（26.6MB，minified）——打开真实 EPUB 正常（它没有 protobuf）
+- 未改动的 `upstream/master` 构建 `release-debug`——同一台设备、同一个文件，失败（`Could not parse book content.`）
+- 同一份 master 的 **debug** 构建——正常（不开 R8）
+- 上游 `proguard-rules.pro` 里没有任何 protobuf 规则，而 `protobuf-javalite` 自身不带 consumer 规则
+
+唯一变量是 R8 与 protobuf 的组合。
 
 **修复**：加上 keep 规则后，minified 构建在真机上正常渲染。
 
