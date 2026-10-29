@@ -96,11 +96,13 @@ fun ReaderChapterHint(
     var state by remember { mutableStateOf(ChapterHintState.Initial) }
 
     LaunchedEffect(chapterTitle) {
-        val previous = state
-        val next = chapterHintTransition(previous, chapterTitle)
+        val next = chapterHintTransition(state, chapterTitle)
         state = next
-        // 只在「由不显示变为显示」时挂计时器，避免重复进入时打断计时
-        if (next.visible && !previous.visible) {
+        // 只要这次要显示就（重新）计时。
+        // 不能只在「false → true」时挂计时器：连续跨两章时，第二次变化会让
+        // LaunchedEffect 重启并取消第一次的 delay，而那时 previous.visible 已经是 true，
+        // 于是不会再挂新计时器 —— 胶囊就永久停在屏幕上了。
+        if (next.visible) {
             delay(HintDurationMillis)
             state = state.copy(visible = false)
         }

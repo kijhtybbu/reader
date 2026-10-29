@@ -388,4 +388,9 @@
     <string name="tap_zones_sides">左 / 中 / 右</string>
     <string name="tap_zones_top_bottom">上 / 中 / 下</string>
     <string name="tap_zones_center_only">仅中间</string>
+    <string name="bookmarks_option">书签</string>
+    <string name="bookmarks_empty">还没有书签</string>
+    <string name="add_bookmark_content_desc">收藏当前行</string>
+    <string name="remove_bookmark_content_desc">取消收藏</string>
+    <string name="delete_bookmark_content_desc">删除书签</string>
 </resources>

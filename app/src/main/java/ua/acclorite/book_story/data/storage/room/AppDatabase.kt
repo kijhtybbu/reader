@@ -20,10 +20,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import ua.acclorite.book_story.data.storage.room.dao.BookDao
+import ua.acclorite.book_story.data.storage.room.dao.BookmarkDao
 import ua.acclorite.book_story.data.storage.room.dao.CategoryDao
 import ua.acclorite.book_story.data.storage.room.dao.ColorPresetDao
 import ua.acclorite.book_story.data.storage.room.dao.HistoryDao
 import ua.acclorite.book_story.data.storage.room.entity.BookEntity
+import ua.acclorite.book_story.data.storage.room.entity.BookmarkEntity
 import ua.acclorite.book_story.data.storage.room.entity.CategoryEntity
 import ua.acclorite.book_story.data.storage.room.entity.ColorPresetEntity
 import ua.acclorite.book_story.data.storage.room.entity.HistoryEntity
@@ -35,9 +37,10 @@ import java.util.UUID
         BookEntity::class,
         HistoryEntity::class,
         ColorPresetEntity::class,
-        CategoryEntity::class
+        CategoryEntity::class,
+        BookmarkEntity::class
     ],
-    version = 18,
+    version = 19,
     autoMigrations = [
         AutoMigration(1, 2),
         AutoMigration(2, 3),
@@ -55,7 +58,8 @@ import java.util.UUID
         AutoMigration(14, 15),
         AutoMigration(15, 16, spec = AppDatabaseMigrationHelper.AUTO_MIGRATION_15_16::class),
         AutoMigration(16, 17),
-        AutoMigration(17, 18)
+        AutoMigration(17, 18),
+        AutoMigration(18, 19)
     ],
     exportSchema = true
 )
@@ -107,6 +111,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract val historyDao: HistoryDao
     abstract val colorPresetDao: ColorPresetDao
     abstract val categoryDao: CategoryDao
+    abstract val bookmarkDao: BookmarkDao
 }
 
 @Suppress("ClassName")

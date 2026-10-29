@@ -35,6 +35,7 @@ import ua.acclorite.book_story.data.parser.cover.CoverParserImpl
 import ua.acclorite.book_story.data.parser.file.FileParser
 import ua.acclorite.book_story.data.parser.file.FileParserImpl
 import ua.acclorite.book_story.data.repository.BookRepositoryImpl
+import ua.acclorite.book_story.data.repository.BookmarkRepositoryImpl
 import ua.acclorite.book_story.data.repository.CategoryRepositoryImpl
 import ua.acclorite.book_story.data.repository.ColorPresetRepositoryImpl
 import ua.acclorite.book_story.data.repository.FileSystemRepositoryImpl
@@ -43,6 +44,7 @@ import ua.acclorite.book_story.data.repository.PermissionRepositoryImpl
 import ua.acclorite.book_story.data.storage.data_store.DataStore
 import ua.acclorite.book_story.data.storage.data_store.DataStoreImpl
 import ua.acclorite.book_story.domain.repository.BookRepository
+import ua.acclorite.book_story.domain.repository.BookmarkRepository
 import ua.acclorite.book_story.domain.repository.CategoryRepository
 import ua.acclorite.book_story.domain.repository.ColorPresetRepository
 import ua.acclorite.book_story.domain.repository.FileSystemRepository
@@ -64,6 +66,12 @@ abstract class RepositoryModule {
     abstract fun bindBookRepository(
         bookRepositoryImpl: BookRepositoryImpl
     ): BookRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindBookmarkRepository(
+        bookmarkRepositoryImpl: BookmarkRepositoryImpl
+    ): BookmarkRepository
 
     @Binds
     @Singleton

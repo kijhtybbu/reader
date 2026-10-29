@@ -278,6 +278,17 @@ class ReaderModel @Inject constructor(
                     }
                 }
 
+                is ReaderEvent.OnScrollToPosition -> {
+                    _state.update {
+                        it.copy(
+                            scrollTarget = ScrollTarget(
+                                nodeId = event.nodeId,
+                                nodeIntraOffset = event.nodeIntraOffset
+                            )
+                        )
+                    }
+                }
+
                 is ReaderEvent.OnScrollToChapter -> {
                     withContext(Dispatchers.Default) {
                         val chapter = event.chapter

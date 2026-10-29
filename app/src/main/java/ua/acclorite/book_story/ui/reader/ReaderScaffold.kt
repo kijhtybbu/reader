@@ -51,6 +51,9 @@ fun ReaderScaffold(
     pagedDirection: ReaderPagedDirection,
     pagedAnimation: ReaderPagedAnimation,
     tapZones: ReaderTapZones,
+    isBookmarked: Boolean,
+    onToggleBookmark: () -> Unit,
+    onShowBookmarks: () -> Unit,
     nodes: List<Node>,
     book: Book,
     paginating: Boolean,
@@ -151,6 +154,9 @@ fun ReaderScaffold(
                     switchColorPreset = switchColorPreset,
                     showSettingsBottomSheet = showSettingsBottomSheet,
                     showChaptersDrawer = showChaptersDrawer,
+                    isBookmarked = isBookmarked,
+                    onToggleBookmark = onToggleBookmark,
+                    onShowBookmarks = onShowBookmarks,
                     navigateBack = navigateBack,
                     navigateToBookInfo = navigateToBookInfo
                 )

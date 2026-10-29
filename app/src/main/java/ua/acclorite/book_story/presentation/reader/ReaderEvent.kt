@@ -45,6 +45,15 @@ sealed class ReaderEvent {
         val progress: Float
     ) : ReaderEvent()
 
+    /**
+     * fork 新增：跳到书里的某个具体位置（书签跳转用）。
+     * 与 OnScrollToChapter 的区别是它不需要 Chapter 对象，只要节点 + 段内偏移。
+     */
+    data class OnScrollToPosition(
+        val nodeId: NodeId,
+        val nodeIntraOffset: Int
+    ) : ReaderEvent()
+
     data class OnRestoreCheckpoint(
         val checkpoint: Checkpoint
     ) : ReaderEvent()

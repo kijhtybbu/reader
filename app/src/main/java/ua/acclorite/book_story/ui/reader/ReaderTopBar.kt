@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Menu
@@ -54,6 +57,9 @@ fun ReaderTopBar(
     switchColorPreset: (SettingsEvent.OnSwitchColorPreset) -> Unit,
     showSettingsBottomSheet: (ReaderEvent.OnShowSettingsBottomSheet) -> Unit,
     showChaptersDrawer: (ReaderEvent.OnShowChaptersDrawer) -> Unit,
+    isBookmarked: Boolean,
+    onToggleBookmark: () -> Unit,
+    onShowBookmarks: () -> Unit,
     navigateToBookInfo: (ReaderEvent.OnNavigateToBookInfo) -> Unit,
     navigateBack: (ReaderEvent.OnNavigateBack) -> Unit
 ) {
@@ -129,6 +135,28 @@ fun ReaderTopBar(
                 )
             },
             actions = {
+                IconButton(
+                    icon = if (isBookmarked) Icons.Rounded.Bookmark else Icons.Outlined.BookmarkBorder,
+                    contentDescription = if (isBookmarked) {
+                        R.string.remove_bookmark_content_desc
+                    } else {
+                        R.string.add_bookmark_content_desc
+                    },
+                    disableOnClick = false,
+                    enabled = !lockMenu
+                ) {
+                    onToggleBookmark()
+                }
+
+                IconButton(
+                    icon = Icons.Outlined.Bookmarks,
+                    contentDescription = R.string.bookmarks_option,
+                    disableOnClick = false,
+                    enabled = !lockMenu
+                ) {
+                    onShowBookmarks()
+                }
+
                 if (!chaptersEmpty) {
                     IconButton(
                         icon = Icons.Rounded.Menu,

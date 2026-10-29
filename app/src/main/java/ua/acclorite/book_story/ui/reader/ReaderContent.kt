@@ -38,6 +38,15 @@ import ua.acclorite.book_story.ui.theme.LocalReaderPalette
 import ua.acclorite.book_story.ui.theme.readerPalette
 import ua.acclorite.book_story.ui.theme.SystemBarsAppearanceOverride
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.hilt.navigation.compose.hiltViewModel
+import ua.acclorite.book_story.domain.model.book.NodeContent
+import ua.acclorite.book_story.domain.model.bookmark.Bookmark
+import ua.acclorite.book_story.presentation.reader.BookmarkViewModel
 
 @Composable
 fun ReaderContent(
@@ -107,7 +116,9 @@ fun ReaderContent(
     retry: (ReaderEvent.OnRetry) -> Unit,
     leave: (ReaderEvent.OnLeave) -> Unit,
     restoreCheckpoint: (ReaderEvent.OnRestoreCheckpoint) -> Unit,
-    scroll: (ReaderEvent.OnScroll) -> Unit,
+    // fork: 放宽为任意 ReaderEvent —— 书签跳转用的是 OnScrollToPosition，
+    // 没必要为它再加一条贯穿四层的参数
+    scroll: (ReaderEvent) -> Unit,
     openShareApp: (ReaderEvent.OnOpenShareApp) -> Unit,
     openWebBrowser: (ReaderEvent.OnOpenWebBrowser) -> Unit,
     openTranslator: (ReaderEvent.OnOpenTranslator) -> Unit,
@@ -128,6 +139,28 @@ fun ReaderContent(
     // fork: palette 必须在这里提供 —— ReaderBottomSheet 与 ReaderScaffold 是兄弟节点，
     // 只包在 Scaffold 里会让底部面板拿到 ReaderPalette.Default（浅色），深色预设下正好是本次要修的 bug。
     // MaterialTheme 的读取不能放进 remember 的 lambda（非 @Composable 作用域）。
+    // fork: 书签。定位用 (nodeId, nodeIntraOffset)，改字号后仍然有效。
+    val bookmarkViewModel: BookmarkViewModel = hiltViewModel()
+    val bookmarks by bookmarkViewModel.bookmarks.collectAsStateWithLifecycle()
+    LaunchedEffect(book.id) { bookmarkViewModel.load(book.id) }
+    var showBookmarks by remember { mutableStateOf(false) }
+
+    val currentNodeId = book.progress.currentNodeId
+    val currentNodeOffset = book.progress.currentNodeIntraOffset
+    val currentBookmark = bookmarks.firstOrNull {
+        it.nodeId == currentNodeId.id && it.nodeIntraOffset == currentNodeOffset
+    }
+    // 摘录：取当前节点的前若干字，便于在列表里辨认
+    val currentSnippet = remember(nodes, currentNodeId) {
+        nodes.firstOrNull { it.id == currentNodeId }
+            ?.content
+            ?.let { it as? NodeContent.Paragraph }
+            ?.text
+            ?.trim()
+            ?.take(60)
+            .orEmpty()
+    }
+
     val accentSeed = MaterialTheme.colorScheme.primary
     val palette = remember(backgroundColor, fontColor, accentSeed) {
         readerPalette(backgroundColor, fontColor, accentSeed)
@@ -136,6 +169,23 @@ fun ReaderContent(
     // 阅读页的系统栏区域被 palette.bar 覆盖，图标明暗必须跟着它走，否则默认配置下
     // （深色系统 + 默认浅色预设）会出现浅底 + 浅图标
     SystemBarsAppearanceOverride(lightBars = palette.bar.luminance() > 0.5f)
+
+    if (showBookmarks) {
+        ReaderBookmarksBottomSheet(
+            bookmarks = bookmarks,
+            onJump = { bookmark ->
+                showBookmarks = false
+                scroll(
+                    ReaderEvent.OnScrollToPosition(
+                        nodeId = NodeId(bookmark.nodeId),
+                        nodeIntraOffset = bookmark.nodeIntraOffset
+                    )
+                )
+            },
+            onDelete = { bookmarkViewModel.delete(it.id) },
+            onDismiss = { showBookmarks = false }
+        )
+    }
 
     CompositionLocalProvider(LocalReaderPalette provides palette) {
         ReaderBottomSheet(
@@ -167,6 +217,20 @@ fun ReaderContent(
                     pagedDirection = pagedDirection,
                     pagedAnimation = pagedAnimation,
                     tapZones = tapZones,
+                    isBookmarked = currentBookmark != null,
+                    onToggleBookmark = {
+                        bookmarkViewModel.toggle(
+                            Bookmark(
+                                bookId = book.id,
+                                nodeId = currentNodeId.id,
+                                nodeIntraOffset = currentNodeOffset,
+                                chapterTitle = currentChapterString ?: "",
+                                snippet = currentSnippet,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                    },
+                    onShowBookmarks = { showBookmarks = true },
                     nodes = nodes,
                     book = book,
                     paginating = paginating,
