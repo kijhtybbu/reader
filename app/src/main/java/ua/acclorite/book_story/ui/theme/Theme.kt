@@ -57,9 +57,9 @@ fun BookStoryTheme(
     MaterialTheme(
         colorScheme = animatedColorScheme,
         // fork: 意在**降低分配**，不是为了减少重组。
-        // 配色动画期间（animateColorScheme 逐帧插值全部 slot）BookStoryTheme 本来就会每帧重执行，
-        // 且文本子树会因 LocalContentColor 变化而重组 —— 这一点 remember 改不了。
-        // 真正省下的只是每帧两次 Shapes/Typography 实例分配（上游 inline 的 Shapes() 同样有这问题）。
+        // 配色动画期间 animateColorScheme 逐帧插值 38 个 slot，BookStoryTheme 本来就会每帧重执行，
+        // remember 改不了这一点。它省下的只是每帧两次 Shapes/Typography 实例分配
+        //（上游 inline 的 Shapes() 同样有这个问题）。
         // 无 key：目前只依赖常量；若将来依赖设置项，必须补 key。
         shapes = remember { Shapes() },
         typography = remember { appTypography() },

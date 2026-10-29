@@ -85,18 +85,26 @@ git checkout -b ui-redesign
 
 现在 `29k` 行 UI 全靠 M3 默认值与硬编码 `dp`/`tween`，任何「视觉重做」都会退化成逐个文件调数字。先补三层 token，再做视觉。
 
+**零视觉变化的确切范围（重要，不要笼统说“零变化”）：**
+
+| 文件 | 视觉影响 |
+| --- | --- |
+| `Motion.kt` | **零**。41 处 `tween` 全部逐值等价（默认缓动 = `Motion.Legacy` = Compose 的 `FastOutSlowInEasing`），对照表见 `docs/motion-migration.md` |
+| `Dimens.kt` | **零**（目前无消费者） |
+| `Typography.kt` | **有意改变**。只会影响 `headlineMedium` 的 1 个界面（`ui/start/StartDoneLayout.kt:53` 的“设置完成！”）；`display*` 与 `headlineLarge` 无消费者，`headlineSmall` 未动 |
+
 **新建文件：**
 
 `ui/theme/Dimens.kt`
 ```
-间距：4 / 8 / 12 / 16 / 24 / 32（Spacing.xs … xxl）
-圆角：card 16.dp / cover 8.dp / sheet 28.dp / chip 999.dp
-控件高度：bar 56.dp / row 64.dp
-阅读页内边距默认值集中在此
+间距：4 / 8 / 12 / 16 / 18(≈仓库事实标准) / 24 / 32
+圆角：sheet 28.dp / pill；其余优先用 M3 MaterialTheme.shapes
+固定尺寸：topBarHeight 64.dp（M3 TopAppBar）、coverAspect 1f/1.5f
+只收有真实出处的值；写不准的宁可不收
 ```
 
 `ui/theme/Typography.kt`
-把 `Typography()` 换成品牌定义：标题用可变字重的紧凑字距，正文默认值对齐阅读器习惯。
+只收紧 display*/headline* 的字距并加重字重；title/body/label 不动（它们是全 App 布局高度的依据）。
 
 `ui/theme/Motion.kt`
 ```
@@ -157,6 +165,8 @@ ReaderPalette(bg, text, accent, contrastLevel)   // 阅读区专用
 ### 4.3 要改的文件
 
 ```
+ui/theme/ReaderPalette.kt                      阅读区配色（从 Phase 1 推迟而来，本阶段必须有消费者）
+ui/reader/ReaderScreen.kt                      接入 ReaderPalette，删掉 BlendMode 着色链路
 ui/reader/ReaderSettingsBottomSheet.kt          重写为 2 Tab + 高频区
 ui/reader/ReaderSettingsBottomSheetTabRow.kt    2 个 Tab
 ui/reader/data/ReaderData.kt                    注册中文字体

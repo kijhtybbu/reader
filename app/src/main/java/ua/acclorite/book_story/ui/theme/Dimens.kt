@@ -26,7 +26,11 @@ object Spacing {
     val s = 8.dp
     val m = 12.dp
     val l = 16.dp
-    /** 本仓库事实上的标准内边距：设置行、阅读页侧边留白都是 18dp（见下方 pageInset） */
+    /**
+     * 18dp：仓库里最高频的间距（全工程约 84 处，设置行、阅读页左右留白都是它）。
+     * 注意：其中约 6 处是 `Modifier.size(18.dp)` 的图标尺寸，不是间距，
+     * 迁移时别机械替换。
+     */
     val page = 18.dp
     val xl = 24.dp
     val xxl = 32.dp
@@ -34,25 +38,33 @@ object Spacing {
     val pageInset = page
 }
 
-/** 圆角阶梯 */
+/**
+ * 圆角阶梯。
+ *
+ * 注意：这里的 4/8/12/16 与 M3 `Shapes()`（`Theme.kt` 已提供）完全重叠。
+ * 新代码优先用 `MaterialTheme.shapes`；本对象只用于 M3 表达不了的场合
+ * （例如 sheet 顶部圆角 28dp、胶囊控件）。存在两个真相源是刻意的，别双写。
+ */
 object Radius {
     val xs = 4.dp
     val s = 8.dp
     val m = 12.dp
     val l = 16.dp
-    /** ModalBottomSheet 顶部圆角，与 M3 默认一致 */
+    /** ModalBottomSheet 顶部圆角，与 M3 默认一致，M3 Shapes 里没有这一档 */
     val sheet = 28.dp
     /** 胶囊/芯片 */
     val pill = 999.dp
 }
 
-/** 固定尺寸 */
+/**
+ * 固定尺寸。
+ *
+ * 只收录仓库里真实存在且有明确数值依据的量；写不准的宁可不收 ——
+ * 一个没根据的 token 会在后续阶段静默地把布局改掉。
+ */
 object Dimens {
-    /** M3 TopAppBar 单行容器高，不是 56dp（仓库里所有顶栅都是 M3 组件） */
+    /** M3 TopAppBar 单行容器高（仓库里所有顶栅都是 M3 TopAppBar，不是 56dp） */
     val topBarHeight = 64.dp
-    val iconButton = 40.dp
-    /** 最小可点击区域，无障碍下限 */
-    val touchTarget = 48.dp
     /** 封面宽高比，与 LibraryGridItem.kt:82 的 aspectRatio(1f / 1.5f) 一致 */
     val coverAspect = 1f / 1.5f
 }
