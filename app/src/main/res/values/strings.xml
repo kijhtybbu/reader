@@ -6,7 +6,7 @@
 
 <resources>
     <!-- Basic Strings -->
-    <string name="app_name" translatable="false">Book\'s Story</string>
+    <string name="app_name" translatable="false">本地阅读器</string>
     <string name="default_string">Default</string>
 
     <!-- Screens -->

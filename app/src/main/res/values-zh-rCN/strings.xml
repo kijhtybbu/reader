@@ -346,4 +346,30 @@
     <string name="horizontal_limiter_ruler_thickness_option">尺子厚度</string>
     <string name="horizontal_limiter_dimming_option">变暗</string>
     <string name="horizontal_limiter_option">水平限制器</string>
+
+    <!-- fork: 补齐上游新增但 zh-CN 尚未翻译的 23 条（均为 translatable!=false）。
+         注意 values-zh-rTW 上游仅有 10/371 条翻译，不属本次范围。 -->
+    <string name="bold_font_thickness_option">粗体字重</string>
+    <string name="continuous_layout_only_setting">此项设置仅在「连续」阅读布局下可用。</string>
+    <string name="error_could_not_access_file">无法访问文件。\n请确认文件存在且已授予所需权限。</string>
+    <string name="error_could_not_get_chapters">无法获取章节列表。（%1$s）</string>
+    <string name="error_could_not_parse_file">无法解析文件。（%1$s）</string>
+    <string name="error_could_not_save_file">无法保存文件。（%1$s）</string>
+    <string name="error_could_not_validate">无法校验书籍内容。请重试并检查文件。（%1$s）</string>
+    <string name="error_empty_file">文件似乎为空，请检查文件内容。</string>
+    <string name="error_wrong_file_format">文件格式不正确，请确认格式在支持范围内。</string>
+    <string name="headers_reader_settings">标题样式</string>
+    <string name="images_original_size_option">原始尺寸</string>
+    <string name="images_original_size_option_desc">按图片原始尺寸显示</string>
+    <string name="layout_continuous">连续</string>
+    <string name="layout_paged">分页</string>
+    <string name="paged_direction_bottom_to_top">从下到上</string>
+    <string name="paged_direction_left_to_right">从左到右</string>
+    <string name="paged_direction_option">翻页方向</string>
+    <string name="paged_direction_right_to_left">从右到左</string>
+    <string name="paged_direction_top_to_bottom">从上到下</string>
+    <string name="processing_content">正在处理书籍内容，最多可能需要几分钟。</string>
+    <string name="progress_count_characters">字数</string>
+    <string name="retry">重试</string>
+    <string name="saving_content">正在保存已处理的内容，通常不超过一分钟。</string>
 </resources>

@@ -13,13 +13,24 @@ plugins {
 }
 
 android {
+    // fork: 保持 namespace 不变。namespace 与 Kotlin 包路径、R 引用绑定，改名需触及
+    // 29k 行源码与全部 import；如需彻底改名，另开一次纯机械的重命名提交。
     namespace = "ua.acclorite.book_story"
     compileSdk = 36
 
     // Default configuration
     defaultConfig {
-        applicationId = "ua.acclorite.book_story"
-        minSdk = 26
+        // fork: 与上游区分，避免覆盖已安装的 Book's Story。
+        // 改动此值时必须同步 app/src/main/AndroidManifest.xml 中的三个
+        // DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION 名称，否则 tools:node="remove" 会失效。
+        applicationId = "dev.jia.reader"
+        // fork: 上游为 26。提到 29 的硬理由只有一条：
+        //   Typeface.CustomFallbackBuilder（API 29）—— 用户导入字体时唯一能串中文字形回退链的 API。
+        // 注意 NOT 理由：避头尾与 LineBreak 无关（实测 ICU 无条件遵守 UAX#14）；
+        //   而 LineBreak.Paragraph/Heading 依赖 android.graphics.text.LineBreakConfig，那是 API 33，
+        //   在 29~32 上仍会退化。
+        // rebase upstream 后务必检查此行，冲突不会导致编译失败，只会静默退回 26。
+        minSdk = 29
         targetSdk = 36
         versionCode = 14
         versionName = "1.8.0"
@@ -27,6 +38,10 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // fork: 上游未配置，默认 runner 是已废弃的 android.test.InstrumentationTestRunner，
+        // 导致 AndroidJUnit4 无法使用。排版自检（androidTest）依赖此项。
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Build types configuration
@@ -209,9 +224,15 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.3.0")
 
     // UI testing
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.10.0")
-    debugImplementation("androidx.compose.ui:ui-test-manifest:1.10.0")
-    debugImplementation("androidx.compose.ui:ui-tooling:1.10.0")
+    // fork: 上游将这三个测试件钉在 1.10.0，而 app 本身用 1.9.3 —— debug/androidTest 变体因此
+    // 解析到 ui:1.10.0，导致「调试包与发布包跑的不是同一套文本引擎」。已全部钉回 1.9.3。
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.9.3")
+    // fork: 排版自检只需要 runner + junit4，不必要 compose-ui-test
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    // fork: 显式声明 runner，避免依赖 ui-test-junit4 的传递引入
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest:1.9.3")
+    debugImplementation("androidx.compose.ui:ui-tooling:1.9.3")
     kspAndroidTest("com.google.dagger:hilt-android-compiler:2.57.2")
     testImplementation(kotlin("test"))
 }
