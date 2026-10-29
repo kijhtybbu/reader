@@ -49,7 +49,7 @@ import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.helpers.noRippleClickable
 import ua.acclorite.book_story.ui.common.model.Direction
 import ua.acclorite.book_story.ui.theme.HorizontalExpandingTransition
-import ua.acclorite.book_story.ui.theme.readerBarsColor
+import ua.acclorite.book_story.ui.theme.LocalReaderPalette
 
 @Composable
 fun ReaderBottomBar(
@@ -92,7 +92,7 @@ fun ReaderBottomBar(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.readerBarsColor)
+            .background(LocalReaderPalette.current.bar)
             .noRippleClickable(onClick = {})
             .navigationBarsPadding()
             .padding(horizontal = 18.dp)
@@ -103,7 +103,7 @@ fun ReaderBottomBar(
         StyledText(
             text = progress,
             style = MaterialTheme.typography.titleLarge.copy(
-                color = MaterialTheme.colorScheme.onSurface
+                color = LocalReaderPalette.current.onBar
             )
         )
 
@@ -115,7 +115,7 @@ fun ReaderBottomBar(
                         icon = Icons.AutoMirrored.Default.ArrowBack,
                         contentDescription = R.string.checkpoint_back_content_desc,
                         modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.secondary,
+                        color = LocalReaderPalette.current.accent,
                         disableOnClick = false
                     ) {
                         onRestoreCheckpointClick()
@@ -126,7 +126,7 @@ fun ReaderBottomBar(
                         icon = Icons.AutoMirrored.Default.ArrowForward,
                         contentDescription = R.string.checkpoint_forward_content_desc,
                         modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.secondary,
+                        color = LocalReaderPalette.current.accent,
                         disableOnClick = false
                     ) {
                         onRestoreCheckpointClick()
@@ -262,10 +262,11 @@ private fun ReaderBottomBarSlider(
         },
         interactionSource = interactionSource,
         colors = SliderDefaults.colors(
-            inactiveTrackColor = MaterialTheme.colorScheme.secondary.copy(0.15f),
-            disabledActiveTrackColor = MaterialTheme.colorScheme.primary,
-            disabledThumbColor = MaterialTheme.colorScheme.primary,
-            disabledInactiveTrackColor = MaterialTheme.colorScheme.secondary.copy(0.15f),
+            // fork: 进度条改用阅读区配色，保证与阅读背景的对比度（原来是 App 主题的 primary/secondary）
+            inactiveTrackColor = LocalReaderPalette.current.onBarMuted.copy(0.25f),
+            disabledActiveTrackColor = LocalReaderPalette.current.accent,
+            disabledThumbColor = LocalReaderPalette.current.accent,
+            disabledInactiveTrackColor = LocalReaderPalette.current.onBarMuted.copy(0.25f),
         )
     )
 }
@@ -280,7 +281,7 @@ private fun ReaderBottomBarCheckpointsIndicator(checkpointsProgress: List<Float>
                     .width(4.dp)
                     .height(16.dp)
                     .clip(RoundedCornerShape(0.5.dp))
-                    .background(MaterialTheme.colorScheme.onPrimary.copy(0.7f))
+                    .background(LocalReaderPalette.current.accent.copy(0.7f))
             )
         }
     }

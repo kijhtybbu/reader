@@ -37,7 +37,7 @@ import ua.acclorite.book_story.ui.common.components.common.IconButton
 import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.helpers.LocalActivity
 import ua.acclorite.book_story.ui.common.helpers.noRippleClickable
-import ua.acclorite.book_story.ui.theme.readerBarsColor
+import ua.acclorite.book_story.ui.theme.LocalReaderPalette
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -65,7 +65,7 @@ fun ReaderTopBar(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.readerBarsColor)
+            .background(LocalReaderPalette.current.bar)
             .readerColorPresetChange(
                 colorPresetChangeEnabled = fastColorPresetChange,
                 menuShowing = menuShowing,
@@ -112,7 +112,7 @@ fun ReaderTopBar(
                     style = LocalTextStyle.current.copy(
                         fontSize = 20.sp,
                         lineHeight = 20.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = LocalReaderPalette.current.onBar
                     ),
                     maxLines = 1
                 )
@@ -123,7 +123,7 @@ fun ReaderTopBar(
                         ?: activity.getString(R.string.no_chapters),
                     modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                     style = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = LocalReaderPalette.current.onBarMuted
                     ),
                     maxLines = 1
                 )
