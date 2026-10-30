@@ -2,7 +2,7 @@
 
 > 快照时间：2026-10-29
 > 基线：`upstream/master` = `464891e`（Acclorite/book-story，GPL-3.0-only）
-> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.8）
+> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.11）
 
 ---
 
@@ -417,6 +417,8 @@ S8 必须这样调用（设计 §7.4 已写）：
 
 ### 3.8 第二阶段（翻译与词典）/ S8
 
+> 本节记录的语法 JSON 方案已被 §3.11 取代（逐句分析 + Markdown 渲染）；翻译侧的结论不变。
+
 | 项 | 内容 |
 | --- | --- |
 | 状态机 | `presentation/reader/TranslationModel`（`@HiltViewModel`）+ `model/TranslationState`（`TranslationTab`、`AsyncText`、`AsyncGrammar`、`TranslationState`）：`open(text, bookId, nodeId)` 固定一份 `Session`（配置快照 + translation/grammar 两个 cacheKey + 正文 + 节点），缓存优先、`Map<cacheKey, Job>` 去重、`dismiss()` 取消并递增 `requestId`、`regenerate(tab)` 只重置该标签 |
@@ -470,7 +472,7 @@ S8 的测试（全部纯 JVM，无 Android 上下文、无真实网络；AI 用 
 - 语法 JSON 解析移到 `Dispatchers.Default`（`parseDispatcher` 可注入，单测换成测试调度器）。
 - 文档收窄三处过度声明（键与请求「绝不会各用一份配置」→ 只有目标语言保证；选区工具栏「翻译」已覆盖跨行选区，单行的只剩 S5 的选后自动取词）。
 - 语法空结果文案 + 去掉语法错误态的外部翻译回退。
-- 复跑门禁：`:app:testDebugUnitTest` 349 绿、`:dict-engine:test` 101 绿、`:app:assembleDebug` 与 `:app:assembleRelease-debug` 均通过。
+- 复跑门禁：`:app:testDebugUnitTest` 349 绿、`:dict-engine:test` 102 绿、`:app:assembleDebug` 与 `:app:assembleRelease-debug` 均通过。
 
 **顺延到 S9（Round-1 review 提出，本轮未做）**：
 - 删掉 `ReaderEffect.OnOpenTranslator.translateWholeParagraph`（现在恒为 `false`，`ReaderEffects` 里的 `createChooser` 分支已死，留着会让这个 flag 暗示一个不存在的行为）。
@@ -504,10 +506,10 @@ S8 的测试（全部纯 JVM，无 Android 上下文、无真实网络；AI 用 
 | 缓存管理 | AI 设置页新增「翻译缓存」：条数、占用（按 UTF-8 字节折算 MB）、清除前确认、清除后重新读占用；`AiSettingsModel` 新增 `AiCacheState`（Loading/Ready/LoadError/ClearError），不清空 Key/连接状态 |
 | 许可/归属 | `aboutlibraries.json` 增加 ECDICT（MIT）与 juicedict 引擎（GPL-3.0）条目；README 增加第三方数据/源码说明；engine 的 `LICENSE`/`PROVENANCE.md` 与 ECDICT 的 `LICENSE`/`NOTICE.txt` 随仓库分发；`LicensesCreditsTest` 钉住条目存在 |
 | 文档 | README 功能列表、本文件、`UPSTREAM_DIFF.md`、`docs/phase-2-design.md` 最终状态/已知限制；设计文档 S9 行改为 ✅ |
-| JVM 测试 | `:app:testDebugUnitTest` **357 个用例 / 53 个测试类 / 0 失败 / 0 跳过**（S8 349 + S9 8，含 1 个既有测试扩展）；`:dict-engine:test` **101 个 / 0 失败** |
+| JVM 测试 | `:app:testDebugUnitTest` **379 个用例 / 55 个测试类 / 0 失败 / 0 跳过**（含语法 Markdown/句子选择/TTS 与 MDX 1.2 相关用例）；`:dict-engine:test` **102 个 / 0 失败** |
 | 仪器测试 | `:app:connectedDebugAndroidTest` 在 `reader34`（API 34，arm64）上 **22 个 / 0 失败 / 0 跳过**（Room DAO 11、迁移 1、Tink 3、TypographyLab 7） |
 | 构建 | `:app:assembleDebug` 通过；`:app:assembleRelease-debug`（R8 + lintVital）通过；`:app:compileDebugAndroidTestKotlin` 通过 |
-| APK | debug **155,192,122 B**；release-debug **55,959,882 B**（含 21MB ECDICT 资产与 R8 keep 的 7z/xz 路径） |
+| APK | debug **155,192,122 B**；release-debug **56,025,366 B**（含 21MB ECDICT 资产与 R8 keep 的 7z/xz 路径） |
 | 首次安装（模拟器实测） | 冷启动后在 IO 线程解压/建索引约 **24.8s**；`files/dictionaries/builtin` 约 **122,800 KB**（`.dict` 73,054,537 + `.idx` 17,035,288 + `.ifo` 214 + `.jidx` 35,611,830 + version），应用数据目录约 **123MB**；重启命中 `version` 标记，不重复解压 |
 | 手工 UI 矩阵 | **未执行**（项目没有 Compose UI 测试依赖，按约定不加）。S5/S8 的设备矩阵仍只是设计/代码级验证，不得当成已验证；真机手感（默认双击导致的 ~300ms 单击延迟、取词卡片空白区缩小）仍需人工确认 |
 | 最终整体 review | 按用户要求**取消**（原计划 `reviewer-expert` 全量 review）；S1–S9 每阶段均完成两轮 `reviewer`，最终以本报告收尾 |
@@ -537,11 +539,27 @@ S9 的测试增量：
 | --- | --- |
 | 取词卡片多个按钮文字完全相同 | 卡片原本用 `dictName` 当 chip 文案，ECDICT/导入词典的前缀候选全显示成同一个词库名。改为显示 `entry.word`；同一个词来自多部词典时才追加 `· dictName`。 |
 | OpenCode Go / 部分网关返回 HTTP 400 | 服务端要求 `x-opencode-session`，否则返回 `MissingSessionID`。新增每安装稳定的 `ai_session_id`（UUID，存 DataStore），所有 AI 请求带 `x-opencode-session`；普通 OpenAI 兼容服务忽略该头。用 `curl` + 占位 Key 验证：无头 400 `MissingSessionID`，有头 401 `Invalid credential`（说明已进入鉴权阶段）。 |
-| 推理模型 400 / 兼容端点无 `/models` | 翻译/语法请求不再显式传 `temperature`（o1/o3/gpt-5 会拒绝）；`testConnection()` 在 `/models` 返回 400/404/405 时回退到最小 chat 请求；语法 `response_format=json_object` 遇 400 时去掉该字段重试一次。 |
+| 推理模型 400 / 兼容端点无 `/models` | 翻译/语法请求不再显式传 `temperature`（o1/o3/gpt-5 会拒绝）；`testConnection()` 在 `/models` 返回 400/404/405 时回退到最小 chat 请求；语法 `response_format=json_object` 遇 400 时去掉该字段重试一次（**该字段已在 §3.11 移除，回退一并删除**）。 |
 | 选模型但 Base URL 不匹配 | AI 设置页新增“服务预设”（OpenAI/DeepSeek/Gemini/OpenRouter/OpenCode Go/Ollama），一次写入 Base URL + model。 |
 | 空响应文案 | 新增 `AiError.EMPTY_RESPONSE`，不再显示“未知错误”。 |
 
 新增测试：`x-opencode-session` 头断言、`/models` 400 → chat 回退。当前 `:app:testDebugUnitTest` **358 个用例**；release-debug 重新构建后安装到 TB322FC。
+
+### 3.11 语法分析 UX 改动（逐句 + Markdown）
+
+| 项 | 内容 |
+| --- | --- |
+| 提示词 | `AI_PROMPT_VERSION` 1 → **2**；`grammarSystemPrompt` 从「返回 JSON schema」改成「分析用户给的这一句、用短标题 + 要点讲主句结构/从句/易漏语法点/重要搭配」。版本号进缓存键，v1 的 JSON 缓存整批失效 |
+| 仓库 | `AiTranslationRepository.analyzeGrammar` 去掉 `response_format=json_object` 与 400 回退重试，直接把 Markdown 原文作为 `Result<String>` 返回；空 content 仍是 `EMPTY_RESPONSE`。删除 `GrammarAnalysis`/`parseGrammarAnalysis`/`parseDispatcher`/`startGrammarProbe` |
+| 切句 | 新增 `data/ai/SentenceSplitter.splitIntoSentences`（纯 JVM，`java.text.BreakIterator.getSentenceInstance(Locale.ENGLISH)`，trim + 丢空）。已知限制：无缩写词典，`Dr. Smith` 会在 `Dr.` 后断开，不做后处理 |
+| 状态机 | `TranslationState` 新增 `sentences` / `selectedSentenceIndex`；`AsyncGrammar.Success(text, fromCache)` 就是 Markdown 原文。`open` 只切句；`selectTab(GRAMMAR)` 多句不请求、单句自动分析；`selectSentence(index)` 同句收起、异句展开并分析；结果按句算 `translationCacheKey`，本次打开另有一份内存 map（收起再展开零请求）；切换句子不取消上一句请求，迟到结果只能进缓存（发布前校验 requestId + 当前展开的是哪一句）；`regenerate(GRAMMAR)` 取消当前句在途请求后重发并覆盖同键 |
+| 渲染 | 新增 `ui/reader/MarkdownText`：`org.commonmark` AST → `AnnotatedString`（标题加粗放大、列表前缀与缩进、粗体/斜体、行内代码、围栏代码块、引用竖线、块间空行），颜色来自 `LocalReaderPalette`，纯 JVM 可测 |
+| 对话框 | 语法标签 = 句子卡片列表（编号、最多两行、选中高亮、点句子行展开/收起，结果区不在点击范围内）；多句未选时显示「选择一句开始分析」；结果区显示 loading / Markdown + 缓存标记 / 错误 + 重试；「重新分析」只作用于选中句；复制/分享用 Markdown 原文。新增文案 `translation_dialog_sentence_pick`/`translation_dialog_reanalyze`（en/zh），删除 JSON 时代的 5 条语法文案 |
+| 测试 | 新增 `SentenceSplitterTest`（8）、`MarkdownTextTest`（11）；`TranslationModelTest` 语法用例重写（21 → 27 个用例：多句零请求、点哪句分析哪句、逐句键、收起/切换、迟到响应不覆盖、单句自动分析、重新分析、关闭复位）；`TranslationModelCacheKeyTest` 改为「open 只读翻译键 + 语法读句子键」；`AiPromptsTest`/`AiTranslationRepositoryTest` 改为断言 Markdown 请求（无 `response_format`、400 不再重试）；删除 `GrammarAnalysisTest`（9） |
+| 验证 | `:app:testDebugUnitTest` **379 个用例 / 55 类 / 0 失败**（含并行的取词卡片改动新增用例）；`:dict-engine:test` 102 绿；`:app:assembleDebug`、`:app:assembleRelease-debug`（R8 + lintVital）通过 |
+| 未验证 | 句子列表的点击/收起、长列表滚动、Markdown 排版都没有在设备上走过（项目无 Compose UI 测试依赖）；`BreakIterator` 在 Android(ICU) 上的切句细节（尤其缩写）与 JVM 可能不同 |
+
+**MDX 1.2 支持（设备反馈后续）**：用户导入的牛津高阶第 9 版是 `GeneratedByEngineVersion="1.2"`，引擎原先只按 2.0 的 40 字节前导/8 字节字段解析，误报“文件已损坏”。现已按版本切换 1.2 的 16 字节前导、4 字节字段、未压缩 key-block-info；`MdxV12FixtureTest` 覆盖小样本，真实 OALD 1.2 验证 246,787 词条可打开、`apple` 可查。`.mdd` 资源仍不导入。
 
 ---
 

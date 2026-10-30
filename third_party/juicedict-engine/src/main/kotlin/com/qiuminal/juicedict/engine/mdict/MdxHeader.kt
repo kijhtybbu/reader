@@ -157,7 +157,7 @@ internal class MdxHeader(
             val attrs = parseAttributes(text)
 
             // v2.0 files carry a 40-byte key-section preamble; v1.2 does not.
-            // writemdict only writes 2.0, and every real file checked is 2.0.
+            // Both layouts are supported by MdxKeyIndex/MdxRecordStore.
             val version = attrs["generatedbyengineversion"]?.toFloatOrNull()
                 ?: attrs["format"]?.toFloatOrNull()
                 ?: if (attrs.containsKey("encoding")) 2.0f else 1.2f

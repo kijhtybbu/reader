@@ -79,7 +79,11 @@ internal class MdxDictionary(
             encrypted = head.encrypted,
         )
         words = MdxWordIndex.load(reader, keyIndex, head.stripKey)
-        records = MdxRecordStore(reader, keyIndex.recordSectionOffset(head.keySectionOffset))
+        records = MdxRecordStore(
+            reader = reader,
+            offset = keyIndex.recordSectionOffset(head.keySectionOffset),
+            numberWidth = keyIndex.numberWidth
+        )
         keyIndex.setRecordsEnd(records.totalSize)
 
         resources = mddFiles.filter { it.isFile }.mapNotNull { file ->

@@ -22,10 +22,12 @@ internal object MdxProbe {
 
     private const val MAX_HEADER_BYTES = 1L shl 20
 
-    /** `u64be num_blocks | u64be num_entries` — the second field is all we need. */
-    private const val ENTRY_COUNT_OFFSET = 8
+    /** 2.0: u64be blocks | u64be entries; 1.2: u32be blocks | u32be entries. */
+    private fun entryCountOffset(head: MdxHeader): Int = if (head.version >= 2f) 8 else 4
 
-    private const val PREAMBLE_PROBE_BYTES = 16
+    private fun numberWidth(head: MdxHeader): Int = if (head.version >= 2f) 8 else 4
+
+    private fun preambleProbeBytes(head: MdxHeader): Int = 2 * numberWidth(head)
 
     fun read(file: File): Info? {
         val reader = runCatching { MdxFileReader(file) }.getOrNull() ?: return null
@@ -53,10 +55,13 @@ internal object MdxProbe {
      */
     fun readFromHead(headBytes: ByteArray): Info? {
         val head = MdxHeader.parse(headBytes) ?: return null
-        val preambleEnd = head.keySectionOffset + PREAMBLE_PROBE_BYTES
+        val preambleEnd = head.keySectionOffset + preambleProbeBytes(head)
         val count = if (head.kind == MdxKind.ARTICLE && preambleEnd <= headBytes.size) {
-            MdxBytes.u64be(headBytes, head.keySectionOffset.toInt() + ENTRY_COUNT_OFFSET)
-                .takeIf { it > 0 } ?: head.entryCount
+            readNumber(
+                headBytes,
+                head.keySectionOffset.toInt() + entryCountOffset(head),
+                numberWidth(head)
+            ).takeIf { it > 0 } ?: head.entryCount
         } else {
             head.entryCount
         }
@@ -70,12 +75,17 @@ internal object MdxProbe {
      * (辞海第七版 declares none at all while its index holds 137390 entries), so it is
      * only the fallback.
      */
+    private fun readNumber(bytes: ByteArray, at: Int, width: Int): Long =
+        if (width == 8) MdxBytes.u64be(bytes, at) else MdxBytes.u32be(bytes, at).toLong()
+
     private fun entryCount(reader: MdxFileReader, head: MdxHeader): Long {
         if (head.kind != MdxKind.ARTICLE) return 0L
-        if (head.keySectionOffset + PREAMBLE_PROBE_BYTES > reader.length) return head.entryCount
+        val probeBytes = preambleProbeBytes(head)
+        if (head.keySectionOffset + probeBytes > reader.length) return head.entryCount
         return try {
-            val preamble = reader.read(head.keySectionOffset, PREAMBLE_PROBE_BYTES)
-            MdxBytes.u64be(preamble, ENTRY_COUNT_OFFSET).takeIf { it > 0 } ?: head.entryCount
+            val preamble = reader.read(head.keySectionOffset, probeBytes)
+            readNumber(preamble, entryCountOffset(head), numberWidth(head))
+                .takeIf { it > 0 } ?: head.entryCount
         } catch (t: Throwable) {
             head.entryCount
         }

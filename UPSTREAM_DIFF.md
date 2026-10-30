@@ -158,13 +158,13 @@ Known fields are [... e, ... f, ... g, ... h]
 | 自定义词典 | 导入 `.mdx`（单文件）或 StarDict 文件夹（`.ifo` + `.idx(.gz)` + `.dict(.dz)` + 可选 `.syn`）；`index.json` 持久化，启用/禁用/优先词典；`.mdd` 暂不导入。 |
 | 取词 | 单击（默认）/长按可选；两种布局都用单一手势检测器 + `TextLayoutResult` 命中，浮动卡片贴词、安全区避让、夜间配色；未命中可去导入词典或用外部应用。 |
 | AI 段落翻译 | 双击整段（`NodeContent.Paragraph.text`，非分页切片）→ 居中对话框；翻译标签流式输出，可复制/分享/重新生成/取消；外部应用翻译只保留为错误回退。 |
-| 语法分析 | 切到「语法分析」标签即请求（无“开始分析”按钮）；结构化 JSON 分节展示，解析失败回退原文；语法关闭时标签不出现。 |
+| 语法分析 | 整段切句后逐句分析：多句时列出句子，点哪句分析哪句、再点一次收起，单句切到标签即分析（无“开始分析”按钮）；结果是模型写的 Markdown，用 commonmark 渲染（标题/列表/粗体/行内代码），逐句缓存；语法关闭时标签不出现。 |
 | 持久化缓存 | `translationcacheentity`（Room 20 → 21，`AutoMigration`）：键 = promptVersion/kind/目标语言/model/BaseURL host/规范化正文的 SHA-256；只写完整结果，命中不请求；20,000 条 / 200MB LRU；设置页显示占用并可清除。 |
 | 配置/安全 | OpenAI 兼容 Base URL/Model/Key/目标语言；Key 使用 Tink `AndroidKeysetManager` AES-GCM 加密后存 DataStore；loopback（localhost/127.0.0.1/10.0.2.2）允许空 Key；网络明文只放行这三个回环地址。 |
 | 许可 | ECDICT MIT；juicedict 引擎 GPL-3.0（vendored `:dict-engine`，`LICENSE`/`PROVENANCE.md`）；openai-kotlin MIT、Ktor/Tink/commons-compress Apache-2.0、xz Public Domain；AboutLibraries/Credits 与 README 已列。 |
 | 体积 | debug APK ~155MB；release-debug ~55.9MB（含 21MB 词典资产）；首次安装数据目录 ~123MB。 |
 
-实现细节、缓存键、已知限制与未执行的设备矩阵见 `docs/phase-2-design.md` 与 `PROGRESS.md` §3.1–§3.9。
+实现细节、缓存键、已知限制与未执行的设备矩阵见 `docs/phase-2-design.md` 与 `PROGRESS.md` §3.1–§3.11。
 
 ---
 

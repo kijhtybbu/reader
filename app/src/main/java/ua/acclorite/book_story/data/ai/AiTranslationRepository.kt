@@ -5,8 +5,8 @@
  *
  * fork 新增：OpenAI 兼容的翻译/语法调用（第二阶段 S6，设计 §6.3/§6.4）。
  *
- * 只用 openai-kotlin 的公开 API：`OpenAIHost(baseUrl)`、`chatCompletions()` 流、
- * `ChatResponseFormat.JsonObject`。不手写 SSE/JSON。
+ * 只用 openai-kotlin 的公开 API：`OpenAIHost(baseUrl)`、`chatCompletions()` 流。
+ * 不手写 SSE/JSON。
  *
  * 客户端按请求创建、`finally` 关闭：Key 或 Base URL 改完后下一次请求必然用新配置，
  * 也不会出现「旧客户端还挂着旧 Key」的窗口。翻译的多个块共用一个客户端，块间顺序输出。
@@ -22,7 +22,6 @@ package ua.acclorite.book_story.data.ai
 
 import com.aallam.openai.api.chat.ChatCompletionRequest
 import com.aallam.openai.api.chat.ChatMessage
-import com.aallam.openai.api.chat.ChatResponseFormat
 import com.aallam.openai.api.chat.ChatRole
 import com.aallam.openai.api.core.RequestOptions
 import com.aallam.openai.api.exception.AuthenticationException
@@ -147,8 +146,11 @@ class AiTranslationRepository(
     }
 
     /**
-     * 语法分析。要求 `response_format=json_object`，返回原始 JSON 字符串（S8 负责解析），
-     * 不在这里把 JSON 拆成模型 —— 解析失败时 S8 要能拿到原文展示。
+     * 语法分析。返回模型写的 Markdown 原文（语法标签直接渲染，不再解析 JSON），
+     * 空 content 按 [AiError.EMPTY_RESPONSE] 处理。
+     *
+     * 不传 `response_format`：Markdown 回答不是 JSON 模式能表达的东西，而且部分兼容端点
+     * 收到 `json_object` 会直接 400。
      */
     suspend fun analyzeGrammar(
         text: String,
@@ -166,21 +168,10 @@ class AiTranslationRepository(
                         content = grammarSystemPrompt(targetLanguage.promptName(uiLocale()))
                     ),
                     ChatMessage(role = ChatRole.User, content = text)
-                ),
-                responseFormat = ChatResponseFormat.JsonObject
+                )
             )
             val content = open(clientConfig, key).use { client ->
-                try {
-                    client.chatCompletion(request).choices.firstOrNull()?.message?.content
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // 部分兼容端点不支持 response_format=json_object；去掉它再试一次，
-                    // 提示词本身已经要求 JSON。400 是这类端点的典型回复。
-                    if (mapAiException(e).statusCode != 400) throw e
-                    client.chatCompletion(request.copy(responseFormat = null))
-                        .choices.firstOrNull()?.message?.content
-                }
+                client.chatCompletion(request).choices.firstOrNull()?.message?.content
             }
             if (content.isNullOrBlank()) throw AiException(AiError.EMPTY_RESPONSE)
             Result.success(content)

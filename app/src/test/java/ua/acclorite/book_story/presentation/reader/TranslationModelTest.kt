@@ -5,10 +5,12 @@
  *
  * fork 新增：翻译/语法状态机（第二阶段 S8）。
  *
- * 钉住设计 §7.3/§8 的六条硬约束：
+ * 钉住设计 §7.3/§8 的硬约束：
  *  - 缓存命中 → 零请求；未命中 → 立即流式；
  *  - 第二次打开同一段 → 命中缓存（不再请求）；
- *  - 语法标签缓存命中 → 零请求；未命中 → 切到标签就请求（没有「开始分析」按钮）；
+ *  - 语法逐句：多句时切到标签不发请求，点中哪句就只分析那句（没有「开始分析」按钮）；
+ *  - 语法缓存按**句子**算键；本次打开算过的句子再展开不再请求；
+ *  - 切换句子后，上一句迟到的结果只进缓存，不覆盖当前展开的那句；
  *  - 同一 cacheKey 的并发请求去重；
  *  - 关闭取消请求，且不写半截结果；取消后迟到的结果既不进状态也不落库（含重新生成后的旧请求）；
  *  - 空串译文按失败处理（`AiError.EMPTY_RESPONSE`），不写缓存；
@@ -42,7 +44,7 @@ import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -87,30 +89,33 @@ class TranslationModelTest {
         baseUrl = config.baseUrl
     )
 
-    private val grammarKey = translationCacheKey(
-        text = paragraph,
+    private val sentences = listOf(
+        "It was the best of times, it was the worst of times.",
+        "We had everything before us, we had nothing before us."
+    )
+
+    private val singleSentence = "The quick brown fox jumps over the lazy dog."
+
+    private val firstMarkdown = """
+        ## Main clause
+        - **Subject**: *It* (dummy subject)
+        - **Predicate**: was the best of times
+    """.trimIndent()
+
+    private val secondMarkdown = """
+        ## Main clause
+        - **Subject**: We
+        - **Object**: everything before us
+    """.trimIndent()
+
+    /** 语法缓存按句算键：同一段里点第二句不会命中第一句的分析结果。 */
+    private fun sentenceGrammarKey(sentence: String) = translationCacheKey(
+        text = sentence,
         kind = TranslationKind.GRAMMAR,
         targetLanguage = config.targetLanguageName,
         model = config.model,
         baseUrl = config.baseUrl
     )
-
-    private val grammarJson = """
-        {
-          "summary": "两个并列的对照句。",
-          "sentences": [
-            {
-              "original": "It was the best of times.",
-              "translation": "那是最好的时代。",
-              "structure": "主系表结构",
-              "points": ["并列对照"]
-            }
-          ],
-          "vocabulary": [
-            {"word": "worst", "pos": "adj.", "meaning": "最坏的"}
-          ]
-        }
-    """.trimIndent()
 
     @Before
     fun setUp() {
@@ -144,10 +149,7 @@ class TranslationModelTest {
         }
     }
 
-    /** 解析调度器换成测试调度器，否则 `advanceUntilIdle` 看不到真实线程上的解析结果。 */
-    private fun model() = TranslationModel(ai, cache, configProvider).apply {
-        parseDispatcher = dispatcher
-    }
+    private fun model() = TranslationModel(ai, cache, configProvider)
 
     private fun cacheTranslation(payload: String) {
         cache.entries[translationKey] = CachedAiResult(
@@ -158,8 +160,8 @@ class TranslationModelTest {
         )
     }
 
-    private fun cacheGrammar(payload: String) {
-        cache.entries[grammarKey] = CachedAiResult(
+    private fun cacheGrammar(sentence: String, payload: String) {
+        cache.entries[sentenceGrammarKey(sentence)] = CachedAiResult(
             payload = payload,
             model = config.model,
             targetLanguage = config.targetLanguageName,
@@ -224,9 +226,29 @@ class TranslationModelTest {
     }
 
     @Test
-    fun `a cached grammar analysis is shown on tab selection without a request`() = runTest(dispatcher) {
+    fun `the grammar tab with several sentences asks for a sentence and requests nothing`() =
+        runTest(dispatcher) {
+            cacheTranslation("译文")
+            val model = model()
+
+            model.open(paragraph, bookId = 7, nodeId = 12)
+            advanceUntilIdle()
+            model.selectTab(TranslationTab.GRAMMAR)
+            advanceUntilIdle()
+
+            val state = model.state.value
+            assertEquals(TranslationTab.GRAMMAR, state.activeTab)
+            assertEquals(sentences, state.sentences)
+            assertNull(state.selectedSentenceIndex)
+            assertEquals(AsyncGrammar.Idle, state.grammar)
+            coVerify(exactly = 0) { ai.analyzeGrammar(any(), any()) }
+        }
+
+    @Test
+    fun `picking a sentence analyzes exactly that sentence`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        cacheGrammar(grammarJson)
+        coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returns
+                Result.success(secondMarkdown)
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
@@ -234,45 +256,202 @@ class TranslationModelTest {
         model.selectTab(TranslationTab.GRAMMAR)
         advanceUntilIdle()
 
-        val grammar = model.state.value.grammar as AsyncGrammar.Success
-        assertTrue(grammar.fromCache)
-        assertEquals("两个并列的对照句。", grammar.analysis?.summary)
-        coVerify(exactly = 0) { ai.analyzeGrammar(any(), any()) }
+        model.selectSentence(1)
+        advanceUntilIdle()
+
+        assertEquals(1, model.state.value.selectedSentenceIndex)
+        assertEquals(
+            AsyncGrammar.Success(secondMarkdown, fromCache = false),
+            model.state.value.grammar
+        )
+        coVerify(exactly = 1) { ai.analyzeGrammar(sentences[1], config.targetLanguage) }
+        coVerify(exactly = 0) { ai.analyzeGrammar(sentences[0], config.targetLanguage) }
+        val put = cache.puts.single()
+        assertEquals(sentenceGrammarKey(sentences[1]), put.key)
+        assertEquals(TranslationKind.GRAMMAR, put.kind)
+        assertEquals(secondMarkdown, put.payload)
     }
 
     @Test
-    fun `a grammar cache miss is requested as soon as the tab is selected`() = runTest(dispatcher) {
+    fun `a cached sentence result is shown on selection without a request`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        coEvery { ai.analyzeGrammar(paragraph, config.targetLanguage) } returns Result.success(grammarJson)
+        cacheGrammar(sentences[0], firstMarkdown)
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
         advanceUntilIdle()
-        coVerify(exactly = 0) { ai.analyzeGrammar(any(), any()) }
-
         model.selectTab(TranslationTab.GRAMMAR)
         advanceUntilIdle()
 
-        val grammar = model.state.value.grammar as AsyncGrammar.Success
-        assertFalse(grammar.fromCache)
-        assertEquals(1, grammar.analysis?.sentences?.size)
-        assertEquals("worst", grammar.analysis?.vocabulary?.firstOrNull()?.word)
-        coVerify(exactly = 1) { ai.analyzeGrammar(paragraph, config.targetLanguage) }
-        assertEquals(grammarKey, cache.puts.single().key)
-        assertEquals(TranslationKind.GRAMMAR, cache.puts.single().kind)
+        model.selectSentence(0)
+        advanceUntilIdle()
+
+        assertEquals(
+            AsyncGrammar.Success(firstMarkdown, fromCache = true),
+            model.state.value.grammar
+        )
+        coVerify(exactly = 0) { ai.analyzeGrammar(any(), any()) }
+        assertTrue(cache.puts.isEmpty())
     }
+
+    @Test
+    fun `picking the selected sentence again collapses it`() = runTest(dispatcher) {
+        cacheTranslation("译文")
+        coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returns
+                Result.success(secondMarkdown)
+        val model = model()
+
+        model.open(paragraph, bookId = 7, nodeId = 12)
+        advanceUntilIdle()
+        model.selectTab(TranslationTab.GRAMMAR)
+        model.selectSentence(1)
+        advanceUntilIdle()
+
+        model.selectSentence(1)
+
+        assertNull(model.state.value.selectedSentenceIndex)
+        assertEquals(AsyncGrammar.Idle, model.state.value.grammar)
+    }
+
+    @Test
+    fun `a sentence analyzed earlier in the same session is shown again without a request`() =
+        runTest(dispatcher) {
+            cacheTranslation("译文")
+            coEvery { ai.analyzeGrammar(sentences[0], config.targetLanguage) } returns
+                    Result.success(firstMarkdown)
+            coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returns
+                    Result.success(secondMarkdown)
+            val model = model()
+
+            model.open(paragraph, bookId = 7, nodeId = 12)
+            advanceUntilIdle()
+            model.selectTab(TranslationTab.GRAMMAR)
+
+            model.selectSentence(0)
+            advanceUntilIdle()
+            model.selectSentence(1)
+            advanceUntilIdle()
+            model.selectSentence(0)
+            advanceUntilIdle()
+
+            assertEquals(0, model.state.value.selectedSentenceIndex)
+            assertEquals(
+                AsyncGrammar.Success(firstMarkdown, fromCache = false),
+                model.state.value.grammar
+            )
+            coVerify(exactly = 1) { ai.analyzeGrammar(sentences[0], config.targetLanguage) }
+            coVerify(exactly = 1) { ai.analyzeGrammar(sentences[1], config.targetLanguage) }
+        }
+
+    @Test
+    fun `a late response for a previously selected sentence does not overwrite the selection`() =
+        runTest(dispatcher) {
+            cacheTranslation("译文")
+            val gate = CompletableDeferred<Unit>()
+            coEvery { ai.analyzeGrammar(sentences[0], config.targetLanguage) } coAnswers {
+                gate.await()
+                Result.success(firstMarkdown)
+            }
+            coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returns
+                    Result.success(secondMarkdown)
+            val model = model()
+
+            model.open(paragraph, bookId = 7, nodeId = 12)
+            advanceUntilIdle()
+            model.selectTab(TranslationTab.GRAMMAR)
+
+            model.selectSentence(0)
+            runCurrent()
+            assertEquals(AsyncGrammar.Loading, model.state.value.grammar)
+
+            model.selectSentence(1)
+            advanceUntilIdle()
+            assertEquals(
+                AsyncGrammar.Success(secondMarkdown, fromCache = false),
+                model.state.value.grammar
+            )
+
+            // 第 0 句的请求此时才结束：结果进缓存，但不能把当前展开的第 1 句画回去。
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(1, model.state.value.selectedSentenceIndex)
+            assertEquals(
+                AsyncGrammar.Success(secondMarkdown, fromCache = false),
+                model.state.value.grammar
+            )
+            assertEquals(
+                setOf(sentenceGrammarKey(sentences[0]), sentenceGrammarKey(sentences[1])),
+                cache.puts.map { it.key }.toSet()
+            )
+        }
+
+    @Test
+    fun `regenerate re-analyzes the selected sentence`() = runTest(dispatcher) {
+        cacheTranslation("译文")
+        coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returnsMany listOf(
+            Result.success(secondMarkdown),
+            Result.success("## Second pass")
+        )
+        val model = model()
+
+        model.open(paragraph, bookId = 7, nodeId = 12)
+        advanceUntilIdle()
+        model.selectTab(TranslationTab.GRAMMAR)
+        model.selectSentence(1)
+        advanceUntilIdle()
+
+        model.regenerate(TranslationTab.GRAMMAR)
+        advanceUntilIdle()
+
+        assertEquals(
+            AsyncGrammar.Success("## Second pass", fromCache = false),
+            model.state.value.grammar
+        )
+        coVerify(exactly = 2) { ai.analyzeGrammar(sentences[1], config.targetLanguage) }
+        assertEquals(
+            listOf(secondMarkdown, "## Second pass"),
+            cache.puts.map { it.payload }
+        )
+        // 重新分析覆盖同一个键（`put` 是 REPLACE），不是另写一条。
+        assertEquals(1, cache.puts.map { it.key }.distinct().size)
+        assertEquals(sentenceGrammarKey(sentences[1]), cache.puts.first().key)
+    }
+
+    @Test
+    fun `a single sentence paragraph is analyzed as soon as the grammar tab is selected`() =
+        runTest(dispatcher) {
+            cacheTranslation("译文")
+            coEvery { ai.analyzeGrammar(singleSentence, config.targetLanguage) } returns
+                    Result.success(firstMarkdown)
+            val model = model()
+
+            model.open(singleSentence, bookId = 7, nodeId = 12)
+            advanceUntilIdle()
+            assertEquals(listOf(singleSentence), model.state.value.sentences)
+
+            model.selectTab(TranslationTab.GRAMMAR)
+            advanceUntilIdle()
+
+            assertEquals(0, model.state.value.selectedSentenceIndex)
+            assertEquals(
+                AsyncGrammar.Success(firstMarkdown, fromCache = false),
+                model.state.value.grammar
+            )
+            coVerify(exactly = 1) { ai.analyzeGrammar(singleSentence, config.targetLanguage) }
+        }
 
     @Test
     fun `repeated tab clicks do not duplicate an in-flight grammar request`() = runTest(dispatcher) {
         cacheTranslation("译文")
         val gate = CompletableDeferred<Unit>()
-        coEvery { ai.analyzeGrammar(paragraph, config.targetLanguage) } coAnswers {
+        coEvery { ai.analyzeGrammar(singleSentence, config.targetLanguage) } coAnswers {
             gate.await()
-            Result.success(grammarJson)
+            Result.success(firstMarkdown)
         }
         val model = model()
 
-        model.open(paragraph, bookId = 7, nodeId = 12)
+        model.open(singleSentence, bookId = 7, nodeId = 12)
         advanceUntilIdle()
 
         model.selectTab(TranslationTab.GRAMMAR)
@@ -287,6 +466,28 @@ class TranslationModelTest {
         gate.complete(Unit)
         advanceUntilIdle()
         assertTrue(model.state.value.grammar is AsyncGrammar.Success)
+    }
+
+    @Test
+    fun `dismissing forgets the sentences and the selection`() = runTest(dispatcher) {
+        cacheTranslation("译文")
+        coEvery { ai.analyzeGrammar(sentences[0], config.targetLanguage) } returns
+                Result.success(firstMarkdown)
+        val model = model()
+
+        model.open(paragraph, bookId = 7, nodeId = 12)
+        advanceUntilIdle()
+        model.selectTab(TranslationTab.GRAMMAR)
+        model.selectSentence(0)
+        advanceUntilIdle()
+
+        model.dismiss()
+
+        val state = model.state.value
+        assertFalse(state.visible)
+        assertTrue(state.sentences.isEmpty())
+        assertNull(state.selectedSentenceIndex)
+        assertEquals(AsyncGrammar.Idle, state.grammar)
     }
 
     @Test
@@ -335,20 +536,25 @@ class TranslationModelTest {
     @Test
     fun `regenerate keeps the other tab untouched`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        coEvery { ai.analyzeGrammar(paragraph, config.targetLanguage) } returns Result.success(grammarJson)
+        coEvery { ai.analyzeGrammar(sentences[0], config.targetLanguage) } returns
+                Result.success(firstMarkdown)
         every { ai.translate(paragraph, config.targetLanguage) } returns flowOf("新译文")
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
         advanceUntilIdle()
         model.selectTab(TranslationTab.GRAMMAR)
+        model.selectSentence(0)
         advanceUntilIdle()
 
         model.regenerate(TranslationTab.TRANSLATION)
         advanceUntilIdle()
 
         assertEquals(AsyncText.Success("新译文", fromCache = false), model.state.value.translation)
-        assertTrue(model.state.value.grammar is AsyncGrammar.Success)
+        assertEquals(
+            AsyncGrammar.Success(firstMarkdown, fromCache = false),
+            model.state.value.grammar
+        )
     }
 
     @Test
@@ -371,23 +577,29 @@ class TranslationModelTest {
     @Test
     fun `grammar errors are mapped and retry re-requests`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        coEvery { ai.analyzeGrammar(paragraph, config.targetLanguage) } returns
+        coEvery { ai.analyzeGrammar(singleSentence, config.targetLanguage) } returns
                 Result.failure(AiException(AiError.NO_KEY, null))
         val model = model()
 
-        model.open(paragraph, bookId = 7, nodeId = 12)
+        model.open(singleSentence, bookId = 7, nodeId = 12)
         advanceUntilIdle()
         model.selectTab(TranslationTab.GRAMMAR)
         advanceUntilIdle()
 
         assertEquals(AsyncGrammar.Error(AiError.NO_KEY, null), model.state.value.grammar)
 
-        coEvery { ai.analyzeGrammar(paragraph, config.targetLanguage) } returns Result.success(grammarJson)
+        coEvery { ai.analyzeGrammar(singleSentence, config.targetLanguage) } returns
+                Result.success(firstMarkdown)
         model.regenerate(TranslationTab.GRAMMAR)
         advanceUntilIdle()
 
-        assertTrue(model.state.value.grammar is AsyncGrammar.Success)
+        assertEquals(
+            AsyncGrammar.Success(firstMarkdown, fromCache = false),
+            model.state.value.grammar
+        )
         coVerify(exactly = 2) { ai.analyzeGrammar(any(), any()) }
+        // 失败的那次不写缓存。
+        assertEquals(listOf(firstMarkdown), cache.puts.map { it.payload })
     }
 
     @Test
@@ -505,11 +717,6 @@ class TranslationModelTest {
         }
 
     @Test
-    fun `grammar json parsing is dispatched off the main dispatcher by default`() {
-        assertSame(Dispatchers.Default, TranslationModel(ai, cache, configProvider).parseDispatcher)
-    }
-
-    @Test
     fun `blank text does not open the dialog`() = runTest(dispatcher) {
         val model = model()
 
@@ -530,6 +737,14 @@ class TranslationModelTest {
         advanceUntilIdle()
 
         assertFalse(model.state.value.grammarAvailable)
+
+        // 关掉语法时标签与句子都不该起作用：不切标签，也不发请求。
+        model.selectTab(TranslationTab.GRAMMAR)
+        model.selectSentence(0)
+        advanceUntilIdle()
+
+        assertEquals(TranslationTab.TRANSLATION, model.state.value.activeTab)
+        assertNull(model.state.value.selectedSentenceIndex)
         coVerify(exactly = 0) { ai.analyzeGrammar(any(), any()) }
     }
 }

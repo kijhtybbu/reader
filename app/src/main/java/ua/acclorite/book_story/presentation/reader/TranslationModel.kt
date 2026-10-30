@@ -8,16 +8,17 @@
  * 与 ReaderModel 分开的理由和 DictionaryLookupModel 一样：翻译是旁挂功能，
  * 不该进阅读进度状态机；对话框关掉就该把请求取消干净。
  *
- * 关键约束（设计 §7.3）：
+ * 关键约束（设计 §7.3/§8.2）：
  *  - **缓存优先**：打开对话框先读 translation 缓存；命中直接展示、不建网络请求。
- *    语法缓存并行预取，但**不**发请求 —— 只有切到语法标签才请求。
+ *  - **语法逐句**：`open` 只切句不请求；两句以上时切到语法标签也不请求，用户点中哪句才分析哪句。
+ *    结果按 `translationCacheKey(sentence, GRAMMAR, …)` 缓存，本次打开期间还多留一份在
+ *    [grammarResults] 里，收起再展开不用重新请求。
  *  - **同一 cacheKey 的并发请求去重**：`inFlight` 里已有活跃 Job 就不再发第二次。
- *    重复点标签、预取与请求撞车都走这条。
- *  - **只写完整结果**：流式中途取消/失败不调用 `put`；落库前再校验一次「这次 open 还是不是
- *    当前的、协程有没有被取消」，晚到的旧结果不能盖掉重新生成的新结果。
- *    键用的是打开那一刻的配置快照（[Session]），与本次 open 绑定。
- *  - **取消不留半截**：`dismiss()` 取消全部 Job 并递增 requestId；迟到的 delta
- *    既过不了 `isActive` 也过不了 requestId 校验，不会把关掉的对话框画回来。
+ *  - **迟到的结果不覆盖新选择**：发布前校验「还是不是这次 open」+「这一句还是不是选中的那句」。
+ *    切换句子不取消上一句的在途请求（跑完会进缓存，切回去直接显示），靠这两条校验丢弃它。
+ *  - **只写完整结果**：请求失败/取消不调用 `put`；落库前再校验一次「这次 open 还是不是
+ *    当前的、协程有没有被取消」，晚到的旧结果不能盖掉重新分析的新结果。
+ *  - **取消不留半截**：`dismiss()` 取消全部 Job 并递增 requestId。
  *  - **写缓存失败不能盖掉结果**：`put` 抛异常只记日志，译文/语法照常展示。
  */
 
@@ -27,9 +28,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -37,7 +36,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import ua.acclorite.book_story.core.log.logW
 import ua.acclorite.book_story.data.ai.AI_PROMPT_VERSION
 import ua.acclorite.book_story.data.ai.AiError
@@ -49,11 +47,11 @@ import ua.acclorite.book_story.data.ai.cache.TranslationCacheRepository
 import ua.acclorite.book_story.data.ai.cache.TranslationKind
 import ua.acclorite.book_story.data.ai.cache.translationCacheKey
 import ua.acclorite.book_story.data.ai.mapAiException
+import ua.acclorite.book_story.data.ai.splitIntoSentences
 import ua.acclorite.book_story.presentation.reader.model.AsyncGrammar
 import ua.acclorite.book_story.presentation.reader.model.AsyncText
 import ua.acclorite.book_story.presentation.reader.model.TranslationState
 import ua.acclorite.book_story.presentation.reader.model.TranslationTab
-import ua.acclorite.book_story.presentation.reader.model.parseGrammarAnalysis
 import javax.inject.Inject
 
 private const val TAG = "TranslationModel"
@@ -69,8 +67,8 @@ class TranslationModel @Inject constructor(
 ) : ViewModel() {
 
     /**
-     * 一次 open 的上下文。缓存键在这里固定：切标签、重新生成都用同一份，
-     * 不会因为设置中途变化而算出与本次 open 不一致的键。
+     * 一次 open 的上下文。翻译缓存键在这里固定：切标签、重新生成都用同一份，
+     * 不会因为设置中途变化而算出与本次 open 不一致的键。语法键按句现算（[grammarKey]）。
      *
      * 只有**目标语言**同时进了请求（`ai.translate(text, targetLanguage)`）；model/baseUrl 由
      * [AiTranslationRepository] 在请求开始时现取设置，所以「键与请求同一份配置」只对目标语言
@@ -79,33 +77,28 @@ class TranslationModel @Inject constructor(
     private data class Session(
         val requestId: Long,
         val text: String,
+        val sentences: List<String>,
         val bookId: Int,
         val nodeId: Int?,
         val config: AiRequestConfig,
-        val translationKey: String,
-        val grammarKey: String
+        val translationKey: String
     )
 
     private val _state = MutableStateFlow(TranslationState())
     val state: StateFlow<TranslationState> = _state.asStateFlow()
-
-    /**
-     * 语法 JSON 解析用的调度器。默认 [Dispatchers.Default]：解析不在主线程做。
-     * 单测换成测试调度器 —— 真实线程上的解析让 `advanceUntilIdle` 看不到结果。
-     *
-     * 不放进构造参数：Hilt 没有 `CoroutineDispatcher` 的绑定，为一个测试接缝加限定符
-     * 不划算；单测在构造后替换这个字段即可。
-     */
-    internal var parseDispatcher: CoroutineDispatcher = Dispatchers.Default
 
     private var session: Session? = null
 
     /** 同一 cacheKey 的并发请求去重（设计 §7.3）。 */
     private val inFlight = mutableMapOf<String, Job>()
 
+    /**
+     * 本次打开期间已经拿到的逐句语法结果，键是这一句的 grammar cacheKey。
+     * 不放进 [TranslationState]：UI 只展示当前展开的那一句，其余句子的结果只是缓存。
+     */
+    private val grammarResults = mutableMapOf<String, AsyncGrammar.Success>()
+
     private var translationJob: Job? = null
-    private var grammarProbeJob: Job? = null
-    private var grammarJob: Job? = null
 
     /**
      * 打开对话框。
@@ -117,15 +110,17 @@ class TranslationModel @Inject constructor(
         if (text.isBlank()) return
 
         cancelJobs()
+        grammarResults.clear()
         val config = configProvider.current()
+        val sentences = splitIntoSentences(text)
         val session = Session(
             requestId = _state.value.requestId + 1,
             text = text,
+            sentences = sentences,
             bookId = bookId,
             nodeId = nodeId,
             config = config,
-            translationKey = cacheKey(text, TranslationKind.TRANSLATION, config),
-            grammarKey = cacheKey(text, TranslationKind.GRAMMAR, config)
+            translationKey = cacheKey(text, TranslationKind.TRANSLATION, config)
         )
         this.session = session
         _state.value = TranslationState(
@@ -136,6 +131,8 @@ class TranslationModel @Inject constructor(
             activeTab = TranslationTab.TRANSLATION,
             translation = AsyncText.Loading,
             grammar = AsyncGrammar.Idle,
+            sentences = sentences,
+            selectedSentenceIndex = null,
             targetLanguage = config.targetLanguage,
             targetLanguageName = config.targetLanguageName,
             model = config.model,
@@ -144,12 +141,13 @@ class TranslationModel @Inject constructor(
         )
 
         startTranslation(session, force = false)
-        startGrammarProbe(session)
     }
 
     /**
-     * 切标签。语法标签「点击即分析」（设计 §8）：没有缓存就立刻请求，没有「开始分析」按钮。
-     * 重复点击/请求进行中都不会发出第二个请求。
+     * 切标签。翻译标签「打开即翻译」不变。
+     *
+     * 语法标签不再「切到就分析」（设计 §8.2）：整段可能有好几句，一次分析整段只能得到笼统说明。
+     * 只有**恰好一句**时等价于用户点了第一句，才自动开始；两句以上等用户选（见 [selectSentence]）。
      */
     fun selectTab(tab: TranslationTab) {
         val session = session ?: return
@@ -168,12 +166,41 @@ class TranslationModel @Inject constructor(
             }
 
             TranslationTab.GRAMMAR -> {
-                if (current.grammar is AsyncGrammar.Success) return
-                if (current.grammar is AsyncGrammar.Error) return
-                if (grammarJob?.isActive == true) return
-                startGrammarRequest(session, force = false)
+                val latest = _state.value
+                if (latest.selectedSentenceIndex != null) return
+                if (latest.sentences.size == 1) selectSentence(0)
             }
         }
+    }
+
+    /**
+     * 语法标签里点一句句子。
+     *
+     * - 点的就是当前展开的那句 → 收起（`selectedSentenceIndex = null`，语法状态回到 Idle）。
+     *   不取消在途请求：它跑完会进缓存，重新展开时直接显示。
+     * - 点的是另一句 → 展开它，收起上一句；本次打开已经算过就立刻显示，否则发请求（先读缓存）。
+     *
+     * 上一句的在途请求不会被取消，但它的结果只会写进缓存，不会覆盖当前展开的这句
+     * （[publishGrammar] 会校验选中的还是不是那一句）。
+     */
+    fun selectSentence(index: Int) {
+        val session = session ?: return
+        val current = _state.value
+        if (!current.visible) return
+        if (!current.grammarAvailable) return
+        if (index !in current.sentences.indices) return
+
+        if (current.selectedSentenceIndex == index) {
+            _state.value = current.copy(selectedSentenceIndex = null, grammar = AsyncGrammar.Idle)
+            return
+        }
+
+        val stored = grammarResults[grammarKey(session, current.sentences[index])]
+        _state.value = current.copy(
+            selectedSentenceIndex = index,
+            grammar = stored ?: AsyncGrammar.Idle
+        )
+        if (stored == null) startGrammarRequest(session, index, force = false)
     }
 
     /**
@@ -184,21 +211,28 @@ class TranslationModel @Inject constructor(
      */
     fun regenerate(tab: TranslationTab) {
         val session = session ?: return
-        if (!_state.value.visible) return
+        val current = _state.value
+        if (!current.visible) return
 
         when (tab) {
             TranslationTab.TRANSLATION -> {
                 translationJob?.cancel()
                 translationJob = null
-                _state.value = _state.value.copy(translation = AsyncText.Loading)
+                _state.value = current.copy(translation = AsyncText.Loading)
                 startTranslation(session, force = true)
             }
 
             TranslationTab.GRAMMAR -> {
-                grammarJob?.cancel()
-                grammarJob = null
-                _state.value = _state.value.copy(grammar = AsyncGrammar.Loading)
-                startGrammarRequest(session, force = true)
+                val index = current.selectedSentenceIndex
+                if (index == null) {
+                    // 只有一句时没有可点的句子列表，等价于重新分析那一句。
+                    if (current.sentences.size == 1) selectSentence(0)
+                    return
+                }
+                // 取消这一句的在途请求：重新分析必须让新结果落地，不能被旧请求先写进缓存。
+                inFlight[grammarKey(session, current.sentences[index])]?.cancel()
+                _state.value = current.copy(grammar = AsyncGrammar.Loading)
+                startGrammarRequest(session, index, force = true)
             }
         }
     }
@@ -206,6 +240,7 @@ class TranslationModel @Inject constructor(
     /** 关闭对话框：取消全部请求（已完成的结果已经在缓存里）。 */
     fun dismiss() {
         cancelJobs()
+        grammarResults.clear()
         session = null
         _state.value = TranslationState(requestId = _state.value.requestId + 1)
     }
@@ -269,65 +304,81 @@ class TranslationModel @Inject constructor(
 
     /* ------ Grammar -------------------------------------- */
 
-    /** 只读缓存，不发请求：语法标签没被点开之前不产生费用（设计 §7.3）。 */
-    private fun startGrammarProbe(session: Session) {
-        if (!session.config.grammarEnabled) return
-
-        val job = viewModelScope.launch {
-            val cached = cachedPayload(session.grammarKey) ?: return@launch
-            val result = grammarResult(cached.payload, fromCache = true)
-            publish(session.requestId) { state ->
-                // 用户已经切到语法标签并开始请求时，不能被预取结果覆盖。
-                if (state.grammar is AsyncGrammar.Idle) state.copy(grammar = result) else state
-            }
-        }
-        grammarProbeJob = job
-    }
-
-    private fun startGrammarRequest(session: Session, force: Boolean) {
-        val key = session.grammarKey
+    /**
+     * 分析第 [index] 句。先读这一句的缓存（`force` 时跳过），未命中才请求；
+     * 完成后 `put` Markdown 原文，并留一份在 [grammarResults] 里。
+     */
+    private fun startGrammarRequest(session: Session, index: Int, force: Boolean) {
+        val sentence = session.sentences.getOrNull(index) ?: return
+        val key = grammarKey(session, sentence)
         if (inFlight[key]?.isActive == true) return
 
         val job = viewModelScope.launch {
             try {
                 if (!force) {
-                    // 等预取落定：命中缓存时它已经把结果写进状态，这里不用再请求。
-                    grammarProbeJob?.join()
-                    val current = _state.value
-                    if (current.requestId == session.requestId &&
-                        current.grammar is AsyncGrammar.Success
-                    ) {
-                        return@launch
-                    }
-
                     val cached = cachedPayload(key)
                     if (cached != null) {
-                        val result = grammarResult(cached.payload, fromCache = true)
-                        publish(session.requestId) { it.copy(grammar = result) }
+                        publishGrammar(
+                            session = session,
+                            sentence = sentence,
+                            key = key,
+                            result = AsyncGrammar.Success(cached.payload, fromCache = true)
+                        )
                         return@launch
                     }
                 }
 
-                publish(session.requestId) { it.copy(grammar = AsyncGrammar.Loading) }
-                val raw = ai.analyzeGrammar(session.text, session.config.targetLanguage)
+                publishGrammar(session, sentence, key, AsyncGrammar.Loading)
+                val markdown = ai.analyzeGrammar(sentence, session.config.targetLanguage)
                     .getOrElse { throw it }
 
-                putCache(session, TranslationKind.GRAMMAR, key, raw)
-                val result = grammarResult(raw, fromCache = false)
-                publish(session.requestId) { it.copy(grammar = result) }
+                putCache(session, TranslationKind.GRAMMAR, key, markdown)
+                publishGrammar(
+                    session = session,
+                    sentence = sentence,
+                    key = key,
+                    result = AsyncGrammar.Success(markdown, fromCache = false)
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 val mapped = mapAiException(e)
                 logW(TAG, "Grammar analysis failed: ${mapped.error.name}")
-                publish(session.requestId) {
-                    it.copy(grammar = AsyncGrammar.Error(mapped.error, mapped.statusCode))
-                }
+                publishGrammar(
+                    session = session,
+                    sentence = sentence,
+                    key = key,
+                    result = AsyncGrammar.Error(mapped.error, mapped.statusCode)
+                )
             }
         }
 
         register(key, job)
-        grammarJob = job
+    }
+
+    /**
+     * 发布一句的结果。
+     *
+     * 成功结果先写进 [grammarResults]（这一句没被展开也留着，重新展开直接显示）；
+     * 状态只在「这次 open 还是当前的」且「展开的还是这一句」时才更新 —— 切换句子之后
+     * 上一句迟到的结果只能进缓存，不能把当前这句的 loading/结果盖掉。
+     */
+    private fun CoroutineScope.publishGrammar(
+        session: Session,
+        sentence: String,
+        key: String,
+        result: AsyncGrammar
+    ) {
+        if (!isActive) return
+        if (result is AsyncGrammar.Success) grammarResults[key] = result
+        publish(session.requestId) { state ->
+            val selected = state.selectedSentenceIndex
+            if (selected == null || state.sentences.getOrNull(selected) != sentence) {
+                state
+            } else {
+                state.copy(grammar = result)
+            }
+        }
     }
 
     /* ------ Cache / helpers ------------------------------ */
@@ -341,6 +392,10 @@ class TranslationModel @Inject constructor(
             baseUrl = config.baseUrl
         )
 
+    /** 语法缓存按**句子**算键：同一段里点第二句不会命中第一句的分析结果。 */
+    private fun grammarKey(session: Session, sentence: String): String =
+        cacheKey(sentence, TranslationKind.GRAMMAR, session.config)
+
     /** 缓存读失败不该让整次请求失败：记日志后当作未命中。 */
     private suspend fun cachedPayload(key: String): CachedAiResult? = try {
         cache.get(key)
@@ -350,13 +405,6 @@ class TranslationModel @Inject constructor(
         logW(TAG, "Could not read the AI cache: ${e.message}")
         null
     }
-
-    /** 解析放在 [parseDispatcher]（默认 [Dispatchers.Default]）上：语法 JSON 不该在主线程解。 */
-    private suspend fun grammarResult(payload: String, fromCache: Boolean) = AsyncGrammar.Success(
-        analysis = withContext(parseDispatcher) { parseGrammarAnalysis(payload) },
-        raw = payload,
-        fromCache = fromCache
-    )
 
     /**
      * 写完整结果。
@@ -410,11 +458,9 @@ class TranslationModel @Inject constructor(
 
     private fun cancelJobs() {
         translationJob?.cancel()
-        grammarProbeJob?.cancel()
-        grammarJob?.cancel()
         translationJob = null
-        grammarProbeJob = null
-        grammarJob = null
+        // 先拷贝再取消：完成回调会改 inFlight，边遍历边改会抛 ConcurrentModificationException。
+        inFlight.values.toList().forEach { it.cancel() }
         inFlight.clear()
     }
 

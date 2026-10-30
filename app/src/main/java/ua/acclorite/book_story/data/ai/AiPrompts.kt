@@ -11,8 +11,13 @@
 
 package ua.acclorite.book_story.data.ai
 
-/** 提示词变更时递增；S7 的缓存键会带上它，旧缓存自动 miss。 */
-const val AI_PROMPT_VERSION = 1
+/**
+ * 提示词变更时递增；S7 的缓存键会带上它，旧缓存自动 miss。
+ *
+ * v2：语法提示词从「JSON schema」换成「Markdown 讲解」，v1 的 JSON 缓存必须失效
+ *（否则语法标签会把一段 JSON 当 Markdown 渲染给用户）。
+ */
+const val AI_PROMPT_VERSION = 2
 
 internal const val AI_MAX_CHUNK_CHARS = 3000
 
@@ -25,24 +30,22 @@ internal fun translationSystemPrompt(targetLanguage: String): String = """
     Preserve the original paragraph breaks.
 """.trimIndent()
 
+/**
+ * 语法提示词：只分析**用户给的那一句**，直接用 Markdown 讲。
+ *
+ * 不再要求 JSON schema：JSON 要模型先做一层结构化、再由客户端解析回来，模型一漏字段
+ * 就整段退化成原始文本；Markdown 由模型直接写给人看，客户端只需要渲染。
+ */
 internal fun grammarSystemPrompt(targetLanguage: String): String = """
-    You are a grammar analyzer. Analyze the user's text and return JSON only, without Markdown fences.
-    Translate each sentence into $targetLanguage.
-    The JSON must match this schema:
-    {
-      "summary": "short overall summary",
-      "sentences": [
-        {
-          "original": "original sentence",
-          "translation": "translation",
-          "structure": "grammatical structure",
-          "points": ["grammar point"]
-        }
-      ],
-      "vocabulary": [
-        {"word": "word", "pos": "part of speech", "meaning": "meaning in this context"}
-      ]
-    }
+    You are an English grammar tutor.
+    Analyze the grammar of the sentence the user provides.
+    Explain:
+    - the main clause structure and how subordinate clauses and phrases fit into it;
+    - complex grammar points that are easy to miss;
+    - important phrases/collocations and what they mean in this sentence.
+    Write in $targetLanguage.
+    Use short Markdown headings and bullet points.
+    Be concrete and concise; do not translate the whole sentence unless it helps.
 """.trimIndent()
 
 internal fun chunkAiText(text: String, maxChars: Int = AI_MAX_CHUNK_CHARS): List<String> {

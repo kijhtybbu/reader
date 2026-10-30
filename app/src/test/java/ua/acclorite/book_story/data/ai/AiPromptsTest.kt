@@ -7,6 +7,7 @@
 package ua.acclorite.book_story.data.ai
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -71,13 +72,29 @@ class AiPromptsTest {
         assertTrue(prompt.contains("paragraph breaks"))
     }
 
+    /**
+     * 语法提示词只要求 Markdown 讲解，不再要求 JSON schema：JSON 一漏字段就整段退化成原始文本，
+     * 而 Markdown 是模型直接写给人看的东西，客户端只负责渲染（设计 §6.4/§8.2）。
+     */
     @Test
-    fun grammarPromptContainsTheJsonSchema() {
+    fun grammarPromptAsksForMarkdownAndNamesTheTargetLanguage() {
         val prompt = grammarSystemPrompt("Simplified Chinese (zh-CN)")
 
-        assertTrue(prompt.contains("JSON only"))
         assertTrue(prompt.contains("Simplified Chinese (zh-CN)"))
-        listOf("summary", "sentences", "original", "translation", "structure", "points", "vocabulary", "word", "pos", "meaning")
-            .forEach { assertTrue("prompt is missing $it", prompt.contains(it)) }
+        assertTrue(prompt.contains("grammar"))
+        assertTrue(prompt.contains("Markdown"))
+        assertTrue(prompt.contains("main clause"))
+        assertTrue(prompt.contains("collocations"))
+        assertFalse("语法提示词不该再要求 JSON：$prompt", prompt.contains("JSON"))
+        assertFalse(prompt.contains("schema"))
+    }
+
+    /**
+     * 提示词版本进缓存键：JSON 时代的 v1 缓存必须整批失效，否则语法标签会把一段 JSON
+     * 当 Markdown 渲染给用户。
+     */
+    @Test
+    fun promptVersionIsTwo() {
+        assertEquals(2, AI_PROMPT_VERSION)
     }
 }

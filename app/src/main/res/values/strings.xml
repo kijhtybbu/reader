@@ -615,6 +615,8 @@
     <string name="lookup_popup_import_dictionary">Import dictionary</string>
     <string name="lookup_popup_ai_explain">Explain with AI (S9)</string>
     <string name="lookup_popup_external">Look up in another app</string>
+    <string name="lookup_popup_pronounce">Pronounce word</string>
+    <string name="lookup_popup_tts_unavailable">No English text-to-speech voice is installed.</string>
     <string name="lookup_popup_source">From %1$s</string>
 
     <!-- fork: phase 2 / S6 AI settings -->
@@ -688,9 +690,6 @@
     <string name="translation_dialog_regenerate">Regenerate</string>
     <string name="translation_dialog_external">Translate in another app</string>
     <string name="translation_dialog_meta">Model %1$s · %2$s</string>
-    <string name="translation_dialog_summary">Summary</string>
-    <string name="translation_dialog_sentences">Sentences</string>
-    <string name="translation_dialog_vocabulary">Vocabulary</string>
-    <string name="translation_dialog_raw_note">The model did not return valid JSON. Showing the raw response.</string>
-    <string name="translation_dialog_empty_analysis">The model did not return any grammar details.</string>
+    <string name="translation_dialog_sentence_pick">Select a sentence to analyze</string>
+    <string name="translation_dialog_reanalyze">Analyze again</string>
 </resources>

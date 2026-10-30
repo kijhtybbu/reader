@@ -444,6 +444,8 @@
     <string name="lookup_popup_import_dictionary">导入词典</string>
     <string name="lookup_popup_ai_explain">AI 解释（S9）</string>
     <string name="lookup_popup_external">用其他应用查询</string>
+    <string name="lookup_popup_pronounce">朗读单词</string>
+    <string name="lookup_popup_tts_unavailable">系统没有安装英语语音包。</string>
     <string name="lookup_popup_source">来自 %1$s</string>
 
     <!-- fork: phase 2 / S6 AI 设置 -->
@@ -517,9 +519,6 @@
     <string name="translation_dialog_regenerate">重新生成</string>
     <string name="translation_dialog_external">用其他应用翻译</string>
     <string name="translation_dialog_meta">模型 %1$s · %2$s</string>
-    <string name="translation_dialog_summary">总览</string>
-    <string name="translation_dialog_sentences">句子</string>
-    <string name="translation_dialog_vocabulary">词汇</string>
-    <string name="translation_dialog_raw_note">模型没有返回合法 JSON，以下为原始回复。</string>
-    <string name="translation_dialog_empty_analysis">模型没有返回可展示的语法内容。</string>
+    <string name="translation_dialog_sentence_pick">选择一句开始分析</string>
+    <string name="translation_dialog_reanalyze">重新分析</string>
 </resources>

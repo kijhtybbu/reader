@@ -66,7 +66,14 @@ mdict/MdxKeyOrderTest.kt  mdict/MdxLinkRewriteTest.kt  mdict/Ripemd128Test.kt
      不去改它。
    **没有改动任何解析文件。**
 
-2. **修改** `src/test/kotlin/com/qiuminal/juicedict/engine/IndexCacheTest.kt`：删除了
+2. **新增 MDict 1.2 支持**（2026-10，Phase 2 后续）：
+   `MdxKeyIndex` / `MdxRecordStore` / `MdxWordIndex` / `MdxProbe` 按 `GeneratedByEngineVersion`
+   在 4 字节（1.2）与 8 字节（2.0）字段之间切换；1.2 的 key-block-info 不压缩、key 长度
+   为 1 字节且无 NUL。新增 `src/test/resources/mdict/v12.mdx` 与
+   `MdxV12FixtureTest`；用真实牛津高阶 9 版 1.2 MDX 验证过 246,787 词条可打开/查词。
+   这是本模块最重要的本地行为扩展，升级上游时需保留/重新适配。
+
+3. **修改** `src/test/kotlin/com/qiuminal/juicedict/engine/IndexCacheTest.kt`：删除了
    `matchRankOrdersExactPrefixFuzzy` 一个测试方法及其
    `import com.qiuminal.juicedict.data.MatchRank`。该方法测的是上游 Android 层
    `com.qiuminal.juicedict.data.MatchRank`（候选排序等级，属于 app 业务层，不属于

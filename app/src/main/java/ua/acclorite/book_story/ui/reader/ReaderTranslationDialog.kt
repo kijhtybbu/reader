@@ -7,8 +7,8 @@
  *
  * 两个标签：
  *  - 翻译：打开即流式输出（缓存命中直接显示）；可折叠原文、复制/分享、重新生成。
- *  - 语法：**切到标签即分析**（没有「开始分析」按钮）；结构化展示 summary / sentences /
- *    vocabulary；JSON 不合法时退化成原始文本，JSON 合法但没有任何字段时只说明结果为空。
+ *  - 语法：逐句分析（设计 §8.2）。整段只有一句时直接分析；多句时先列出句子，点哪句分析哪句，
+ *    再点一次收起。结果是模型写的 Markdown，用 [MarkdownText] 渲染（没有 JSON、没有「开始分析」按钮）。
  *
  * 配色只用 `LocalReaderPalette`：对话框开在阅读页之上，夜间预设下不能闪白。
  * 尺寸按设计：最大宽 600dp、高 80%；内容内部滚动，长段落不会把按钮挤出屏幕。
@@ -23,6 +23,7 @@ package ua.acclorite.book_story.ui.reader
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,7 +72,6 @@ import ua.acclorite.book_story.R
 import ua.acclorite.book_story.data.ai.AiError
 import ua.acclorite.book_story.presentation.reader.model.AsyncGrammar
 import ua.acclorite.book_story.presentation.reader.model.AsyncText
-import ua.acclorite.book_story.presentation.reader.model.GrammarAnalysis
 import ua.acclorite.book_story.presentation.reader.model.TranslationState
 import ua.acclorite.book_story.presentation.reader.model.TranslationTab
 import ua.acclorite.book_story.ui.common.components.common.StyledText
@@ -85,8 +85,9 @@ private val DialogMaxWidth = 600.dp
 private const val DialogHeightFraction = 0.8f
 
 /**
- * @param onSelectTab 切标签；切到语法时模型会立即请求（缓存命中则直接展示）。
- * @param onRegenerate 错误态的「重试」与成功态的「重新生成」共用。
+ * @param onSelectTab 切标签；翻译标签会立即请求，语法标签多句时等用户选句。
+ * @param onSelectSentence 语法标签里点一句句子（再点一次收起）。
+ * @param onRegenerate 错误态的「重试」与成功态的「重新生成/重新分析」共用。
  * @param onShare 交给阅读页既有的分享 Intent（`ReaderEffect.OnOpenShareApp`）。
  * @param onExternalTranslate 错误态回退到外部翻译应用（S8 之前双击的默认行为）。
  */
@@ -94,6 +95,7 @@ private const val DialogHeightFraction = 0.8f
 fun ReaderTranslationDialog(
     state: TranslationState,
     onSelectTab: (TranslationTab) -> Unit,
+    onSelectSentence: (Int) -> Unit,
     onRegenerate: (TranslationTab) -> Unit,
     onDismiss: () -> Unit,
     onShare: (String) -> Unit,
@@ -175,7 +177,8 @@ fun ReaderTranslationDialog(
                                     state = state,
                                     onCopy = copy,
                                     onShare = onShare,
-                                    onRetry = { onRegenerate(TranslationTab.GRAMMAR) }
+                                    onSelectSentence = onSelectSentence,
+                                    onReanalyze = { onRegenerate(TranslationTab.GRAMMAR) }
                                 )
                             }
                         }
@@ -325,42 +328,139 @@ private fun GrammarTabContent(
     state: TranslationState,
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
-    onRetry: () -> Unit
+    onSelectSentence: (Int) -> Unit,
+    onReanalyze: () -> Unit
 ) {
-    when (val grammar = state.grammar) {
+    val palette = LocalReaderPalette.current
+
+    // 只有一句时没有可选的列表：直接展示那一句的结果（设计 §8.2）。
+    if (state.sentences.size <= 1) {
+        GrammarResult(
+            grammar = state.grammar,
+            onCopy = onCopy,
+            onShare = onShare,
+            onReanalyze = onReanalyze
+        )
+        return
+    }
+
+    if (state.selectedSentenceIndex == null) {
+        StyledText(
+            text = stringResource(id = R.string.translation_dialog_sentence_pick),
+            style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBarMuted)
+        )
+    }
+
+    state.sentences.forEachIndexed { index, sentence ->
+        SentenceCard(
+            index = index,
+            sentence = sentence,
+            expanded = state.selectedSentenceIndex == index,
+            onClick = { onSelectSentence(index) }
+        ) {
+            GrammarResult(
+                grammar = state.grammar,
+                onCopy = onCopy,
+                onShare = onShare,
+                onReanalyze = onReanalyze
+            )
+        }
+    }
+}
+
+/**
+ * 句子卡片：整行可点（再点一次收起），展开时结果挂在句子下面。
+ *
+ * 只让句子这一行可点，结果区不在点击范围内 —— 否则选中、复制结果里的文字会顺手把卡片收起。
+ */
+@Composable
+private fun SentenceCard(
+    index: Int,
+    sentence: String,
+    expanded: Boolean,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val palette = LocalReaderPalette.current
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (expanded) palette.accent.copy(alpha = 0.12f) else palette.onBar.copy(alpha = 0.04f),
+        contentColor = palette.onBar
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClick)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                StyledText(
+                    text = "${index + 1}.",
+                    modifier = Modifier.width(24.dp),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = palette.accent,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                )
+                StyledText(
+                    text = sentence,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
+                )
+            }
+
+            if (expanded) {
+                Column(
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    content()
+                }
+            }
+        }
+    }
+}
+
+/** 选中句子的语法状态：loading、Markdown 结果（可复制/分享/重新分析）、错误 + 重试。 */
+@Composable
+private fun GrammarResult(
+    grammar: AsyncGrammar,
+    onCopy: (String) -> Unit,
+    onShare: (String) -> Unit,
+    onReanalyze: () -> Unit
+) {
+    when (grammar) {
+        // Idle 只会出现一瞬间（选中句子之后、请求发出之前），按 loading 画。
         AsyncGrammar.Idle, AsyncGrammar.Loading -> LoadingRow(
             text = stringResource(id = R.string.translation_dialog_analyzing)
         )
 
         is AsyncGrammar.Success -> {
             if (grammar.fromCache) CacheIndicator()
-
-            val analysis = grammar.analysis
-            when {
-                // JSON 不合法：不藏结果，原样展示模型返回的内容。
-                analysis == null -> {
-                    MutedNote(text = stringResource(id = R.string.translation_dialog_raw_note))
-                    SelectableBody(text = grammar.raw)
-                }
-                // JSON 合法但没有一个语法字段（例如 `{}`）：回显 `{}` 没有信息量，只说明结果为空。
-                analysis.isEmpty -> {
-                    MutedNote(text = stringResource(id = R.string.translation_dialog_empty_analysis))
-                }
-                else -> GrammarSections(analysis = analysis)
+            SelectionContainer {
+                MarkdownText(
+                    markdown = grammar.text,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        color = LocalReaderPalette.current.onBar
+                    )
+                )
             }
-
             ActionRow {
+                // 复制/分享用模型返回的 Markdown 原文，而不是渲染后的纯文本：排版要跟着走。
                 DialogAction(
                     text = stringResource(id = R.string.copy),
-                    onClick = { onCopy(grammar.raw) }
+                    onClick = { onCopy(grammar.text) }
                 )
                 DialogAction(
                     text = stringResource(id = R.string.share),
-                    onClick = { onShare(grammar.raw) }
+                    onClick = { onShare(grammar.text) }
                 )
                 DialogAction(
-                    text = stringResource(id = R.string.translation_dialog_regenerate),
-                    onClick = onRetry
+                    text = stringResource(id = R.string.translation_dialog_reanalyze),
+                    onClick = onReanalyze
                 )
             }
         }
@@ -369,85 +469,7 @@ private fun GrammarTabContent(
             ErrorText(error = grammar.error, statusCode = grammar.statusCode)
             ActionRow {
                 // 没有外部回退：「用其他应用翻译」只能翻译原文，给不了语法分析。
-                DialogAction(text = stringResource(id = R.string.retry), onClick = onRetry)
-            }
-        }
-    }
-}
-
-@Composable
-private fun GrammarSections(analysis: GrammarAnalysis) {
-    val palette = LocalReaderPalette.current
-
-    analysis.summary?.let { summary ->
-        SectionTitle(text = stringResource(id = R.string.translation_dialog_summary))
-        SelectableBody(text = summary)
-    }
-
-    if (analysis.sentences.isNotEmpty()) {
-        SectionTitle(text = stringResource(id = R.string.translation_dialog_sentences))
-        analysis.sentences.forEach { sentence ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                sentence.original?.let { SelectableBody(text = it, emphasized = true) }
-                sentence.translation?.let {
-                    StyledText(
-                        text = it,
-                        style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBarMuted)
-                    )
-                }
-                sentence.structure?.let {
-                    StyledText(
-                        text = it,
-                        style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
-                    )
-                }
-                sentence.points.forEach { point ->
-                    Row {
-                        StyledText(
-                            text = "•",
-                            modifier = Modifier.width(12.dp),
-                            style = MaterialTheme.typography.bodyMedium.copy(color = palette.accent)
-                        )
-                        StyledText(
-                            text = point,
-                            style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    if (analysis.vocabulary.isNotEmpty()) {
-        SectionTitle(text = stringResource(id = R.string.translation_dialog_vocabulary))
-        analysis.vocabulary.forEach { entry ->
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    entry.word?.let {
-                        StyledText(
-                            text = it,
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                color = palette.onBar,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        )
-                    }
-                    entry.pos?.let {
-                        StyledText(
-                            text = it,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = palette.onBarMuted
-                            )
-                        )
-                    }
-                }
-                entry.meaning?.let {
-                    StyledText(
-                        text = it,
-                        style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
-                    )
-                }
+                DialogAction(text = stringResource(id = R.string.retry), onClick = onReanalyze)
             }
         }
     }
@@ -480,27 +502,6 @@ private fun OriginalSection(text: String, requestId: Long) {
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    StyledText(
-        text = text,
-        style = MaterialTheme.typography.titleSmall.copy(
-            color = LocalReaderPalette.current.accent,
-            fontWeight = FontWeight.SemiBold
-        )
-    )
-}
-
-@Composable
-private fun MutedNote(text: String) {
-    StyledText(
-        text = text,
-        style = MaterialTheme.typography.labelMedium.copy(
-            color = LocalReaderPalette.current.onBarMuted
-        )
-    )
-}
-
-@Composable
 private fun CacheIndicator() {
     StyledText(
         text = stringResource(id = R.string.translation_dialog_from_cache),
@@ -528,19 +529,12 @@ private fun LoadingRow(text: String) {
 }
 
 @Composable
-private fun SelectableBody(text: String, emphasized: Boolean = false) {
+private fun SelectableBody(text: String) {
     val palette = LocalReaderPalette.current
     SelectionContainer {
         StyledText(
             text = text,
-            style = if (emphasized) {
-                MaterialTheme.typography.bodyLarge.copy(
-                    color = palette.onBar,
-                    fontWeight = FontWeight.Medium
-                )
-            } else {
-                MaterialTheme.typography.bodyLarge.copy(color = palette.onBar)
-            }
+            style = MaterialTheme.typography.bodyLarge.copy(color = palette.onBar)
         )
     }
 }

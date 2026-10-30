@@ -379,37 +379,71 @@ class AiTranslationRepositoryTest {
         assertEquals(listOf("Hello", " world"), deltas)
     }
 
+    /**
+     * 语法请求不再要 `response_format=json_object`，模型返回什么 Markdown 就原样返回什么。
+     */
     @Test
-    fun grammarRequestsJsonObjectAndReturnsRawJson() = runTest {
+    fun grammarRequestsMarkdownWithoutResponseFormat() = runTest {
         keyStore.set("sk-test-key")
 
-        val grammarJson = """{"summary":"ok","sentences":[],"vocabulary":[]}"""
+        val markdown = "## Main clause\n- **Subject**: *It* (dummy subject)"
         var requestBody: String? = null
         val engine = MockEngine { request ->
             requestBody = (request.body as TextContent).text
             respond(
-                content = ByteReadChannel(chatCompletion(grammarJson)),
+                content = ByteReadChannel(chatCompletion(markdown)),
                 status = HttpStatusCode.OK,
                 headers = jsonHeaders()
             )
         }
 
         val result = repository(engine).analyzeGrammar(
-            text = "Hello.",
+            text = "It was the best of times.",
             targetLanguage = AiTargetLanguage.SIMPLIFIED_CHINESE
         )
 
         assertTrue(result.isSuccess)
-        assertEquals(grammarJson, result.getOrNull())
-        assertTrue(
-            "response_format missing: $requestBody",
-            requestBody?.contains("\"response_format\":{\"type\":\"json_object\"}") == true
+        assertEquals(markdown, result.getOrNull())
+        assertFalse(
+            "response_format must not be sent: $requestBody",
+            requestBody?.contains("response_format") == true
         )
         assertTrue(
             "target language missing: $requestBody",
             requestBody?.contains("Simplified Chinese (zh-CN)") == true
         )
+        assertTrue(
+            "grammar prompt missing: $requestBody",
+            requestBody?.contains("Markdown") == true
+        )
         assertFalse(requestBody?.contains("\"stream\":true") == true)
+    }
+
+    /**
+     * 曾经为了兼容不认 `response_format` 的端点，400 时会去掉该字段重试一次。
+     * 现在根本不发那个字段，400 就应该直接失败，不再发第二个请求。
+     */
+    @Test
+    fun grammarBadRequestIsNotRetried() = runTest {
+        keyStore.set("sk-test-key")
+
+        var requests = 0
+        val engine = MockEngine {
+            requests += 1
+            respond(
+                content = ByteReadChannel(errorBody("unsupported")),
+                status = HttpStatusCode.BadRequest,
+                headers = jsonHeaders()
+            )
+        }
+
+        val error = repository(engine)
+            .analyzeGrammar("Hello.", AiTargetLanguage.ENGLISH)
+            .exceptionOrNull() as AiException
+
+        assertEquals(AiError.UNKNOWN, error.error)
+        assertEquals(400, error.statusCode)
+        assertEquals(1, requests)
     }
 
     @Test
@@ -492,7 +526,12 @@ class AiTranslationRepositoryTest {
     }
 
     private fun jsonEscape(value: String): String {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"")
+        // 换行也必须转义：语法分析的 Markdown 回复是带换行的，裸换行会让 mock 的响应体变成非法 JSON。
+        return value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
     }
 
     private fun eventStreamHeaders() = headersOf(

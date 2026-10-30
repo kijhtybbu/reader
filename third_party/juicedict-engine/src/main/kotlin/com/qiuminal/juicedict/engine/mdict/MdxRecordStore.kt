@@ -10,7 +10,7 @@ package com.qiuminal.juicedict.engine.mdict
  * maintains a decompressed-block cache with LRU eviction and translates
  * `(offset, size)` in that virtual space into one or more block reads.
  *
- * Layout of the section:
+ * Layout of the section (2.0; 1.2 uses four u32 fields and u32 index pairs):
  *
  * ```
  * u64be num_record_blocks
@@ -26,7 +26,12 @@ package com.qiuminal.juicedict.engine.mdict
  * Entries are NUL-terminated text (MDX) or raw binary (MDD/`.mdd`), and an article's
  * `size` includes the trailing NUL when the writer stores it.
  */
-internal class MdxRecordStore(private val reader: MdxFileReader, private val offset: Long) {
+internal class MdxRecordStore(
+    private val reader: MdxFileReader,
+    private val offset: Long,
+    /** 8 for MDict 2.0, 4 for MDict 1.2. */
+    private val numberWidth: Int = 8
+) {
 
     private val blockOffsets: LongArray
     private val blockCompSizes: LongArray
@@ -44,12 +49,13 @@ internal class MdxRecordStore(private val reader: MdxFileReader, private val off
     private val cache = LinkedHashMap<Int, ByteArray>(CACHE_BLOCKS, 0.75f, true)
 
     init {
-        val head = reader.read(offset, 32)
-        val numBlocks = MdxBytes.u64be(head, 0)
-        entryCount = MdxBytes.u64be(head, 8)
-        val indexSize = MdxBytes.u64be(head, 16)
+        val preambleSize = 4 * numberWidth
+        val head = reader.read(offset, preambleSize)
+        val numBlocks = readNumber(head, 0, numberWidth)
+        entryCount = readNumber(head, numberWidth, numberWidth)
+        val indexSize = readNumber(head, 2 * numberWidth, numberWidth)
         require(numBlocks in 1..MAX_BLOCKS) { "implausible MDict record block count $numBlocks" }
-        require(indexSize == numBlocks * 16L) {
+        require(indexSize == numBlocks * 2 * numberWidth) {
             "MDict record index size $indexSize does not match $numBlocks blocks"
         }
 
@@ -58,12 +64,12 @@ internal class MdxRecordStore(private val reader: MdxFileReader, private val off
         blockDecompSizes = LongArray(count)
         blockOffsets = LongArray(count)
 
-        val indexBytes = reader.read(offset + 32, indexSize.toInt())
+        val indexBytes = reader.read(offset + preambleSize, indexSize.toInt())
         var total = 0L
-        var dataOffset = offset + 32 + indexSize
+        var dataOffset = offset + preambleSize + indexSize
         for (i in 0 until count) {
-            blockCompSizes[i] = MdxBytes.u64be(indexBytes, i * 16)
-            blockDecompSizes[i] = MdxBytes.u64be(indexBytes, i * 16 + 8)
+            blockCompSizes[i] = readNumber(indexBytes, i * 2 * numberWidth, numberWidth)
+            blockDecompSizes[i] = readNumber(indexBytes, i * 2 * numberWidth + numberWidth, numberWidth)
             blockOffsets[i] = dataOffset
             dataOffset += blockCompSizes[i]
             total += blockDecompSizes[i]
@@ -102,6 +108,9 @@ internal class MdxRecordStore(private val reader: MdxFileReader, private val off
         }
         return if (written == out.size) out else out.copyOf(written)
     }
+
+    private fun readNumber(bytes: ByteArray, at: Int, width: Int): Long =
+        if (width == 8) MdxBytes.u64be(bytes, at) else MdxBytes.u32be(bytes, at).toLong()
 
     /** Binary search over [blockStarts] for the block containing [virtualOffset]. */
     private fun blockForOffset(virtualOffset: Long): Int {

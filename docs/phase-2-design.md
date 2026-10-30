@@ -17,7 +17,7 @@
 | 取词框 | 浮动卡片贴词，自动避让屏幕边缘 |
 | 翻译框 | 居中大对话框，标签页：翻译 / 语法分析 |
 | 双击段落 | 翻译**整段文本**，替换原外部翻译；默认开启，保留开关 |
-| 语法页 | 切到标签即分析，不再有“开始分析”按钮 |
+| 语法页 | 逐句分析：整段多句时先列出句子、点哪句分析哪句（单句自动分析），结果用 Markdown 渲染，没有「开始分析」按钮 |
 | 结果保存 | 翻译、语法、AI 单词解释全部持久化；第二次点击直接显示缓存 |
 | 终审 | 每阶段两轮 `reviewer`；最终整体 review 按要求取消 |
 
@@ -27,7 +27,7 @@
 
 1. 阅读页单击/长按单词，弹出贴词卡片，查内置 ECDICT 或导入的 MDX。
 2. 双击段落，打开居中 AI 翻译对话框，流式翻译整段。
-3. 语法标签点击即请求，结果分节展示。
+3. 语法标签逐句分析：点中哪句就请求哪句，结果按 Markdown 渲染。
 4. 所有 AI 结果持久化，二次打开零网络请求、立即显示。
 5. 词典解析、AI 调用、加密存储全部复用社区组件，不自研底层格式/协议。
 
@@ -234,10 +234,13 @@ ReaderLayout (Paged/Continuous)
 ### 6.4 提示词
 
 - 翻译系统提示：只输出译文、保留段落、目标语言 X。
-- 语法系统提示：只输出 JSON：
-  `summary`、`sentences[{original,translation,structure,points}]`、`vocabulary[{word,pos,meaning}]`。
-- 解析容错：去掉 Markdown 围栏；失败则原文展示。
-- `PROMPT_VERSION` 常量随提示词变更递增。
+- 语法系统提示（v2）：只分析**用户给的那一句**，直接写 Markdown 讲解 —— 主句结构、从句/短语
+  如何嵌进去、容易漏的语法点、重要搭配在本句里的意思；短标题 + 要点。不再要求 JSON schema：
+  JSON 一漏字段整段就退化成原始文本，Markdown 是模型直接写给人看的东西。
+- 语法输出不做解析：Markdown 原文进缓存，客户端用 `org.commonmark` 渲染；空 content =
+  `EMPTY_RESPONSE`。
+- `PROMPT_VERSION` 常量随提示词变更递增（v1 = JSON 语法提示，v2 = Markdown 语法提示；
+  升到 v2 时 v1 的 JSON 缓存整批失效）。
 
 ## 7. 持久化缓存（核心）
 
@@ -329,7 +332,9 @@ cacheKey = SHA-256(
   打开翻译对话框；翻译标签自动开始（缓存命中则直接显示）。
 - `doubleClickTranslation` 保留，默认 `true`；开启时单击翻页/菜单会等待约 300ms
   的双击判定，设置页说明取舍，可关闭恢复即时单击。
-- 语法标签：点击即请求；不再有“开始分析”按钮；错误态提供“重试”，成功后提供“重新分析”。
+- 语法标签：逐句分析（§8.2）。整段只有一句时切到标签自动分析；多句时先列出句子，
+  点哪句分析哪句、再点一次收起；结果用 Markdown 渲染。没有「开始分析」按钮；
+  错误态提供「重试」，成功后提供「重新分析」。
 - 关闭对话框取消请求；已完成结果保留；进程被杀后再次双击从 Room 读取。
 - 外部翻译 Intent 仅保留为**翻译标签**错误态的“用其他应用”回退：它只能把原文送去翻译，
   给不了语法分析，所以语法标签的错误态只有「重试」。
@@ -375,6 +380,29 @@ cacheKey = SHA-256(
   7. 语法 JSON 合法但一个字段都没有（例如 `{}`）时不再回显 `{}`，改提示
      `translation_dialog_empty_analysis`；只有 JSON 不合法才退化成展示原始回复。
 
+### 8.2 语法逐句分析（本次 UX 改动，已落地）
+
+- 切句：`data/ai/SentenceSplitter.splitIntoSentences`，纯 JVM，用
+  `java.text.BreakIterator.getSentenceInstance(Locale.ENGLISH)`（Android 上是 ICU 实现），
+  `trim` + 丢弃空条目。已知限制：UAX#29 没有缩写词典，`Dr. Smith` 仍会在 `Dr.` 后断开；
+  不做后处理（把两句误并成一句会让一次分析里塞两个主句）。
+- 状态：`TranslationState` 新增 `sentences` 与 `selectedSentenceIndex`；`grammar` 只描述
+  **当前展开那一句**。`AsyncGrammar.Success(text: String, fromCache: Boolean)` 直接就是 Markdown
+  原文，JSON 解析器（`GrammarAnalysis`、`parseGrammarAnalysis`）与 `response_format` 全部删除。
+- 模型：`open` 只切句不请求；`selectTab(GRAMMAR)` 多句时**不**自动请求，单句自动选第 0 句并分析；
+  `selectSentence(index)` 同句 = 收起（不清缓存），异句 = 展开并分析（已有结果直接显示）。
+  结果按 `translationCacheKey(sentence, GRAMMAR, …)` 逐句缓存，本次打开期间另有一份内存 map，
+  收起再展开零请求。
+- 迟到响应：切换句子**不**取消上一句在途请求（跑完进缓存，切回去直接显示），
+  发布前校验「还是不是这次 open」+「展开的还是不是这一句」，旧结果只能进缓存。
+  `regenerate(GRAMMAR)` 取消当前句的在途请求后重发，`put` 覆盖同一键。
+- UI：`ui/reader/MarkdownText`（commonmark AST → `AnnotatedString`：标题加粗放大、
+  列表前缀与缩进、粗体/斜体、行内代码、围栏代码块、引用竖线、块间空行；颜色来自
+  `LocalReaderPalette`，纯 JVM 可测）。语法标签 = 句子卡片列表（编号、最多两行、选中高亮，
+  点句子行展开/收起）；结果区不在点击范围内，复制/分享用 Markdown 原文。
+- 文案：`translation_dialog_sentence_pick`、`translation_dialog_reanalyze`（en/zh）；
+  删除 JSON 时代的 `translation_dialog_summary/sentences/vocabulary/raw_note/empty_analysis`。
+
 ## 9. 设置与文案
 
 - `TranslatorSubcategory`：双击翻译开关、取词手势、进入“翻译与词典设置”。
@@ -401,7 +429,7 @@ cacheKey = SHA-256(
 | S6 | AI 设置、Tink、openai 客户端、MockEngine 测试 | Key 加密存取；流式/错误/取消；测试连接 |
 | S7 | Room 缓存表/DAO/迁移/仓库/缓存键 | ✅ 迁移 20→21（`MigrationTestHelper` 实跑）；读写/touch/LRU/clear 通过 |
 | S8 | `TranslationModel`、双击整段、翻译/语法对话框、缓存优先、语法点击即分析 | ✅ JVM：二次双击 0 请求、语法缓存命中 0 请求、取消不写半截、重新生成覆盖同键（34 个新用例）；杀进程后仍命中待真机/仪器验证 |
-| S9 | 文案/许可/文档、全量回归、release-debug、终审 | ✅ JVM 357 / 引擎 101 / 仪器 22 通过；体积/内存记录；每阶段两轮 `reviewer`，最终整体 review 按要求取消 |
+| S9 | 文案/许可/文档、全量回归、release-debug、终审 | ✅ JVM 379 / 引擎 102 / 仪器 22 通过；体积/内存记录；每阶段两轮 `reviewer`，最终整体 review 按要求取消 |
 
 > S1–S9 已完成。S8 的对话框只在 JVM 上验证过状态机与解析，UI 行为（居中对话框、
 > 标签切换、缓存标记、错误态回退）**未**在真机/模拟器上走过，见 `PROGRESS.md` §3.8。
@@ -421,7 +449,11 @@ cacheKey = SHA-256(
   （StarDict `.idx` / `.idx.gz` + `.syn`、`.mdd` 配对、`logSink`）与 `MdxFixtureTest`
   （运行时合成的合法 MDX 2.0，覆盖 probe → open → lookup → 渲染）。
 - 缓存键：模型/语言/提示词/空白变化；SHA-256 稳定。
-- `TranslationModel`：缓存命中、miss、并发去重、取消、重新生成（fake repository）。
+- `TranslationModel`：缓存命中、miss、并发去重、取消、重新生成（fake repository）；
+  语法逐句：多句零请求、点哪句分析哪句、逐句缓存键、收起/切换、迟到响应不覆盖、单句自动分析。
+- `SentenceSplitter`：单句/多句、段落空行、无终止标点、CJK 全角标点、缩写（已知限制）。
+- `MarkdownText`：标题加粗放大、有序/无序列表与嵌套缩进、粗体/斜体、行内代码、代码块、
+  块间空行、引用标记、空输入。
 - AI：Ktor `MockEngine` 的流式拼接、`[DONE]`、401/404/429/5xx（带状态码）/超时映射、
   JSON 请求、取消、按句切块与 Base URL 规范化（补 `/`、补 `https://`、本机/远程判定）、
   本机地址免 Key 与公网地址无 Key 的 `NO_KEY`。生产引擎用 loopback 的最小 HTTP 服务验证
@@ -474,7 +506,8 @@ cacheKey = SHA-256(
 ## 15. 最终状态与已知限制
 
 - 阶段 S1–S9 全部完成；`phase-2` 分支按阶段提交。
-- 最终校验：`:app:testDebugUnitTest` 357 / 53 类、`:dict-engine:test` 101、`:app:connectedDebugAndroidTest` 22（模拟器 API 34）、`:app:assembleRelease-debug` 通过；APK debug 155,192,122 B / release-debug 55,959,882 B。
+- 最终校验：`:app:testDebugUnitTest` 379 / 55 类、`:dict-engine:test` 102、`:app:connectedDebugAndroidTest` 22（模拟器 API 34）、`:app:assembleRelease-debug` 通过；APK debug 155,192,122 B / release-debug 56,025,366 B。
 - 首次安装模拟器实测约 24.8s，词典目录约 122,800 KB（`.dict`/`.idx`/`.jidx`/`version`）。
+- 语法逐句分析（§8.2）只做过 JVM 状态机与渲染测试：句子列表的点击/收起、长列表滚动、Markdown 排版在设备上仍未走过；切句依赖平台 `BreakIterator`，缩写（`Dr.`）会多切一刀。
 - 已知限制：单词级 AI 解释未实现；`.mdd` 不导入/不渲染；需要密码的 MDX 不支持；长按自动取词只处理单行（工具栏翻译可翻多行选区）；缓存跨进程重建没有仪器测试；release-debug 上真实 AI/Tink/Room 路径只做构建级验证；默认双击翻译带来约 300ms 单击延迟；S5/S8 手工 UI 矩阵未执行（项目无 Compose UI 测试依赖）。
 - 最终整体 review 按用户要求取消；S1–S9 每阶段均完成两轮 `reviewer`。

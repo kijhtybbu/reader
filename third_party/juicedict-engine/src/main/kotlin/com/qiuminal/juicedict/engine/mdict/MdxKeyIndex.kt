@@ -4,7 +4,7 @@ package com.qiuminal.juicedict.engine.mdict
  * The key index of an MDict file: a list of key blocks, each covering a contiguous
  * range of the sorted key space.
  *
- * Key section layout (verified against real files):
+ * Key section layout for 2.0 (verified against real files):
  *
  * ```
  * u64be num_key_blocks
@@ -17,7 +17,9 @@ package com.qiuminal.juicedict.engine.mdict
  * <key blocks>            // num_key_blocks compressed blocks, back to back
  * ```
  *
- * The decompressed key index is a sequence of records:
+ * 1.2 uses four u32 fields (blocks, entries, key-info size, key-block size), stores the
+ * key index uncompressed, and uses u8 key lengths without NUL terminators. The
+ * record layout itself is the same. The decompressed 2.0 key index is a sequence of records:
  *
  * ```
  * u64be num_entries_in_block
@@ -53,6 +55,8 @@ internal class MdxKeyIndex(
     private val order: Comparator<String>,
     /** Compressed size of the key index block, needed to locate the record section. */
     val indexCompSize: Long,
+    /** 8 for MDict 2.0, 4 for MDict 1.2; sizes the key/record number fields. */
+    val numberWidth: Int,
 ) {
     /** Number of key blocks. */
     val blockCount: Int get() = blockOffsets.size
@@ -136,7 +140,9 @@ internal class MdxKeyIndex(
      * Adler-32), the compressed key index, and every compressed key block.
      */
     internal fun recordSectionOffset(keySectionOffset: Long): Long {
-        var total = 44L + indexCompSize
+        // 2.0 has 40 bytes of fields + 4-byte checksum; 1.2 has four 4-byte fields.
+        var total = if (numberWidth == 8) 44L else 16L
+        total += indexCompSize
         for (b in 0 until blockCount) total += blockCompSizes[b]
         return keySectionOffset + total
     }
@@ -155,9 +161,9 @@ internal class MdxKeyIndex(
         val out = LongArray(blockEntryCounts[block].toInt())
         var p = 0
         var n = 0
-        while (n < out.size && p + 8 <= bytes.size) {
-            out[n] = MdxBytes.u64be(bytes, p)
-            p += 8
+        while (n < out.size && p + numberWidth <= bytes.size) {
+            out[n] = readNumber(bytes, p, numberWidth)
+            p += numberWidth
             while (p + unitSize <= bytes.size && !isNul(bytes, p, unitSize)) p += unitSize
             p += unitSize
             n++
@@ -218,33 +224,45 @@ internal class MdxKeyIndex(
             stripKey: Boolean,
             encrypted: Int = 0,
         ): MdxKeyIndex {
-            val head = reader.read(offset, PREAMBLE_WITH_CHECKSUM)
-            val numBlocks = MdxBytes.u64be(head, 0)
-            val numEntries = MdxBytes.u64be(head, 8)
-            val indexDecompSize = MdxBytes.u64be(head, 16)
-            val indexCompSize = MdxBytes.u64be(head, 24)
-            val blocksTotalSize = MdxBytes.u64be(head, 32)
-
-            val declaredAdler = MdxBytes.u32be(head, 40)
-            val actualAdler = MdxBlockReader.adler32(head, 0, PREAMBLE)
-            require(declaredAdler == actualAdler) { "MDict key section preamble checksum mismatch" }
+            // MDict 2.0 uses five u64 fields plus a u32 Adler-32; 1.2 uses four u32
+            // fields and stores the key-block-info uncompressed. Everything that
+            // follows (key blocks, record blocks) keeps the same framing.
+            val numberWidth = if (version >= 2f) 8 else 4
+            val hasChecksum = numberWidth == 8
+            // 2.0 has five fields (blocks, entries, index decomp, index comp, blocks total);
+            // 1.2 has four (blocks, entries, key-info size, key-block size).
+            val preambleSize = (if (hasChecksum) 5 else 4) * numberWidth
+            val head = reader.read(offset, preambleSize + if (hasChecksum) 4 else 0)
+            val numBlocks = readNumber(head, 0, numberWidth)
+            val indexCompSize = readNumber(
+                head,
+                if (hasChecksum) 3 * numberWidth else 2 * numberWidth,
+                numberWidth,
+            )
             require(numBlocks in 1..MAX_BLOCKS) { "implausible MDict key block count $numBlocks" }
             require(indexCompSize in 1..MAX_INDEX_SIZE) {
                 "implausible MDict key index size $indexCompSize"
             }
 
-            val rawIndexBlock = reader.read(offset + PREAMBLE_WITH_CHECKSUM, indexCompSize.toInt())
-            // Encrypted bit 2 scrambles only this key-block-info with a key derived from
-            // its own checksum; decrypt before inflating or the index is garbage and the
-            // dictionary answers no lookups despite importing.
-            val indexBlock = if (encrypted and MdxKeyBlockCrypto.KEY_INFO_ENCRYPTED != 0) {
-                MdxKeyBlockCrypto.decryptKeyInfo(rawIndexBlock)
-            } else {
+            val indexStart = offset + preambleSize + if (hasChecksum) 4 else 0
+            val rawIndexBlock = reader.read(indexStart, indexCompSize.toInt())
+            val indexBytes = if (!hasChecksum) {
+                // MDict 1.2 stores key block info verbatim.
                 rawIndexBlock
-            }
-            val indexBytes = MdxBlockReader.read(indexBlock, indexDecompSize)
-            require(indexBytes.size.toLong() == indexDecompSize) {
-                "MDict key index decompressed to ${indexBytes.size}, expected $indexDecompSize"
+            } else {
+                val indexDecompSize = readNumber(head, 2 * numberWidth, numberWidth)
+                // Encrypted bit 2 scrambles only this key-block-info with a key derived
+                // from its own checksum; decrypt before inflating.
+                val indexBlock = if (encrypted and MdxKeyBlockCrypto.KEY_INFO_ENCRYPTED != 0) {
+                    MdxKeyBlockCrypto.decryptKeyInfo(rawIndexBlock)
+                } else {
+                    rawIndexBlock
+                }
+                val decompressed = MdxBlockReader.read(indexBlock, indexDecompSize)
+                require(decompressed.size.toLong() == indexDecompSize) {
+                    "MDict key index decompressed to ${decompressed.size}, expected $indexDecompSize"
+                }
+                decompressed
             }
 
             val counts = LongArray(numBlocks.toInt())
@@ -254,36 +272,35 @@ internal class MdxKeyIndex(
             val firsts = arrayOfNulls<String>(numBlocks.toInt())
             val lasts = arrayOfNulls<String>(numBlocks.toInt())
 
+            val lengthWidth = if (hasChecksum) 2 else 1
+            val textTerm = if (hasChecksum) unitSize else 0
             var p = 0
-            var blockDataOffset = offset + PREAMBLE_WITH_CHECKSUM + indexCompSize
+            var blockDataOffset = indexStart + indexCompSize
             for (b in 0 until numBlocks.toInt()) {
-                require(p + 8 <= indexBytes.size) { "truncated MDict key index" }
-                counts[b] = MdxBytes.u64be(indexBytes, p)
-                p += 8
+                require(p + numberWidth <= indexBytes.size) { "truncated MDict key index" }
+                counts[b] = readNumber(indexBytes, p, numberWidth)
+                p += numberWidth
 
-                // Each key field is `u16be length | length * unit bytes | NUL unit`.
-                // The length excludes the terminator, but the terminator is physically
-                // present and must be skipped. Some writers instead fold the NUL into
-                // the declared length, so the terminator is tolerated but not required.
-                val firstLen = MdxBytes.u16be(indexBytes, p)
-                p += 2
+                // 2.0: u16be length + key + NUL unit; 1.2: u8 length + key (no NUL).
+                val firstLen = readNumber(indexBytes, p, lengthWidth).toInt()
+                p += lengthWidth
                 val firstLenBytes = firstLen * unitSize
                 require(p + firstLenBytes <= indexBytes.size) { "truncated MDict first key" }
                 firsts[b] = decodeKey(indexBytes, p, firstLenBytes, unitSize)
-                p += firstLenBytes + unitSize
+                p += firstLenBytes + textTerm
 
-                val lastLen = MdxBytes.u16be(indexBytes, p)
-                p += 2
+                val lastLen = readNumber(indexBytes, p, lengthWidth).toInt()
+                p += lengthWidth
                 val lastLenBytes = lastLen * unitSize
                 require(p + lastLenBytes <= indexBytes.size) { "truncated MDict last key" }
                 lasts[b] = decodeKey(indexBytes, p, lastLenBytes, unitSize)
-                p += lastLenBytes + unitSize
+                p += lastLenBytes + textTerm
 
-                require(p + 16 <= indexBytes.size) { "truncated MDict key block descriptor" }
-                compSizes[b] = MdxBytes.u64be(indexBytes, p)
-                p += 8
-                decompSizes[b] = MdxBytes.u64be(indexBytes, p)
-                p += 8
+                require(p + numberWidth * 2 <= indexBytes.size) { "truncated MDict key block descriptor" }
+                compSizes[b] = readNumber(indexBytes, p, numberWidth)
+                p += numberWidth
+                decompSizes[b] = readNumber(indexBytes, p, numberWidth)
+                p += numberWidth
 
                 offsets[b] = blockDataOffset
                 blockDataOffset += compSizes[b]
@@ -291,14 +308,12 @@ internal class MdxKeyIndex(
 
             val totalEntries = counts.sum()
             if (declaredEntries > 0 && totalEntries != declaredEntries) {
-                // Not fatal: the header count is occasionally stale, and the index is
-                // authoritative because it is what the reader walks.
                 MdxLog.warn(
                     "MdxKeyIndex",
                     "entry count mismatch: header=$declaredEntries index=$totalEntries",
                 )
             }
-            if (blocksTotalSize > 0 && blockDataOffset > reader.length) {
+            if (blockDataOffset > reader.length) {
                 MdxLog.warn(
                     "MdxKeyIndex",
                     "key blocks extend past end of file " +
@@ -316,7 +331,15 @@ internal class MdxKeyIndex(
                 unitSize = unitSize,
                 order = MdxKeyOrder.comparator(stripKey),
                 indexCompSize = indexCompSize,
+                numberWidth = numberWidth,
             )
+        }
+
+        private fun readNumber(bytes: ByteArray, at: Int, width: Int): Long = when (width) {
+            1 -> (bytes[at].toInt() and 0xff).toLong()
+            2 -> MdxBytes.u16be(bytes, at).toLong()
+            4 -> MdxBytes.u32be(bytes, at).toLong()
+            else -> MdxBytes.u64be(bytes, at)
         }
 
         /** Decodes a length-delimited key, dropping its NUL terminator(s). */

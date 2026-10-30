@@ -387,6 +387,7 @@ fun ReaderContent(
             ReaderTranslationDialog(
                 state = translationState,
                 onSelectTab = translationModel::selectTab,
+                onSelectSentence = translationModel::selectSentence,
                 onRegenerate = translationModel::regenerate,
                 onDismiss = translationModel::dismiss,
                 onShare = { text -> openShareApp(ReaderEvent.OnOpenShareApp(text)) },

@@ -17,6 +17,7 @@ package ua.acclorite.book_story.ui.reader
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,16 +35,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
@@ -65,6 +70,7 @@ import androidx.compose.ui.window.PopupProperties
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.presentation.reader.LookupState
 import ua.acclorite.book_story.presentation.reader.anchor
+import ua.acclorite.book_story.ui.common.components.common.IconButton
 import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.theme.LocalReaderPalette
 import kotlin.math.roundToInt
@@ -131,6 +137,27 @@ fun ReaderLookupPopup(
         (safeBounds.height * PopupMaxHeightFraction).toDp()
     }
     val anchor = state.anchor
+    val context = LocalContext.current
+    val speaker = remember { WordSpeaker(context) }
+    DisposableEffect(speaker) {
+        onDispose { speaker.shutdown() }
+    }
+    val currentWord = when (state) {
+        is LookupState.Loading -> state.word
+        is LookupState.Success -> state.word
+        is LookupState.NotFound -> state.word
+        is LookupState.Error -> state.word
+        LookupState.Idle -> ""
+    }
+    val onSpeak = {
+        speaker.speak(currentWord) {
+            android.widget.Toast.makeText(
+                context,
+                context.getString(R.string.lookup_popup_tts_unavailable),
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 
     val positionProvider = remember(anchor, safeBounds, margin, gap) {
         LookupPopupPositionProvider(
@@ -162,21 +189,23 @@ fun ReaderLookupPopup(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 when (state) {
-                    is LookupState.Loading -> LoadingBody(state)
+                    is LookupState.Loading -> LoadingBody(state, onSpeak)
                     is LookupState.Success -> SuccessBody(
                         state = state,
                         onSelect = onSelect,
-                        onLookupLink = onLookupLink
+                        onLookupLink = onLookupLink,
+                        onSpeak = onSpeak
                     )
 
                     is LookupState.NotFound -> NotFoundBody(
                         state = state,
                         onImportDictionary = onImportDictionary,
                         onExternalLookup = onExternalLookup,
-                        onAiExplain = onAiExplain
+                        onAiExplain = onAiExplain,
+                        onSpeak = onSpeak
                     )
 
-                    is LookupState.Error -> ErrorBody(state = state, onRetry = onRetry)
+                    is LookupState.Error -> ErrorBody(state, onRetry, onSpeak)
 
                     LookupState.Idle -> Unit
                 }
@@ -186,8 +215,8 @@ fun ReaderLookupPopup(
 }
 
 @Composable
-private fun LoadingBody(state: LookupState.Loading) {
-    WordHeader(word = state.word, source = null)
+private fun LoadingBody(state: LookupState.Loading, onSpeak: () -> Unit) {
+    WordHeader(word = state.word, source = null, onSpeak = onSpeak)
     Row(verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(
             modifier = Modifier.size(16.dp),
@@ -203,25 +232,48 @@ private fun LoadingBody(state: LookupState.Loading) {
 private fun SuccessBody(
     state: LookupState.Success,
     onSelect: (Int) -> Unit,
-    onLookupLink: (String) -> Unit
+    onLookupLink: (String) -> Unit,
+    onSpeak: () -> Unit
 ) {
     val palette = LocalReaderPalette.current
     val selected = state.entries.getOrNull(state.selectedIndex)
-    WordHeader(word = state.word, source = selected?.dictName)
+    WordHeader(word = state.word, source = selected?.dictName, onSpeak = onSpeak)
 
     if (state.entries.size > 1) {
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        // 前缀候选可能很多；用横向滚动条代替 FlowRow，避免卡片被一排 chip 撑高，
+        // 也避免每个 chip 平均分配宽度后显得松散。词头优先，只有同词多词典时才补来源。
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             state.entries.forEachIndexed { index, entry ->
-                // 同一词典的前缀候选词头不同，必须显示词头；只有同一个词来自多部词典时
-                // 才补词典名，避免一排完全一样的按钮。
                 val duplicateWord = state.entries.count { it.word == entry.word } > 1
-                val label = if (duplicateWord) "${entry.word} · ${entry.dictName}" else entry.word
+                val duplicateWordSameDict = state.entries.count {
+                    it.word == entry.word && it.dictId == entry.dictId
+                } > 1
+                val preview = entry.preview.lineSequence().firstOrNull().orEmpty().trim()
+                val label = when {
+                    // 同一部词典里同词多义项（常见于导入的 OALD）：用首行释义区分。
+                    duplicateWordSameDict && preview.isNotEmpty() ->
+                        "${entry.word} · ${preview.take(24)}"
+
+                    duplicateWordSameDict -> "${entry.word} · #${index + 1}"
+                    duplicateWord -> "${entry.word} · ${entry.dictName}"
+                    else -> entry.word
+                }
                 FilterChip(
+                    modifier = Modifier.height(32.dp),
                     selected = index == state.selectedIndex,
-                    label = { StyledText(text = label, maxLines = 1) },
+                    label = {
+                        StyledText(
+                            text = label,
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    },
                     onClick = { onSelect(index) }
                 )
             }
@@ -256,9 +308,10 @@ private fun NotFoundBody(
     state: LookupState.NotFound,
     onImportDictionary: () -> Unit,
     onExternalLookup: (String) -> Unit,
-    onAiExplain: ((String) -> Unit)?
+    onAiExplain: ((String) -> Unit)?,
+    onSpeak: () -> Unit
 ) {
-    WordHeader(word = state.word, source = null)
+    WordHeader(word = state.word, source = null, onSpeak = onSpeak)
     BodyText(stringResource(id = R.string.lookup_popup_not_found))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton(onClick = onImportDictionary) {
@@ -275,8 +328,8 @@ private fun NotFoundBody(
 }
 
 @Composable
-private fun ErrorBody(state: LookupState.Error, onRetry: () -> Unit) {
-    WordHeader(word = state.word, source = null)
+private fun ErrorBody(state: LookupState.Error, onRetry: () -> Unit, onSpeak: () -> Unit) {
+    WordHeader(word = state.word, source = null, onSpeak = onSpeak)
     BodyText(stringResource(id = R.string.lookup_popup_error))
     TextButton(onClick = onRetry) {
         StyledText(text = stringResource(id = R.string.retry))
@@ -284,22 +337,35 @@ private fun ErrorBody(state: LookupState.Error, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun WordHeader(word: String, source: String?) {
+private fun WordHeader(word: String, source: String?, onSpeak: () -> Unit) {
     val palette = LocalReaderPalette.current
-    Column(Modifier.fillMaxWidth()) {
-        StyledText(
-            text = word,
-            style = MaterialTheme.typography.titleMedium.copy(
-                color = palette.onBar,
-                fontWeight = FontWeight.SemiBold
-            )
-        )
-        if (source != null) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
             StyledText(
-                text = stringResource(id = R.string.lookup_popup_source, source),
-                style = MaterialTheme.typography.labelSmall.copy(color = palette.onBarMuted)
+                text = word,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    color = palette.onBar,
+                    fontWeight = FontWeight.SemiBold
+                )
             )
+            if (source != null) {
+                StyledText(
+                    text = stringResource(id = R.string.lookup_popup_source, source),
+                    style = MaterialTheme.typography.labelSmall.copy(color = palette.onBarMuted)
+                )
+            }
         }
+        IconButton(
+            modifier = Modifier.size(20.dp),
+            icon = Icons.Outlined.VolumeUp,
+            contentDescription = R.string.lookup_popup_pronounce,
+            disableOnClick = false,
+            color = palette.onBarMuted,
+            onClick = onSpeak
+        )
     }
 }
 
@@ -318,6 +384,53 @@ private fun BodyText(text: String) {
  *
  * @return null 表示解析失败，调用方退化成纯文本预览。
  */
+/**
+ * ECDICT 的 CSV 里换行是字面量 `\n`（不是真实换行），部分词典还混用真实换行；
+ * `fromHtml` 会把它们当普通空格。统一转成 `<br>` 再交给 Compose 的 HTML 解析器。
+ * 不处理 `<pre>`：词典释义里没有需要保留空白的代码块。
+ */
+private val EXCHANGE_BLOCK = Regex("<small>([^<]*)</small>", RegexOption.IGNORE_CASE)
+
+private val EXCHANGE_LABELS = mapOf(
+    "p" to "过去式",
+    "d" to "过去分词",
+    "i" to "现在分词",
+    "3" to "第三人称单数",
+    "r" to "比较级",
+    "t" to "最高级",
+    "s" to "复数",
+    "0" to "原形"
+)
+
+/**
+ * ECDICT 的 `exchange` 字段是 `p:resulted/s:results` 这种机器码。原样显示既占地方
+ * 又看不懂；这里转成「词形：过去式 resulted · 复数 results」。不认识的 `1:` 等
+ * 变换类型直接忽略；没有冒号的 `<small>`（导入词典自己的注释）保持原样。
+ */
+private fun humanizeExchange(raw: String): String? {
+    val parts = raw.split('/').filter { it.isNotBlank() }
+    if (parts.none { it.contains(':') }) return null
+    val mapped = parts.mapNotNull { part ->
+        val separator = part.indexOf(':')
+        if (separator <= 0) return@mapNotNull null
+        val label = EXCHANGE_LABELS[part.substring(0, separator).lowercase()] ?: return@mapNotNull null
+        val value = part.substring(separator + 1).trim()
+        if (value.isEmpty()) null else "$label $value"
+    }
+    return mapped.joinToString(" · ")
+}
+
+internal fun normalizeDictionaryHtml(html: String): String = html
+    .replace("\\r\\n", "<br>")
+    .replace("\\n", "<br>")
+    .replace("\r\n", "<br>")
+    .replace("\r", "<br>")
+    .replace("\n", "<br>")
+    .replace(EXCHANGE_BLOCK) { match ->
+        val humanized = humanizeExchange(match.groupValues[1]) ?: return@replace match.value
+        if (humanized.isEmpty()) "" else "<small>词形：$humanized</small>"
+    }
+
 internal fun parseArticleHtml(
     html: String,
     linkStyles: TextLinkStyles,
@@ -326,7 +439,7 @@ internal fun parseArticleHtml(
     if (html.isBlank()) return null
     return try {
         AnnotatedString.fromHtml(
-            htmlString = html,
+            htmlString = normalizeDictionaryHtml(html),
             linkStyles = linkStyles,
             linkInteractionListener = { link ->
                 val url = (link as? LinkAnnotation.Url)?.url

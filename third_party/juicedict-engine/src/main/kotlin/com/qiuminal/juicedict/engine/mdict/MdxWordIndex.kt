@@ -154,11 +154,11 @@ internal class MdxWordIndex private constructor(
                 var p = 0
                 val want = keyIndex.entryCountAt(b)
                 var seen = 0L
-                while (seen < want && p + 8 <= bytes.size) {
+                while (seen < want && p + keyIndex.numberWidth <= bytes.size) {
                     // The record offset is stored with the key but is not needed to
                     // build the word list; it is re-read from the cached block when a
                     // hit is turned into an article.
-                    p += 8
+                    p += keyIndex.numberWidth
                     val start = p
                     while (p + unit <= bytes.size && !isTerminator(bytes, p, unit)) p += unit
                     writeUtf8(words, bytes, start, p - start, unit)
