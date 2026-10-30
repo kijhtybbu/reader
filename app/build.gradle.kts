@@ -81,6 +81,13 @@ android {
                 srcDir("src/main/java/ua/acclorite/book_story/data/proto")
             }
         }
+
+        // fork: Room 把 schema 导出到 app/schemas，但不会自动塞进仪器测试 APK，
+        // `MigrationTestHelper` 是在测试进程里按 assets 路径读这两份 JSON 的（第二阶段 S7）。
+        // 不加这一行，迁移测试会在运行时抛 "Cannot locate schema file"。
+        named("androidTest") {
+            assets.srcDir("$projectDir/schemas")
+        }
     }
 
     // Room configuration
@@ -259,6 +266,8 @@ dependencies {
     // 版本 bump 重新拉上去，所以直接不引入）。现在 debug 与 release 解析到同一个 1.9.3。
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
+    // fork: MigrationTestHelper（Room 20→21 迁移测试，第二阶段 S7）
+    androidTestImplementation("androidx.room:room-testing:2.7.2")
     // fork: @Preview 需要 ui-tooling；上游钉在 1.10.0，会把 debug 变体的 ui 拉到 1.10.0，已钉回 1.9.3
     debugImplementation("androidx.compose.ui:ui-tooling:1.9.3")
     kspAndroidTest("com.google.dagger:hilt-android-compiler:2.57.2")

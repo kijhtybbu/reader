@@ -24,11 +24,13 @@ import ua.acclorite.book_story.data.storage.room.dao.BookmarkDao
 import ua.acclorite.book_story.data.storage.room.dao.CategoryDao
 import ua.acclorite.book_story.data.storage.room.dao.ColorPresetDao
 import ua.acclorite.book_story.data.storage.room.dao.HistoryDao
+import ua.acclorite.book_story.data.storage.room.dao.TranslationCacheDao
 import ua.acclorite.book_story.data.storage.room.entity.BookEntity
 import ua.acclorite.book_story.data.storage.room.entity.BookmarkEntity
 import ua.acclorite.book_story.data.storage.room.entity.CategoryEntity
 import ua.acclorite.book_story.data.storage.room.entity.ColorPresetEntity
 import ua.acclorite.book_story.data.storage.room.entity.HistoryEntity
+import ua.acclorite.book_story.data.storage.room.entity.TranslationCacheEntity
 import java.io.File
 import java.util.UUID
 
@@ -38,9 +40,10 @@ import java.util.UUID
         HistoryEntity::class,
         ColorPresetEntity::class,
         CategoryEntity::class,
-        BookmarkEntity::class
+        BookmarkEntity::class,
+        TranslationCacheEntity::class
     ],
-    version = 20,
+    version = 21,
     autoMigrations = [
         AutoMigration(1, 2),
         AutoMigration(2, 3),
@@ -62,7 +65,10 @@ import java.util.UUID
         AutoMigration(18, 19),
         // fork: BookEntity 新增两个可空列 charsetName / charsetConfidence。
         // 旧书迁移后两者都是 NULL，即「未探测」，下次打开重新解析时就会自愈。
-        AutoMigration(19, 20)
+        AutoMigration(19, 20),
+        // fork: 新增 translationcacheentity（AI 结果缓存，第二阶段 S7）。纯建表，
+        // 不碰既有表，也不需要 AutoMigrationSpec。
+        AutoMigration(20, 21)
     ],
     exportSchema = true
 )
@@ -115,6 +121,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract val colorPresetDao: ColorPresetDao
     abstract val categoryDao: CategoryDao
     abstract val bookmarkDao: BookmarkDao
+    abstract val translationCacheDao: TranslationCacheDao
 }
 
 @Suppress("ClassName")

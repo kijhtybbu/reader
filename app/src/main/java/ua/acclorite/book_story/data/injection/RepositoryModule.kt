@@ -10,6 +10,8 @@ import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import ua.acclorite.book_story.data.ai.cache.TranslationCacheRepository
+import ua.acclorite.book_story.data.ai.cache.TranslationCacheRepositoryImpl
 import ua.acclorite.book_story.data.mapper.book.BookMapper
 import ua.acclorite.book_story.data.mapper.book.BookMapperImpl
 import ua.acclorite.book_story.data.mapper.category.CategoryMapper
@@ -60,6 +62,12 @@ abstract class RepositoryModule {
     abstract fun bindDataStore(
         dataStoreImpl: DataStoreImpl
     ): DataStore
+
+    @Binds
+    @Singleton
+    abstract fun bindTranslationCacheRepository(
+        translationCacheRepositoryImpl: TranslationCacheRepositoryImpl
+    ): TranslationCacheRepository
 
     @Binds
     @Singleton

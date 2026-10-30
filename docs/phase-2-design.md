@@ -288,9 +288,40 @@ cacheKey = SHA-256(
 - 同一 `cacheKey` 的并发请求用 `Map<String, Job/Deferred>` 去重。
 - 只在完整完成后写入；流式中途取消/失败不写半截。
 - 写入使用 `NonCancellable`；读取时 `touch(lastAccessedAt)`。
-- “重新生成”：删除该键 → 重新请求 → 覆盖缓存。
+- “重新生成”：重新请求 → 用 `put` 覆盖同一键（`REPLACE`），不需要先删；仓库没有按单键删除的 API，`clear()` 只给设置页全清用。
 - 容量：默认全部保留；超过 20,000 条或 200MB 时按 `lastAccessedAt` LRU 清理；
   设置页显示条数/占用并提供“清除翻译缓存”。
+
+### 7.4 S7 实施结论（已落地）
+
+- 落点：`data/storage/room/entity/TranslationCacheEntity`、`dao/TranslationCacheDao`
+  （`@Dao abstract class`，`trimToBytes` 是事务方法）、`AppDatabase` 版本 21 +
+  `AutoMigration(20, 21)` + 导出的 `app/schemas/…AppDatabase/21.json`；
+  键与纯逻辑在 `data/ai/cache/TranslationCacheKey`，仓库在 `data/ai/cache/TranslationCacheRepository`
+  （接口 + `Impl`，`RepositoryModule` 里 `@Binds @Singleton`）。
+- 占用按 **UTF-8 字节**算，不是 SQLite `LENGTH(text)` 的字符数：后者按字符计，一段中文只有
+  实际体积的 1/3，200MB 的预算会被撑成 600MB。DAO 用 `LENGTH(CAST(payload AS BLOB))`。
+- `trimToBytes` 不用窗口函数（不同 Android 版本 SQLite 版本不一致），也不做 O(n²) 自连接：
+  先读 `(cacheKey, 字节数)` 投影算出切点，再分批删（每批 500 键，避开 `IN (...)` 的参数上限）。
+  **至少保留最新一行**：单行就超预算时删掉它只会让下次访问重新请求、写回、再被删。
+- `trimToEntries` / `deleteOldest` 的 `limit` 按至少 1 处理（`coerceAtLeast(1)`）：
+  `LIMIT 0` 的保留集是空集，等于把整个缓存删光；统一按至少 1 处理。
+- `stats()` 用一次查询取回条数与字节数：分两次查时，并发的 `put`/`trim` 会让两个数字
+  来自不同快照，设置页会显示条数变了而占用没变的组合。
+- 键只含 Base URL 的 host（§7.2），因此同一主机不同路径的两个网关共用缓存；畸形 Base URL 的
+  host 解析为空串而不是抛异常（`aiBaseUrlHost` 复用，不另写一份解析）。
+- `touch` 用系统时钟（`System.currentTimeMillis()`），只有 `put` 的 `now` 由调用方传入
+  （S8 有完成时刻）；没有为测试注入时钟。
+- S8 的调用方式：
+  `key = translationCacheKey(text, TranslationKind.TRANSLATION, targetLanguage.promptName(uiLocale), model, baseUrl)`；
+  `repo.get(key)` → 命中直接展示（`CachedAiResult.fromCache == true`）；未命中请求完成后
+  `repo.put(key, kind, bookId, nodeId, payload, model, baseUrl, targetLanguage, AI_PROMPT_VERSION, now)`。
+  「重新生成」= 重新请求后用 `put` 覆盖同一键（`REPLACE`），不需要先删；仓库只提供 `clear()` 全清，
+  没有按单键删除的 API。
+- 仪器测试：`TranslationCacheRepositoryTest`（内存 Room，11 例）+
+  `TranslationCacheMigrationTest`（`MigrationTestHelper` 跑 20→21 并校验表结构）。
+  `MigrationTestHelper` 在测试进程里按 assets 读 schema，`app/build.gradle.kts` 的 `androidTest`
+  sourceSet 加了 `assets.srcDir("$projectDir/schemas")`，否则运行时找不到 `20.json`。
 
 ## 8. 双击与语法页行为
 
@@ -326,14 +357,16 @@ cacheKey = SHA-256(
 | S4 | 词典仓库、MDX/StarDict 导入、设置页词典管理 | 导入/启用/删除；损坏/加密/空间不足错误明确 |
 | S5 | 取词手势、文本布局命中、取词卡片 | 两种布局单击/长按取词；空白区翻页/菜单不回归；RTL/夜间正常 |
 | S6 | AI 设置、Tink、openai 客户端、MockEngine 测试 | Key 加密存取；流式/错误/取消；测试连接 |
-| S7 | Room 缓存表/DAO/迁移/仓库 | 迁移 20→21；读写/touch/LRU/clear 通过 |
+| S7 | Room 缓存表/DAO/迁移/仓库/缓存键 | ✅ 迁移 20→21（`MigrationTestHelper` 实跑）；读写/touch/LRU/clear 通过 |
 | S8 | `TranslationModel`、双击整段、翻译/语法对话框、缓存优先、语法点击即分析 | 二次双击 0 请求；语法二次点击 0 请求；杀进程后仍命中；取消不写半截 |
 | S9 | 文案/许可/文档、全量回归、release-debug、终审 | 全量测试通过；体积/内存记录；`reviewer-expert` 整体 review |
 
-> S1–S6 已完成。S3 的验收只在 JVM 上做过（真实资产解压 + `apple` 查询 + 二次安装跳过），
+> S1–S7 已完成。S3 的验收只在 JVM 上做过（真实资产解压 + `apple` 查询 + 二次安装跳过），
 > 真机首启耗时/内存峰值与 minified 构建下的 7z 解压仍待验证；实测数据见 `PROGRESS.md` §3.3。
 > S6 的 `AiKeyStore` 只在 JVM 上用假 cipher 测过；真实 Tink/AndroidKeysetManager 仪器测试已写但**未执行**；
 > 真实服务商的测试连接/流式/401/429 也未在设备上验证，见 `PROGRESS.md` §3.6。
+> S7 的 Room DAO/迁移测试在**模拟器**（`reader34` / API 34）上跑过，**没有**在真机上跑；
+> 缓存跨进程重建（杀进程后再读）要到 S8 有调用方才能验证，见 `PROGRESS.md` §3.7。
 
 ## 11. 测试矩阵
 
@@ -353,7 +386,7 @@ cacheKey = SHA-256(
 
 ### Android / 仪器
 
-- Room DAO、迁移 20→21、缓存跨进程重建。
+- Room DAO、迁移 20→21（S7）；缓存跨进程重建（S8/S9，S7 未写）。
 - 内置 ECDICT 解压、查询、内存峰值。
 - Tink Key 存取。
 - 取词卡片/翻译对话框 Compose 行为（可用现有测试 runner，不引入 Compose UI 测试库）。

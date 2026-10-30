@@ -2,7 +2,7 @@
 
 > 快照时间：2026-10-29
 > 基线：`upstream/master` = `464891e`（Acclorite/book-story，GPL-3.0-only）
-> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.6）
+> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.7）
 
 ---
 
@@ -370,6 +370,50 @@ S6 的手工/真机矩阵**未执行**，不得当作已验证：
 | 9 | minified `release-debug` 上保存/读取 Key | Tink/Keystore 路径正常（S1 遗留的 R8 回查项） |
 | 9b | minified `release-debug` 上真发一次对话/流式（引擎已显式 OkHttp，仍需实测） | 有响应、流式不中断（若这里失败，第一嫌疑是 R8 规则而非 ServiceLoader） |
 | 10 | Base URL 指向 `http://127.0.0.1:11434/v1/`，**不填 Key** | 允许明文、允许空 Key（设置页说明「可以留空」），测试连接/翻译能通；换成局域网 IP 则被网络安全配置拒绝；公网地址不填 Key 显示「尚未保存 API Key」 |
+
+### 3.7 第二阶段（翻译与词典）/ S7
+
+| 项 | 内容 |
+| --- | --- |
+| 实体 | `data/storage/room/entity/TranslationCacheEntity`：表 `translationcacheentity`，主键 `cacheKey: String`，列 `bookId/nodeId/kind/model/baseUrlHost/targetLanguage/promptVersion/payload/complete/createdAt/lastAccessedAt`；索引 `lastAccessedAt`（LRU）与 `bookId`（将来按书清理）。不存正文全文，也没有外键——同一段文字在不同书/章节共享缓存（设计 §7.2） |
+| DAO | `dao/TranslationCacheDao`（`@Dao abstract class`，与 `BookmarkDao` 同风格）：`get` / `touch` / `put`（`REPLACE`）/ `clear` / `stats()`（条数与字节数一次查询取回）/ `deleteOldest(limit)` / `trimToEntries(limit)`（两者的 `limit` 都按至少 1 处理，`LIMIT 0` 不会删光缓存）/ `trimToBytes(maxBytes)`（事务方法）。**占用按 UTF-8 字节**：`LENGTH(CAST(payload AS BLOB))`，`LENGTH(text)` 数的是字符数（中文只有实际体积的 1/3） |
+| 数据库 | `AppDatabase` 版本 **21**，`entities` 加 `TranslationCacheEntity`，`AutoMigration(20, 21)`，抽象 `translationCacheDao`；不碰既有表、无破坏性迁移。schema 导出到 `app/schemas/ua.acclorite.book_story.data.storage.room.AppDatabase/21.json`（由 KSP 生成，随本次改动进工作区） |
+| 缓存键 | `data/ai/cache/TranslationCacheKey`（纯 JVM）：`SHA-256("v<promptVersion>\|<kind>\|<targetLanguage>\|<model>\|<baseUrlHost>\|<normalize(text)>")`；`TranslationKind` 的 `wire` 是落库稳定字符串（`TRANSLATION`/`GRAMMAR`/`WORD`）。`normalizeCacheText` = trim + CRLF/CR → LF，**不合并内部空白**；host 复用 S6 的 `aiBaseUrlHost`（先规范化 Base URL，畸形地址返回空串而不抛异常） |
+| 仓库 | `data/ai/cache/TranslationCacheRepository`（接口）+ `TranslationCacheRepositoryImpl`（`@Inject constructor(AppDatabase)`，`RepositoryModule` 里 `@Binds @Singleton`）：`get`（命中推进 `lastAccessedAt`，`complete = false` 的行忽略）/ `put`（恒写 `complete = true`，`withContext(NonCancellable)`）/ `clear` / `stats(): CacheStats(count, payloadBytes)` / `trim(maxEntries = 20_000, maxBytes = 200MB)` |
+| 状态 | ✅ `:app:testDebugUnitTest` **315 个用例全绿**（48 个文件，新增 10 个）；`:app:compileDebugAndroidTestKotlin` 通过；`:app:assembleDebug` 通过；`:app:assembleRelease-debug` 通过（`-Xmx4096m`）；`:dict-engine:test` 未改动。**仪器测试这次在模拟器上真跑了**：`./gradlew :app:connectedDebugAndroidTest` → 模拟器 `reader34`（Android 14 / API 34，arm64）上 **21 个用例全绿**（S7 新增 11 个 + `TinkAiKeyCipherTest` 3 个 + `TypographyLabTest` 7 个），0 失败 0 跳过；修复轮后又单独跑了 `TranslationCacheRepositoryTest`（11 个，含新增的 `limit = 0` 用例），同样全绿 |
+
+S7 的测试：
+
+| 测试 | 钉住什么 |
+| --- | --- |
+| `TranslationCacheKeyTest`（JVM，10） | 同输入同键且是 64 位小写十六进制；**固定输入钉死哈希值**（`dcad577a…f80eda`，拼接格式一改就红）；trim + CRLF/CR→LF 归一且内部空白不合并；`kind` 三种不同；模型/目标语言/`promptVersion` 不同即不同键；**省略 `promptVersion` 等于显式传 `AI_PROMPT_VERSION`**（提示词一改旧缓存就失效靠这个默认值）；只有 host 进键（协议/端口/路径/大小写不影响）；空 Base URL 的 host 是默认地址 `api.openai.com`；畸形地址 `::::`/`///` 的 host 是空串且不抛异常；CJK 与 emoji（含肤色修饰符）稳定且区分 |
+| `TranslationCacheRepositoryTest`（androidTest，11） | put→get 返回 payload/模型/语言/`createdAt`/`fromCache = true`，落库的 `kind`/`baseUrlHost` 正确，**读取推进 `lastAccessedAt` 而 `createdAt` 不动**，且落库键等于键构造器算出的键；`complete = false` 的行既读不到也不被 touch；同键 `put` 覆盖（1 行、新 payload）；`clear` 清空后 stats 归零；`stats.payloadBytes` 数的是 UTF-8 字节（`你好` = 6）；`trim` 按条数保留最新 N；按字节删最旧的直到不超预算、到第一行超预算为止；**单行超预算时保留最新一行**；`deleteOldest(n)` 精确删最旧 n 行；`trimToEntries(0)`/`deleteOldest(0)` 按至少 1 处理（不会删光缓存） |
+| `TranslationCacheMigrationTest`（androidTest，1） | `MigrationTestHelper` 用导出的 `20.json` 建库、跑 `AutoMigration(20, 21)` 并按 `21.json` 校验：既有 `CategoryEntity` 行数不变、`translationcacheentity` 表存在、新表能按实体列插入 |
+
+与设计稿的偏差 / 实施时的结论（已同步进 `docs/phase-2-design.md` §7.4）：
+
+1. **`payloadBytes` 用 `LENGTH(CAST(payload AS BLOB))`**：设计稿只给了 200MB 预算，没规定按字节还是按字符计；SQLite 对 TEXT 的 `LENGTH()` 返回字符数，中文段落按字符算只有实际体积的 1/3，200MB 预算会被撑到 600MB，所以实现按 UTF-8 字节算。
+2. **`trimToBytes` 至少保留最新一行**：单行就超预算时（例如超长段落的语法 JSON）删掉它只会「下次访问重新请求 → 写回 → 再被删」，来回计费。实现上先读 `(cacheKey, 字节数)` 投影算切点再分批删（每批 500 键）：不用窗口函数（不同 Android 版本 SQLite 版本不一致），也不用 O(n²) 自连接。
+3. **没有单独的 `TranslationCacheEntry` 类型**：任务描述里 `TranslationCacheEntry`/`CachedAiResult` 二选一，只保留 `CachedAiResult`（`payload/model/targetLanguage/createdAt/fromCache`），避免两个同形类型。
+4. **`touch` 用系统时钟**：只有 `put` 的 `now` 由调用方传入（S8 有完成时刻），没有为测试注入时钟——测试断言的是「比写入时的 1_000L 大」。
+5. **`androidTest` 需要手动把 schema 目录加进 assets**：`MigrationTestHelper` 在测试进程里按 assets 路径读 schema，Room Gradle 插件不会自动加。`app/build.gradle.kts` 的 `androidTest` sourceSet 加了 `assets.srcDir("$projectDir/schemas")`，并新增 `androidTestImplementation("androidx.room:room-testing:2.7.2")`。加之前 androidTest APK 里没有 `assets/…AppDatabase/*.json`，迁移测试会在运行时找不到 `20.json`。
+6. **键只含 host**（设计 §7.2 原文如此）：同一主机不同路径的两个自建网关会共用缓存；换 `/v1` → `/v2` 不会 miss。已在 `TranslationCacheKey` 的文件头写明这是设计取舍。
+7. **`RepositoryModule` 的 `@Singleton` 绑定**：与其它仓库一致（实现类不标 `@Singleton`），`AppDatabase` 由 `AppModule` 提供。
+
+S8 必须这样调用（设计 §7.4 已写）：
+
+- 算键：`translationCacheKey(text, TranslationKind.TRANSLATION, targetLanguage.promptName(uiLocale), model, baseUrl)`（`promptVersion` 默认 `AI_PROMPT_VERSION`）。
+- 读：`repo.get(key)` → 命中直接展示，`CachedAiResult.fromCache == true`，不建网络请求。
+- 写：请求**完整**结束后 `repo.put(key, kind, bookId, nodeId, payload, model, baseUrl, targetLanguage, AI_PROMPT_VERSION, now)`；流式中途取消/失败**不调用** `put`（仓库侧也会用 `NonCancellable` 保证「已完成的结果」写进去）。
+- 「重新生成」：直接 `put` 覆盖同一键（`REPLACE`），不需要先删（仓库没有按单键删除的 API）；`clear()` 只给设置页的「清除翻译缓存」用。
+- 容量：`trim()` 由设置页/S8 在合适时机调（本期没有自动触发点）。
+
+**未验证（不要当成已验证）**：
+
+- 缓存**跨进程重建**（杀进程后再次双击命中）：S7 只有 DAO/仓库测试，真要验证得等 S8 有调用方，或写「先 buildDatabase 写入 → 关库 → 重开」的仪器测试（本期没写：内存库重开即空，文件库要自己清理，价值低于 S8 端到端）。
+- **真机**：所有仪器测试跑在模拟器 `reader34`（API 34）上，没有在真机（Lenovo TB322FC / API 36）上跑过。
+- minified `release-debug` 上的 Room 迁移：只验证了构建能过，没有装到设备上跑 20→21。
+- 顺带：`TinkAiKeyCipherTest`（S6 记录为「仪器测试已写但未执行」）这次随整套 connected 测试在模拟器上跑过并通过（3 例）；真机仍未验证，§3.6 的结论不变。
 
 ---
 
