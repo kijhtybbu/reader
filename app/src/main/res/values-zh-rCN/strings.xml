@@ -398,4 +398,37 @@
     <string name="txt_encoding_option">文本编码</string>
     <string name="txt_encoding_auto">自动</string>
     <string name="txt_encoding_fallback_note">自动识别无法可靠确定本文件的编码，正文可能是乱码。请在上方选择正确的编码。</string>
+
+    <!-- fork: phase 2 / S4 词典管理 -->
+    <string name="dictionary_manager_settings">词典管理</string>
+    <string name="dictionary_manager_settings_desc">导入 MDX 与 StarDict 词典</string>
+    <string name="dictionary_installed_title">已安装词典</string>
+    <string name="dictionary_type_mdx">MDX</string>
+    <string name="dictionary_type_stardict">StarDict</string>
+    <string name="dictionary_word_count">词条 %1$s</string>
+    <string name="dictionary_builtin_state_idle">尚未就绪</string>
+    <string name="dictionary_builtin_state_extracting">正在准备… %1$d%%</string>
+    <string name="dictionary_builtin_ready">词条 %1$s · %2$s · 版本 %3$d</string>
+    <string name="dictionary_builtin_state_error">安装失败</string>
+    <string name="dictionary_builtin_not_deletable">内置词典，无法删除</string>
+    <string name="dictionary_enabled_content_desc">在取词时使用此词典</string>
+    <string name="dictionary_priority_content_desc">优先词典</string>
+    <string name="dictionary_delete">删除词典</string>
+    <string name="dictionary_import_mdx">导入 MDX 文件</string>
+    <string name="dictionary_import_stardict">导入 StarDict 文件夹</string>
+    <string name="dictionary_import_note">导入的词典会复制到应用内部存储。本版本不导入 MDD 资源。</string>
+    <string name="dictionary_import_copying">正在复制… %1$d%%</string>
+    <string name="dictionary_import_validating">正在校验词典…</string>
+    <string name="dictionary_import_done">已导入「%1$s」。</string>
+    <string name="dictionary_import_error_unreadable">无法读取选中的文件或文件夹。</string>
+    <string name="dictionary_import_error_empty">选中的文件为空。</string>
+    <string name="dictionary_import_error_too_large">词典文件超过 512 MB。</string>
+    <string name="dictionary_import_error_no_space">剩余空间不足，无法导入该词典。</string>
+    <string name="dictionary_import_error_not_mdx">该文件不是 MDX 词典。</string>
+    <string name="dictionary_import_error_encrypted">不支持加密的 MDX 词典。</string>
+    <string name="dictionary_import_error_resource_pack">这是 MDD 资源包，不是词典。</string>
+    <string name="dictionary_import_error_corrupt">词典已损坏、被截断或没有词条。</string>
+    <string name="dictionary_import_error_incomplete">该文件夹不是完整的 StarDict（需要 .ifo、.idx、.dict）。</string>
+    <string name="dictionary_import_error_multiple">该文件夹里有多部 StarDict 词典。</string>
+    <string name="dictionary_import_error_failed">无法导入该词典。</string>
 </resources>

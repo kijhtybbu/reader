@@ -179,6 +179,13 @@ class SettingsManager @Inject constructor(
     val doubleClickTranslation = setting<Boolean, Boolean>(
         key = booleanPreferencesKey("double_click_translation"), default = false
     )
+    // fork: 取词时的**优先**词典（不是唯一词典）。内置 ECDICT 的 id 固定为 "builtin"（见
+    // DictionaryCatalog）；DictionaryRepository 先查这部、再查其余已启用的词典，所以它只影响
+    // 同 rank 命中的先后，不会屏蔽其它词典。删除/禁用当前词典时设置页会把它回落成 "builtin"，
+    // 这里不做存在性校验 —— 词典可能还没导入（恢复备份），校验失败就回落默认值反而会吞掉用户的选择。
+    val activeDictionaryId = setting<String, String>(
+        key = stringPreferencesKey("active_dictionary_id"), default = "builtin"
+    )
     val fastColorPresetChange = setting<Boolean, Boolean>(
         key = booleanPreferencesKey("fast_color_preset_change"), default = true
     )

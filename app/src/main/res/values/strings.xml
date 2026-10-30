@@ -569,4 +569,37 @@
     <string name="txt_encoding_option">Text encoding</string>
     <string name="txt_encoding_auto">Auto</string>
     <string name="txt_encoding_fallback_note">Automatic detection could not reliably identify this file\'s encoding, so the text may read as garbage. Choose the right encoding above.</string>
+
+    <!-- fork: phase 2 / S4 dictionary management -->
+    <string name="dictionary_manager_settings">Dictionary management</string>
+    <string name="dictionary_manager_settings_desc">Import MDX and StarDict dictionaries</string>
+    <string name="dictionary_installed_title">Installed dictionaries</string>
+    <string name="dictionary_type_mdx">MDX</string>
+    <string name="dictionary_type_stardict">StarDict</string>
+    <string name="dictionary_word_count">Entries: %1$s</string>
+    <string name="dictionary_builtin_state_idle">Not ready yet</string>
+    <string name="dictionary_builtin_state_extracting">Preparing… %1$d%%</string>
+    <string name="dictionary_builtin_ready">Entries: %1$s · %2$s · v%3$d</string>
+    <string name="dictionary_builtin_state_error">Install failed</string>
+    <string name="dictionary_builtin_not_deletable">Built-in dictionary, cannot be removed</string>
+    <string name="dictionary_enabled_content_desc">Use this dictionary for lookups</string>
+    <string name="dictionary_priority_content_desc">Preferred dictionary</string>
+    <string name="dictionary_delete">Delete dictionary</string>
+    <string name="dictionary_import_mdx">Import MDX file</string>
+    <string name="dictionary_import_stardict">Import StarDict folder</string>
+    <string name="dictionary_import_note">Imported dictionaries are copied into app storage. MDD resources are not imported in this version.</string>
+    <string name="dictionary_import_copying">Copying… %1$d%%</string>
+    <string name="dictionary_import_validating">Validating dictionary…</string>
+    <string name="dictionary_import_done">Imported \"%1$s\".</string>
+    <string name="dictionary_import_error_unreadable">Could not read the selected file or folder.</string>
+    <string name="dictionary_import_error_empty">The selected file is empty.</string>
+    <string name="dictionary_import_error_too_large">The dictionary is larger than 512 MB.</string>
+    <string name="dictionary_import_error_no_space">Not enough free space to import this dictionary.</string>
+    <string name="dictionary_import_error_not_mdx">This file is not an MDX dictionary.</string>
+    <string name="dictionary_import_error_encrypted">Encrypted MDX dictionaries are not supported.</string>
+    <string name="dictionary_import_error_resource_pack">This is an MDD resource pack, not a dictionary.</string>
+    <string name="dictionary_import_error_corrupt">The dictionary is corrupt, truncated or has no entries.</string>
+    <string name="dictionary_import_error_incomplete">The folder does not contain a complete StarDict (.ifo, .idx, .dict).</string>
+    <string name="dictionary_import_error_multiple">The folder contains more than one StarDict dictionary.</string>
+    <string name="dictionary_import_error_failed">Could not import the dictionary.</string>
 </resources>

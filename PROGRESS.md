@@ -196,6 +196,57 @@ Review Round-1 已关的项（S3 内）：
   空间不足）：S4 导入路径会复用同一批校验，到时用合成归档一并补。
 - 四个真实资产测试每次跑要解 4 次 90MB（整套约 6s，`/tmp` 峰值约 360MB）：S9 若 CI 磁盘吃紧再改成共享解压目录。
 
+### 3.4 第二阶段（翻译与词典）/ S4
+
+| 项 | 内容 |
+| --- | --- |
+| 目录 | `data/dictionary/DictionaryCatalog` + `DictionaryIndexCodec`：元数据在 `filesDir/dictionaries/index.json`，导入词典在 `dictionaries/imported/<uuid>/`；内置条目从 `DictionaryRegistry.builtInState` 派生（id `builtin`，不可删除/禁用）。枚举 `imported/` 时跳过 `.staging` / `*.tmp` / `*.old`（`isTransientDirectoryName`），`refresh` 丢掉文件已消失的条目、收养未入索引的目录（原子 rename 与写索引之间进程被杀时不会留孤儿）。启动时 `sweepStaging` 清掉上次进程留下的 `.staging/*`（只在 `Application.onCreate` 跑，不会碰正在进行的导入）；`decode`/`reconcileIndex` 丢弃 `builtin` 与重复 id（Compose `key = { it.id }` 不能重复）；索引里的 `type` 用稳定 wire 字符串（`"MDX"`/`"STARDICT"`）而不是枚举名 |
+| 导入 | `data/dictionary/DictionaryImporter`：MDX 走 `OpenDocument`（`*/*`）→ 复制前读前 1 MiB 跑 `probeMdxHead`（非 MDict 直接拒绝，不先复制一遍）→ `.staging/<uuid>/` → `probeMdx` + `openMdx` 校验（关闭）→ `imported/<uuid>/`；StarDict 走 `OpenDocumentTree` → 校验 `.ifo` + `.idx(.gz)` + `.dict(.dz)`（可选 `.syn`）→ `openStarDict` 校验 → 原子换目录。错误是 `DictionaryImportError` 枚举（含 NOT_MDX/ENCRYPTED/RESOURCE_PACK/CORRUPT/INCOMPLETE/TOO_LARGE/NO_SPACE），`ImportState` 以 StateFlow 暴露进度；全部磁盘工作在 `Dispatchers.IO`。**`.mdd` 资源包本期不导入**（单文件 `OpenDocument` 拿不到兄弟文件授权；设计 §4.3 已把这条记成欠账，`openDictionaryEngine` 里的 `mddFilesFor` 调用点留着，等资源渲染阶段复制 `.mdd` 后自动生效） |
+| 查询 | `data/dictionary/DictionaryRepository`：`lookup(query, limit = 5)` 合并内置 + 已启用导入词典，精确 > 前缀 > 模糊（有精确/前缀时丢掉模糊），同级内**优先词典**（`activeDictionaryId`）先查、其余按目录顺序稳定排序；`article(dictId, hit)` 在 `hit.dictId != dictId` 时返回 null（防止用别的词典的偏移读出垃圾字节），否则返回 `Article.toHtml()`；每引擎一把进程级 `Mutex`（仓库内部串行；`DictionaryRegistry.openBuiltIn()` 仍是裸引擎，见下方 S3 遗留项），导入引擎 LRU 最多 2 个、淘汰/禁用时**先拿该引擎的锁再 close**，内置实例只借不关（每次向注册表现取，重装换实例后不会用到已关闭的引擎） |
+| 设置 | `presentation/settings/DictionaryManagerScreen` + `ui/settings/reader/dictionary/DictionaryManager{Content,Layout,Scaffold,TopBar}` + `components/`：内置 ECDICT 状态/进度/词条数/体积/资产版本（`ECDICT_ASSET_VERSION`，不可删）、导入词典的启用开关/删除/优先词典单选、MDX 与 StarDict 导入按钮、导入进度与错误文案；`TranslatorSubcategory` 新增「词典管理」入口（S9 并入完整翻译设置页）。导入协程挂在**页面级**作用域（`DictionaryManagerLayout`），滚动列表不会取消导入 |
+| 设置项 | `SettingsManager.activeDictionaryId`（`stringPreferencesKey("active_dictionary_id")`，默认 `"builtin"`）：语义是**优先**（先查它，再查其余已启用词典），不是唯一；删除或禁用当前词典时设置页回落内置。S5 构造 `DictionaryRepository` 时把 `activeDictionaryId` 注入为 `activeDictionaryId = { settings.activeDictionaryId.lastValue }`，在此之前仓库默认 `null`（按目录顺序查） |
+| 状态 | ✅ `:app:testDebugUnitTest` **213 个用例全绿**（35 个文件，新增 35 个）；`:app:assembleDebug` / `:app:assembleRelease-debug` 通过；`:dict-engine:test --rerun-tasks` 101 个用例全绿（未改动） |
+
+S4 的测试（全部纯 JVM，不依赖 Android 上下文）：
+
+| 测试 | 钉住什么 |
+| --- | --- |
+| `DictionaryIndexCodecTest`（8） | 字段完整往返、空索引、整份 JSON 损坏返回 null、单条缺字段/类型未知时跳过、可选字段的默认值；`type` 落成稳定 wire 字符串且兼容旧枚举名；`builtin` 与重复 id 被丢弃（保留第一条） |
+| `DictionaryCatalogTest`（6） | `.staging` / `*.tmp` / `*.old` 不被收养（合成 StarDict fixture）；索引条目文件消失后被丢弃、文件在时原样保留；`builtin` 与重复 id 在 reconcile 时被丢弃；启动清理 `.staging/*` 且不动 `imported/`；相对路径不能逃出词典目录。临时目录在 `finally` 里递归删除 |
+| `DictionaryRepositoryTest`（16） | 假引擎上的精确/前缀/模糊排序与「有强命中就丢模糊」、目录顺序稳定、limit、禁用词典不打开、引擎复用、LRU 淘汰并 close、禁用后下一次查询关闭引擎；优先词典在同 rank 内排最前且 rank 仍然优先；`article` 拒绝不属于该词典的命中；并发 8 路查询同一引擎时 `maxInFlight == 1`；默认 opener 用合成 StarDict fixture 跑通 lookup → preview → article。临时目录在 `finally` 里递归删除 |
+| `DictionaryImportErrorTest`（5） | 引擎英文消息 → `DictionaryImportError` 映射（资源包/加密/非 MDX/截断/未知）；文件名主干净化（保留 Unicode 字母、去掉路径分隔符） |
+
+Round-1 review（CHANGES REQUIRED）的修复：
+
+- P1-1 导入作用域：`DictionaryImportActions` 不再自己取 `rememberCoroutineScope()`，改为 `onImport(uri, isMdx)` 由 `DictionaryManagerLayout` 的页面作用域启动 —— 滚动列表不再取消导入，离开页面仍然取消（见手工矩阵 #7 / #7b）。
+- P1-2 `.mdd`：本期**不导入**，已写进设计 §4.3 作为欠账（单文件 `OpenDocument` 拿不到兄弟文件授权），`DictionaryImporter` 的注释不再误引 §1.2。
+- P2 已做：复制前 `probeMdxHead` 预检；`decode`/`reconcileIndex` 丢弃 `builtin` 与重复 id；启动清理 `.staging/*`；淘汰/禁用引擎时先拿该引擎的锁再 `close()`；`article` 校验 `hit.dictId`；`DictionaryType` 用稳定 wire 字符串；`activeDictionaryId` 真正影响查询顺序并改称「优先」；内置条目显示资产版本；英文复数 bug 改中性文案（`Entries: %d`）；测试临时目录改 `finally` 递归删除；本文不再声称 `openBuiltIn()` 接缝已关闭。
+- P2 仍留给后续（review 同意不在此轮做）：删除按钮失败反馈 / TalkBack `Role`（#12）、上游 `MdxDictionary.init` 的 fd 泄漏（#13）、导入器其余边角用例（StarDict 缺文件/多部词典的自动化覆盖需要 SAF URI）。
+
+S3 遗留项在 S4 的落地情况：
+
+- ⏳ `openBuiltIn()` 的锁：`DictionaryRepository` 内部有进程级每引擎 `Mutex`，但**仓库在 S4 还没有消费者**（没有 Hilt 绑定、没有调用方），`openBuiltIn()` 对外仍是裸引擎。真正关掉这条接缝要等 S5 让取词路径只走 `DictionaryRepository`（S5 接管）。
+- ✅ 枚举过滤 `.tmp` / `.old` / `.staging`：见 `DictionaryCatalogTest`。
+- ⏳ 内置词典的错误文案仍是英文消息（`BuiltInState.Error.message` 原样显示）。S4 只把**导入**错误做成枚举 + 字符串资源；改 `BuiltInState` 的形状会牵动 S3 的安装器契约，留到 S9 统一文案时做。
+- ⏳ 安装器边角用例（无 `.ifo`、两个 StarDict、坏 `version` 标记、空间不足）：S4 的导入路径不复用安装器的 7z 计划逻辑，StarDict 的「缺文件/多部词典」在导入侧已有枚举分支，但**没有**自动化测试（需要 SAF URI，见下方手工矩阵）。
+
+**未新增 `androidTest`**：导入路径的入口是 SAF `Uri`（`OpenDocument` / `OpenDocumentTree`），没有用户交互就构造不出可读的授权；仪器测试只能覆盖到目录索引与列表渲染，价值低于维护成本。因此以下**手工矩阵未执行**，不得当作已验证：
+
+| # | 场景 | 期望 |
+| --- | --- | --- |
+| 1 | 导入一部小 MDX（几 MB） | 进度 → 校验 → 「已导入」；列表出现条目，词条数/体积正确；重启后仍在 |
+| 2 | 导入 StarDict 文件夹（`.ifo` + `.idx` + `.dict`） | 同上；优先词典选中后重启仍保持 |
+| 3 | 选 `.mdd` 资源包 / 加密 MDX / 改扩展名的普通文件 | 分别提示「资源包」「不支持加密」「不是 MDX」；`imported/` 与 `.staging/` 不留文件 |
+| 4 | 选空文件夹 / 只有 `.ifo` 的文件夹 / 含两部 StarDict 的文件夹 | 分别提示「不完整」「不完整」「多部词典」 |
+| 5 | 关闭某部词典的开关 | 条目变灰/开关关闭；取词（S5）不再命中；重启后保持关闭 |
+| 6 | 删除当前优先词典 | 优先词典回落内置 ECDICT；`imported/<uuid>/` 被删除；列表立即更新 |
+| 7 | 导入过程中滚动设置页列表（把导入行滚出屏幕） | 导入**继续**：协程挂在页面级作用域，`LazyColumn` 回收 item 不会取消它（Round-1 修复前会静默中止） |
+| 7b | 导入过程中按返回键离开设置页再回来 | 导入被取消（页面作用域随页面销毁），暂存目录被清理、状态回到 Idle；若取消发生在 rename 之后，词典文件留在 `imported/` 且未入索引，下次启动 `refresh` 会收养（不会出现半个词典） |
+| 8 | 内置词典首次安装中进入词典管理页 | 显示「正在准备… N%」进度条；安装完成后变为词条数/体积/资产版本（`v1`） |
+| 9 | 剩余空间不足（模拟小分区） | 复制前提示空间不足，不留暂存目录 |
+| 10 | 导入的 MDX 词条引用 `entry://` 图片/音频 | 正文缺图（本期不导入 `.mdd`，见设计 §4.3 的欠账说明），不应崩溃 |
+| 11 | 滚动导入行出屏幕后再滚回来 | 进度/状态仍在（`ImportState` 是进程级 `StateFlow`，不随 item 回收丢失） |
+
 ---
 
 ## 4. 真机验证结果

@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import ua.acclorite.book_story.core.crash.CrashHandler
 import ua.acclorite.book_story.core.data.FileData
+import ua.acclorite.book_story.data.dictionary.DictionaryCatalog
 import ua.acclorite.book_story.data.dictionary.DictionaryRegistry
 import ua.acclorite.book_story.ui.reader.data.UserFontRegistry
 
@@ -31,6 +32,10 @@ class Application : Application() {
         // fontFamily 的 deserialize 在 DataStore 一 emit 时就按 id 查字体；索引若异步加载，
         // 重启后会查不到用户字体，静默回落默认字体。index.json 只有几 KB，同步读没有代价。
         UserFontRegistry.load(this)
+
+        // fork: 导入词典目录（第二阶段 S4）。同步读几 KB 的 index.json，随后的磁盘核对
+        // （丢弃已删除的条目、收养未入索引的目录）在 IO 线程上跑，不阻塞启动。
+        DictionaryCatalog.load(this)
 
         FileData.getCacheDirectory(this).let {
             if (it.exists()) it.deleteRecursively()

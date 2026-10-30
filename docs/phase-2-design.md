@@ -12,7 +12,7 @@
 | 取词手势 | 单击与长按都支持，设置项 `SINGLE_TAP / LONG_PRESS / OFF`，默认 `SINGLE_TAP` |
 | 内置词库 | 完整 ECDICT，官方 StarDict 数据（MIT） |
 | 词库分发 | 仓库提交官方 `stardict.7z`（约 51MB），首次启动解压到应用私有目录 |
-| 自定义词库 | 支持导入 `.mdx`（可选 `.mdd`），复用同一引擎 |
+| 自定义词库 | 支持导入 `.mdx`，复用同一引擎（`.mdd` 资源包随资源渲染一起接，见 §4.3） |
 | AI 接口 | OpenAI 兼容：Base URL + Model + Key，兼容 OpenAI / DeepSeek / Gemini(OpenAI 兼容) / OpenRouter / Ollama |
 | 取词框 | 浮动卡片贴词，自动避让屏幕边缘 |
 | 翻译框 | 居中大对话框，标签页：翻译 / 语法分析 |
@@ -135,13 +135,19 @@ ReaderLayout (Paged/Continuous)
 
 ### 4.3 导入与查询
 
-- 导入 `.mdx`：先读头部用 `DictionaryEngines.probeMdxHead`（内部 `MdxProbe.readFromHead`）预检
-  （版本、加密位、资源包、条目数），再流式复制并校验；`.mdd` 由
-  `DictionaryEngines.mddFilesFor` 按 `<base>.mdd` / `<base>.1.mdd` … 顺序配对复制，本期不渲染。
+- 导入 `.mdx`：先读前 1 MiB 用 `DictionaryEngines.probeMdxHead`（内部 `MdxProbe.readFromHead`）预检
+  是否为 MDict，不是就立即拒绝（不把误选的大文件完整复制一遍）；通过后流式复制到暂存目录，
+  再用 `probeMdx` + `openMdx` 校验版本/加密位/资源包/截断与条目数。
+- **`.mdd` 资源包本期不导入（已确认的欠账，S4 实施时记录）**：MDX 入口是单文件
+  `OpenDocument`，拿不到同目录兄弟文件的授权；`DictionaryEngines.mddFilesFor`
+  （`<base>.mdd` / `<base>.1.mdd` …）的调用点已留在 `openDictionaryEngine`，等资源渲染
+  阶段把 `.mdd` 复制进同一目录即可自动配对。在此之前，引用 `entry://` 图片/音频的词条
+  会缺图 —— 这是本期的已知限制，不是缺陷。
 - StarDict 导入：`OpenDocumentTree` 选目录，校验 `.ifo/.idx/.dict(.dz)` 后复制。
 - 元数据 `index.json`：id、type、files、title、entries、size、enabled、importedAt。
 - 引擎实例 LRU（内置 + 最近 2 个导入词典），删除/禁用时 `close()`。
-- 查询：`lookupExact` → 无结果 `lookupSmart(limit=5)`；多词典按“精确 > 前缀 > 模糊”排序。
+- 查询：`lookupExact` → 无结果 `lookupSmart(limit=5)`；多词典按“精确 > 前缀 > 模糊”排序，
+  同级内先查「优先词典」（`activeDictionaryId`，单选只影响先后，不禁用其它词典），再按目录顺序。
 - 正文：`engine.article(hit).toHtml()` → Compose `AnnotatedString.fromHtml`；
   拦截 `juice://lookup/` 做二次查询。
 - 无结果：卡片显示“未找到”，提供“用 AI 解释这个词”（结果可缓存）与“去导入词典”。
