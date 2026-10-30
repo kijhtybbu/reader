@@ -153,20 +153,28 @@ fun ReaderScaffold(
                 lookupAnchor?.takeIf { it.width > 0f && it.height > 0f }?.let { anchor ->
                     // anchor 来自窗口坐标系；Scaffold 根的绘制原点可能因 insets/父布局偏移，
                     // 所以先减去根在窗口中的位置，否则高亮会整体错位。
+                    // getBoundingBox 返回的是行盒（含 ascent/descent），不是紧贴字形的紧包围盒；
+                    // 直接铺满会显得高亮整体偏上/偏大。上下各收一点，视觉上落在小写字母带上。
+                    val topInset = anchor.height * 0.16f
+                    val bottomInset = anchor.height * 0.06f
                     val topLeft = Offset(
                         anchor.left - scaffoldOrigin.x,
-                        anchor.top - scaffoldOrigin.y
+                        anchor.top - scaffoldOrigin.y + topInset
+                    )
+                    val highlightSize = Size(
+                        anchor.width,
+                        (anchor.height - topInset - bottomInset).coerceAtLeast(1f)
                     )
                     drawRoundRect(
                         color = palette.accent.copy(alpha = 0.26f),
                         topLeft = topLeft,
-                        size = Size(anchor.width, anchor.height),
+                        size = highlightSize,
                         cornerRadius = CornerRadius(4.dp.toPx())
                     )
                     drawRoundRect(
                         color = palette.accent.copy(alpha = 0.65f),
                         topLeft = topLeft,
-                        size = Size(anchor.width, anchor.height),
+                        size = highlightSize,
                         cornerRadius = CornerRadius(4.dp.toPx()),
                         style = Stroke(width = 1.5.dp.toPx())
                     )
