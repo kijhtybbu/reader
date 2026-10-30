@@ -482,8 +482,7 @@ class ReaderModel @Inject constructor(
                 is ReaderEvent.OnOpenTranslator -> {
                     _effects.emit(
                         ReaderEffect.OnOpenTranslator(
-                            textToTranslate = event.textToTranslate,
-                            translateWholeParagraph = event.translateWholeParagraph
+                            textToTranslate = event.textToTranslate
                         )
                     )
                 }

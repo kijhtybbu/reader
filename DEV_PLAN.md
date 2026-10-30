@@ -379,7 +379,7 @@ data class BookmarkEntity(
 
 ## 11. 第二阶段（翻译与词典）
 
-第一阶段（§1–§10，UI/动效/字体）已完成。第二阶段另开分支 `phase-2`，
+第一阶段（§1–§10，UI/动效/字体）已完成。第二阶段另开分支 `phase-2`（S1–S9 已完成，设计与验收见 `docs/phase-2-design.md`），
 完整设计见 **[`docs/phase-2-design.md`](docs/phase-2-design.md)**（产品决策、组件选型、
 缓存表结构、测试矩阵、风险均在那里，本文不复述）。
 
@@ -395,7 +395,7 @@ data class BookmarkEntity(
 | S8 | `TranslationModel`、双击整段、翻译/语法对话框、缓存优先 |
 | S9 | 文案/许可/文档、全量回归、`release-debug`、终审 |
 
-约定同第一阶段：每阶段 `worker` 实现 → `reviewer` 第 1 轮 → 修复 → `reviewer-expert` 第 2 轮，
+约定同第一阶段：每阶段 `worker` 实现 → `reviewer` 第 1 轮 → 修复 → `reviewer` 第 2 轮（最终整体 review 按要求取消），
 两轮通过后提交；每次改动都要过三重构建门禁（含 `:app:assembleRelease-debug`）。
 
 ---

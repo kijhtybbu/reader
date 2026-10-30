@@ -22,6 +22,7 @@ import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryNote
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryTitle
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiApiKeyOption
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiBaseUrlOption
+import ua.acclorite.book_story.ui.settings.reader.ai.components.AiCacheOption
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiGrammarOption
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiModelOption
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiTargetLanguageOption
@@ -61,5 +62,7 @@ fun AiSettingsLayout(
         item {
             SettingsSubcategoryNote(text = stringResource(id = R.string.ai_privacy_note))
         }
+
+        item { AiCacheOption(model) }
     }
 }

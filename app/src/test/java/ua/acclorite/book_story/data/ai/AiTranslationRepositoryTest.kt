@@ -374,6 +374,25 @@ class AiTranslationRepositoryTest {
     }
 
     @Test
+    fun blankGrammarContentBecomesAnEmptyResponseError() = runTest {
+        keyStore.set("sk-test-key")
+
+        val engine = MockEngine {
+            respond(
+                content = ByteReadChannel(chatCompletion("")),
+                status = HttpStatusCode.OK,
+                headers = jsonHeaders()
+            )
+        }
+
+        val error = repository(engine)
+            .analyzeGrammar("Hello.", AiTargetLanguage.ENGLISH)
+            .exceptionOrNull() as AiException
+
+        assertEquals(AiError.EMPTY_RESPONSE, error.error)
+    }
+
+    @Test
     fun cancellationPropagatesAndEmitsNothing() = runTest {
         keyStore.set("sk-test-key")
 

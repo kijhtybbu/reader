@@ -660,7 +660,19 @@
     <string name="ai_error_server">The provider returned a server error.</string>
     <string name="ai_error_cancelled">Request cancelled.</string>
     <string name="ai_error_unknown">Unknown error.</string>
+    <string name="ai_error_empty_response">The model returned an empty response.</string>
     <string name="ai_error_with_status">%1$s (HTTP %2$d)</string>
+
+    <!-- fork: phase 2 / S9 translation cache management -->
+    <string name="ai_cache_title">Translation cache</string>
+    <string name="ai_cache_loading">Reading cache usage…</string>
+    <string name="ai_cache_stats">%1$d cached results · %2$s</string>
+    <string name="ai_cache_load_failed">Could not read the cache usage.</string>
+    <string name="ai_cache_cleared">Translation cache cleared.</string>
+    <string name="ai_cache_clear_failed">Could not clear the translation cache.</string>
+    <string name="ai_cache_clear">Clear translation cache</string>
+    <string name="ai_cache_clear_confirm_title">Clear translation cache?</string>
+    <string name="ai_cache_clear_confirm_description">Cached translations and grammar analyses will be deleted. They will be requested again when needed.</string>
 
     <!-- fork: phase 2 / S8 translation dialog -->
     <string name="translation_dialog_title">Translation</string>

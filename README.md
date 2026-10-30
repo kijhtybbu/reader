@@ -72,6 +72,38 @@ open-source, offering you a personalized, ad-free journey through your favorite 
 - Organized Library with custom categories and chapters in the Reader
 - Highly customizable
 
+### Phase 2 additions (this fork)
+
+- **Offline dictionary lookup** — the full ECDICT database (770,611 entries, MIT) is bundled and
+  installed on first launch; tap or long-press a word for a card anchored to it. No network needed.
+- **MDX / StarDict import** — import your own `.mdx` file or a StarDict folder, enable/disable
+  dictionaries and pick a preferred one. `.mdd` resource packs are not imported yet.
+- **AI paragraph translation and grammar** — double-tap a paragraph for a centered dialog with
+  streaming translation and structured grammar analysis. Results are persisted in Room
+  (keyed by prompt version, model, target language and endpoint host), so opening the same
+  paragraph again is instant and makes no request.
+- **Keyless local endpoints** — OpenAI-compatible Base URL + model, with the API key encrypted by
+  Tink. Local services reachable at `localhost` / `127.0.0.1` / `10.0.2.2` (Ollama, LM Studio,
+  llama.cpp server) may be used without a key.
+- **Cache management** — the AI settings screen shows the cached result count and payload size
+  and can clear the translation cache after a confirmation.
+
+The full design, decisions and known limits are in
+[`docs/phase-2-design.md`](docs/phase-2-design.md).
+
+Third-party data and source credits (also listed in **About → Licenses**):
+
+- [ECDICT](https://github.com/skywind3000/ECDICT) — MIT. Bundled data: `app/src/main/assets/dictionaries/ecdict/`
+  (`ECDICT-LICENSE.txt`, `NOTICE.txt`).
+- [juicedict](https://github.com/qiuminal/juicedict) engine — GPL-3.0, vendored as `:dict-engine`.
+  See [`third_party/juicedict-engine/LICENSE`](third_party/juicedict-engine/LICENSE) and
+  [`PROVENANCE.md`](third_party/juicedict-engine/PROVENANCE.md).
+- [openai-kotlin](https://github.com/aallam/openai-kotlin) — MIT.
+- [Ktor](https://ktor.io) — Apache-2.0.
+- [Tink](https://github.com/tink-crypto/tink-java) — Apache-2.0.
+- [Apache Commons Compress](https://commons.apache.org/proper/commons-compress/) — Apache-2.0;
+  [XZ for Java](https://tukaani.org/xz/java.html) — Public Domain.
+
 ---
 
 <!------------ Download guide ------------>

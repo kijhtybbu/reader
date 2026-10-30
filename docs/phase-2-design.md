@@ -1,6 +1,6 @@
 # 第二阶段设计：取词词典与 AI 翻译
 
-> 状态：已确认，按阶段实施中
+> 状态：S1–S9 已实施完成（最终整体 review 按要求取消）
 > 基线：`ui-redesign` 分支（fork of Book's Story）
 > 目标分支：`phase-2`
 > 相关文档：`DEV_PLAN.md`、`UPSTREAM_DIFF.md`、`PROGRESS.md`、`REBASE.md`
@@ -19,7 +19,7 @@
 | 双击段落 | 翻译**整段文本**，替换原外部翻译；默认开启，保留开关 |
 | 语法页 | 切到标签即分析，不再有“开始分析”按钮 |
 | 结果保存 | 翻译、语法、AI 单词解释全部持久化；第二次点击直接显示缓存 |
-| 终审 | `reviewer-expert` 整体 review（Gemini 3.8 Flash 本会话不可用） |
+| 终审 | 每阶段两轮 `reviewer`；最终整体 review 按要求取消 |
 
 ## 1. 目标与非目标
 
@@ -388,7 +388,7 @@ cacheKey = SHA-256(
 
 ## 10. 分阶段实施与验收
 
-每个阶段由 `worker` 实现，完成后 `reviewer` 第 1 轮、修复后 `reviewer-expert` 第 2 轮；
+每个阶段由 `worker` 实现，完成后 `reviewer` 第 1 轮、修复后第 2 轮；最终整体 review 按要求取消。
 两轮通过后提交并进入下一阶段。
 
 | 阶段 | 内容 | 验收 |
@@ -401,9 +401,9 @@ cacheKey = SHA-256(
 | S6 | AI 设置、Tink、openai 客户端、MockEngine 测试 | Key 加密存取；流式/错误/取消；测试连接 |
 | S7 | Room 缓存表/DAO/迁移/仓库/缓存键 | ✅ 迁移 20→21（`MigrationTestHelper` 实跑）；读写/touch/LRU/clear 通过 |
 | S8 | `TranslationModel`、双击整段、翻译/语法对话框、缓存优先、语法点击即分析 | ✅ JVM：二次双击 0 请求、语法缓存命中 0 请求、取消不写半截、重新生成覆盖同键（34 个新用例）；杀进程后仍命中待真机/仪器验证 |
-| S9 | 文案/许可/文档、全量回归、release-debug、终审 | 全量测试通过；体积/内存记录；`reviewer-expert` 整体 review |
+| S9 | 文案/许可/文档、全量回归、release-debug、终审 | ✅ JVM 357 / 引擎 101 / 仪器 22 通过；体积/内存记录；每阶段两轮 `reviewer`，最终整体 review 按要求取消 |
 
-> S1–S8 已完成。S8 的对话框只在 JVM 上验证过状态机与解析，UI 行为（居中对话框、
+> S1–S9 已完成。S8 的对话框只在 JVM 上验证过状态机与解析，UI 行为（居中对话框、
 > 标签切换、缓存标记、错误态回退）**未**在真机/模拟器上走过，见 `PROGRESS.md` §3.8。
 > S3 的验收只在 JVM 上做过（真实资产解压 + `apple` 查询 + 二次安装跳过），
 > 真机首启耗时/内存峰值与 minified 构建下的 7z 解压仍待验证；实测数据见 `PROGRESS.md` §3.3。
@@ -470,3 +470,11 @@ cacheKey = SHA-256(
 - `UPSTREAM_DIFF.md`：新增功能、设置项、缓存与许可说明。
 - `PROGRESS.md`：阶段状态、已验证/未验证项、体积/内存数据。
 - `README.md`：功能列表与内置词库说明。
+
+## 15. 最终状态与已知限制
+
+- 阶段 S1–S9 全部完成；`phase-2` 分支按阶段提交。
+- 最终校验：`:app:testDebugUnitTest` 357 / 53 类、`:dict-engine:test` 101、`:app:connectedDebugAndroidTest` 22（模拟器 API 34）、`:app:assembleRelease-debug` 通过；APK debug 155,192,122 B / release-debug 55,959,882 B。
+- 首次安装模拟器实测约 24.8s，词典目录约 122,800 KB（`.dict`/`.idx`/`.jidx`/`version`）。
+- 已知限制：单词级 AI 解释未实现；`.mdd` 不导入/不渲染；需要密码的 MDX 不支持；长按自动取词只处理单行（工具栏翻译可翻多行选区）；缓存跨进程重建没有仪器测试；release-debug 上真实 AI/Tink/Room 路径只做构建级验证；默认双击翻译带来约 300ms 单击延迟；S5/S8 手工 UI 矩阵未执行（项目无 Compose UI 测试依赖）。
+- 最终整体 review 按用户要求取消；S1–S9 每阶段均完成两轮 `reviewer`。

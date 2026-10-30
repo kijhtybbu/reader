@@ -11,7 +11,7 @@
  *  - 语法标签缓存命中 → 零请求；未命中 → 切到标签就请求（没有「开始分析」按钮）；
  *  - 同一 cacheKey 的并发请求去重；
  *  - 关闭取消请求，且不写半截结果；取消后迟到的结果既不进状态也不落库（含重新生成后的旧请求）；
- *  - 空译文按失败处理（`AiError.UNKNOWN`），不写缓存；
+ *  - 空串译文按失败处理（`AiError.EMPTY_RESPONSE`），不写缓存；
  *  - 重新生成覆盖同一键，错误只映射类别 + 状态码。
  */
 
@@ -492,16 +492,17 @@ class TranslationModelTest {
     }
 
     @Test
-    fun `an empty translation becomes an unknown error and is never cached`() = runTest(dispatcher) {
-        every { ai.translate(paragraph, config.targetLanguage) } returns flowOf("")
-        val model = model()
+    fun `an empty translation becomes an empty response error and is never cached`() =
+        runTest(dispatcher) {
+            every { ai.translate(paragraph, config.targetLanguage) } returns flowOf("")
+            val model = model()
 
-        model.open(paragraph, bookId = 7, nodeId = 12)
-        advanceUntilIdle()
+            model.open(paragraph, bookId = 7, nodeId = 12)
+            advanceUntilIdle()
 
-        assertEquals(AsyncText.Error(AiError.UNKNOWN, null), model.state.value.translation)
-        assertTrue(cache.puts.isEmpty())
-    }
+            assertEquals(AsyncText.Error(AiError.EMPTY_RESPONSE, null), model.state.value.translation)
+            assertTrue(cache.puts.isEmpty())
+        }
 
     @Test
     fun `grammar json parsing is dispatched off the main dispatcher by default`() {

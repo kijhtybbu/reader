@@ -489,7 +489,19 @@
     <string name="ai_error_server">服务端返回错误。</string>
     <string name="ai_error_cancelled">请求已取消。</string>
     <string name="ai_error_unknown">未知错误。</string>
+    <string name="ai_error_empty_response">模型没有返回任何内容。</string>
     <string name="ai_error_with_status">%1$s（HTTP %2$d）</string>
+
+    <!-- fork: phase 2 / S9 translation cache management -->
+    <string name="ai_cache_title">翻译缓存</string>
+    <string name="ai_cache_loading">正在读取缓存占用…</string>
+    <string name="ai_cache_stats">已缓存 %1$d 条结果 · %2$s</string>
+    <string name="ai_cache_load_failed">无法读取缓存占用。</string>
+    <string name="ai_cache_cleared">翻译缓存已清除。</string>
+    <string name="ai_cache_clear_failed">无法清除翻译缓存。</string>
+    <string name="ai_cache_clear">清除翻译缓存</string>
+    <string name="ai_cache_clear_confirm_title">清除翻译缓存？</string>
+    <string name="ai_cache_clear_confirm_description">已缓存的译文与语法分析将被删除；再次需要时会重新请求。</string>
 
     <!-- fork: phase 2 / S8 翻译对话框 -->
     <string name="translation_dialog_title">翻译</string>

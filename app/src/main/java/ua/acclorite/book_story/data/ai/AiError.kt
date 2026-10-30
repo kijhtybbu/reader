@@ -8,6 +8,8 @@
  * 只暴露错误类别与 HTTP 状态码；不把响应体、请求头或 Key 放进异常消息。
  * 取消不是错误：[AiTranslationRepository] 会让 CancellationException 原样传播，
  * [CANCELLED] 只用于 UI 侧兜底展示。
+ * [EMPTY_RESPONSE] 不是传输错误：请求成功但模型返回了空内容（空译文/空语法），
+ * UI 用一条独立文案而不是「未知错误」告诉用户重试。
  */
 
 package ua.acclorite.book_story.data.ai
@@ -20,6 +22,7 @@ enum class AiError {
     TIMEOUT,
     NETWORK,
     SERVER,
+    EMPTY_RESPONSE,
     CANCELLED,
     UNKNOWN
 }

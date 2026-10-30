@@ -392,7 +392,7 @@ fun ReaderContent(
                 onShare = { text -> openShareApp(ReaderEvent.OnOpenShareApp(text)) },
                 // S8 之前双击段落走的就是这个外部 Intent；现在它只是错误态的退路。
                 onExternalTranslate = { text ->
-                    openTranslator(ReaderEvent.OnOpenTranslator(text, false))
+                    openTranslator(ReaderEvent.OnOpenTranslator(text))
                 }
             )
         }

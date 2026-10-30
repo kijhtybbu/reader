@@ -37,6 +37,11 @@ internal class FakeTranslationCache : TranslationCacheRepository {
 
     var failReads = false
     var failPuts = false
+    var failStats = false
+    var failClear = false
+
+    var clearCalls = 0
+    var statsValue = CacheStats(count = 0, payloadBytes = 0L)
 
     override suspend fun get(key: String): CachedAiResult? {
         reads += key
@@ -78,10 +83,21 @@ internal class FakeTranslationCache : TranslationCacheRepository {
     }
 
     override suspend fun clear() {
+        clearCalls++
+        if (failClear) throw IllegalStateException("cache clear failed")
         entries.clear()
+        statsValue = CacheStats(count = 0, payloadBytes = 0L)
     }
 
-    override suspend fun stats(): CacheStats = CacheStats(entries.size, 0L)
+    override suspend fun stats(): CacheStats {
+        if (failStats) throw IllegalStateException("cache stats failed")
+        // 显式 statsValue 优先；否则按实际 entries 推导，避免 put/clear 与 stats 不一致。
+        return if (statsValue.count == 0 && entries.isNotEmpty()) {
+            statsValue.copy(count = entries.size)
+        } else {
+            statsValue
+        }
+    }
 
     override suspend fun trim(maxEntries: Int, maxBytes: Long) = Unit
 }

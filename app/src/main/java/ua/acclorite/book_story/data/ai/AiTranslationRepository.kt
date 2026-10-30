@@ -155,7 +155,7 @@ class AiTranslationRepository(
             val content = open(clientConfig, key).use { client ->
                 client.chatCompletion(request).choices.firstOrNull()?.message?.content
             }
-            if (content.isNullOrBlank()) throw AiException(AiError.UNKNOWN)
+            if (content.isNullOrBlank()) throw AiException(AiError.EMPTY_RESPONSE)
             Result.success(content)
         } catch (e: CancellationException) {
             throw e

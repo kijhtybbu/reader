@@ -17,8 +17,7 @@ sealed class ReaderEffect {
     data object OnResetBrightness : ReaderEffect()
 
     data class OnOpenTranslator(
-        val textToTranslate: String,
-        val translateWholeParagraph: Boolean
+        val textToTranslate: String
     ) : ReaderEffect()
 
     data class OnOpenShareApp(

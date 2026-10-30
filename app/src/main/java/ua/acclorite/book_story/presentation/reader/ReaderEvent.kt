@@ -65,8 +65,7 @@ sealed class ReaderEvent {
     ) : ReaderEvent()
 
     data class OnOpenTranslator(
-        val textToTranslate: String,
-        val translateWholeParagraph: Boolean
+        val textToTranslate: String
     ) : ReaderEvent()
 
     data class OnOpenShareApp(

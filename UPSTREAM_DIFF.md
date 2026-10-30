@@ -150,6 +150,22 @@ Known fields are [... e, ... f, ... g, ... h]
 - **许可与归属**：ECDICT 为 MIT，`assets/dictionaries/ecdict/ECDICT-LICENSE.txt` + `NOTICE.txt`（数据来源、CSV 与 7z 的 SHA-256）随包分发；引擎（juicedict）是 GPL-3.0，本 fork 整体也是 GPL-3.0-only
 - **实测**（JVM，非真机）：解压 1.3s，冷启动打开 77 万词条 190ms；单测用真实资产跑「解压 → `openStarDict` → `lookupSmart("apple")` → `toHtml()` 含中文」与「二次安装跳过」
 
+### 3.9 第二阶段：取词、AI 翻译与持久化缓存
+
+| 能力 | 实现 |
+| --- | --- |
+| 内置词典 | 随包 ECDICT（MIT，77 万词条）：官方 `ecdict.csv` → StarDict → LZMA2 7z（21MB）→ 首次启动解压到 `filesDir/dictionaries/builtin/`；`version` 标记保证重启不重复解压，失败保留旧目录。 |
+| 自定义词典 | 导入 `.mdx`（单文件）或 StarDict 文件夹（`.ifo` + `.idx(.gz)` + `.dict(.dz)` + 可选 `.syn`）；`index.json` 持久化，启用/禁用/优先词典；`.mdd` 暂不导入。 |
+| 取词 | 单击（默认）/长按可选；两种布局都用单一手势检测器 + `TextLayoutResult` 命中，浮动卡片贴词、安全区避让、夜间配色；未命中可去导入词典或用外部应用。 |
+| AI 段落翻译 | 双击整段（`NodeContent.Paragraph.text`，非分页切片）→ 居中对话框；翻译标签流式输出，可复制/分享/重新生成/取消；外部应用翻译只保留为错误回退。 |
+| 语法分析 | 切到「语法分析」标签即请求（无“开始分析”按钮）；结构化 JSON 分节展示，解析失败回退原文；语法关闭时标签不出现。 |
+| 持久化缓存 | `translationcacheentity`（Room 20 → 21，`AutoMigration`）：键 = promptVersion/kind/目标语言/model/BaseURL host/规范化正文的 SHA-256；只写完整结果，命中不请求；20,000 条 / 200MB LRU；设置页显示占用并可清除。 |
+| 配置/安全 | OpenAI 兼容 Base URL/Model/Key/目标语言；Key 使用 Tink `AndroidKeysetManager` AES-GCM 加密后存 DataStore；loopback（localhost/127.0.0.1/10.0.2.2）允许空 Key；网络明文只放行这三个回环地址。 |
+| 许可 | ECDICT MIT；juicedict 引擎 GPL-3.0（vendored `:dict-engine`，`LICENSE`/`PROVENANCE.md`）；openai-kotlin MIT、Ktor/Tink/commons-compress Apache-2.0、xz Public Domain；AboutLibraries/Credits 与 README 已列。 |
+| 体积 | debug APK ~155MB；release-debug ~55.9MB（含 21MB 词典资产）；首次安装数据目录 ~123MB。 |
+
+实现细节、缓存键、已知限制与未执行的设备矩阵见 `docs/phase-2-design.md` 与 `PROGRESS.md` §3.1–§3.9。
+
 ---
 
 ## 4. 设计系统（上游没有这一层）

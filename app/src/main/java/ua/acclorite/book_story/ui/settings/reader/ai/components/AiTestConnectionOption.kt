@@ -111,6 +111,7 @@ internal fun AiError.messageRes(): Int = when (this) {
     AiError.TIMEOUT -> R.string.ai_error_timeout
     AiError.NETWORK -> R.string.ai_error_network
     AiError.SERVER -> R.string.ai_error_server
+    AiError.EMPTY_RESPONSE -> R.string.ai_error_empty_response
     AiError.CANCELLED -> R.string.ai_error_cancelled
     AiError.UNKNOWN -> R.string.ai_error_unknown
 }

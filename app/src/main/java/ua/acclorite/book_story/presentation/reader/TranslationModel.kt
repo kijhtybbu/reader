@@ -92,6 +92,9 @@ class TranslationModel @Inject constructor(
     /**
      * 语法 JSON 解析用的调度器。默认 [Dispatchers.Default]：解析不在主线程做。
      * 单测换成测试调度器 —— 真实线程上的解析让 `advanceUntilIdle` 看不到结果。
+     *
+     * 不放进构造参数：Hilt 没有 `CoroutineDispatcher` 的绑定，为一个测试接缝加限定符
+     * 不划算；单测在构造后替换这个字段即可。
      */
     internal var parseDispatcher: CoroutineDispatcher = Dispatchers.Default
 
@@ -236,8 +239,9 @@ class TranslationModel @Inject constructor(
                 val result = builder.toString()
                 if (result.isBlank()) {
                     // 空结果按失败处理：不能把空串当译文写进缓存，否则下次命中一张白纸。
+                    // 用独立错误类别，UI 才能说“模型没有返回内容”而不是“未知错误”。
                     publish(session.requestId) {
-                        it.copy(translation = AsyncText.Error(AiError.UNKNOWN, null))
+                        it.copy(translation = AsyncText.Error(AiError.EMPTY_RESPONSE, null))
                     }
                     return@launch
                 }

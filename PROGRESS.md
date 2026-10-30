@@ -495,6 +495,42 @@ S8 的测试（全部纯 JVM，无 Android 上下文、无真实网络；AI 用 
 | 12 | 设置里关闭「双击翻译」 | 双击不再打开对话框，单击立即翻页/呼菜单（无 300ms 等待） |
 | 13 | `release-debug` minified：双击翻译 → 语法 → 二次双击 | 有响应、流式不中断、二次命中（R8 下 openai/Room/序列化路径） |
 
+### 3.9 第二阶段（翻译与词典）/ S9（收尾）
+
+| 项 | 内容 |
+| --- | --- |
+| 状态 | ✅ 第二阶段 S1–S9 全部完成；S1–S8 已按阶段提交，S9 本轮提交 |
+| 清理 | 删除已失效的 `ReaderEffect.OnOpenTranslator.translateWholeParagraph` 与 `createChooser = !flag` 分支（外部应用翻译只剩错误态回退，仍让用户选应用）；新增 `AiError.EMPTY_RESPONSE`，模型返回空内容不再显示为「未知错误」 |
+| 缓存管理 | AI 设置页新增「翻译缓存」：条数、占用（按 UTF-8 字节折算 MB）、清除前确认、清除后重新读占用；`AiSettingsModel` 新增 `AiCacheState`（Loading/Ready/LoadError/ClearError），不清空 Key/连接状态 |
+| 许可/归属 | `aboutlibraries.json` 增加 ECDICT（MIT）与 juicedict 引擎（GPL-3.0）条目；README 增加第三方数据/源码说明；engine 的 `LICENSE`/`PROVENANCE.md` 与 ECDICT 的 `LICENSE`/`NOTICE.txt` 随仓库分发；`LicensesCreditsTest` 钉住条目存在 |
+| 文档 | README 功能列表、本文件、`UPSTREAM_DIFF.md`、`docs/phase-2-design.md` 最终状态/已知限制；设计文档 S9 行改为 ✅ |
+| JVM 测试 | `:app:testDebugUnitTest` **357 个用例 / 53 个测试类 / 0 失败 / 0 跳过**（S8 349 + S9 8，含 1 个既有测试扩展）；`:dict-engine:test` **101 个 / 0 失败** |
+| 仪器测试 | `:app:connectedDebugAndroidTest` 在 `reader34`（API 34，arm64）上 **22 个 / 0 失败 / 0 跳过**（Room DAO 11、迁移 1、Tink 3、TypographyLab 7） |
+| 构建 | `:app:assembleDebug` 通过；`:app:assembleRelease-debug`（R8 + lintVital）通过；`:app:compileDebugAndroidTestKotlin` 通过 |
+| APK | debug **155,192,122 B**；release-debug **55,959,882 B**（含 21MB ECDICT 资产与 R8 keep 的 7z/xz 路径） |
+| 首次安装（模拟器实测） | 冷启动后在 IO 线程解压/建索引约 **24.8s**；`files/dictionaries/builtin` 约 **122,800 KB**（`.dict` 73,054,537 + `.idx` 17,035,288 + `.ifo` 214 + `.jidx` 35,611,830 + version），应用数据目录约 **123MB**；重启命中 `version` 标记，不重复解压 |
+| 手工 UI 矩阵 | **未执行**（项目没有 Compose UI 测试依赖，按约定不加）。S5/S8 的设备矩阵仍只是设计/代码级验证，不得当成已验证；真机手感（默认双击导致的 ~300ms 单击延迟、取词卡片空白区缩小）仍需人工确认 |
+| 最终整体 review | 按用户要求**取消**（原计划 `reviewer-expert` 全量 review）；S1–S9 每阶段均完成两轮 `reviewer`，最终以本报告收尾 |
+
+S9 的测试增量：
+
+| 测试 | 钉住什么 |
+| --- | --- |
+| `AiSettingsModelTest`（5） | 缓存 stats 读取、读取失败显示 LoadError、清除成功/失败、清除后重新读占用、MB 格式化不依赖 locale |
+| `LicensesCreditsTest`（2） | 7 个手工条目含许可证 id 与 scm url；全部引用到的许可证都有定义 |
+| `AiTranslationRepositoryTest`（+） | 空响应映射为 `EMPTY_RESPONSE`，不再复用 `UNKNOWN` |
+
+**已知限制（S9 收尾时确认）**：
+
+- 没有实现单词级 AI 解释：取词卡片里的按钮仍是禁用态（`(S9)` 文案改为中性说明），需要时可在后续阶段接 `kind=WORD` 缓存。
+- `.mdd` 资源包不导入、正文图片/音频不渲染；导入的 MDX 只有文本。
+- 加密（需要密码）的 MDX 不支持；`Encrypted=2` 的快速加密可读（引擎能力），密码保护仍拒绝。
+- 长按选区的自动取词只处理单行；工具栏「翻译」可翻整段多行选区。
+- 缓存跨进程重建只有 JVM fake 验证，S7 的“关库重开再命中”仪器测试仍未写。
+- `release-debug` 上的真实 AI 流式/Tink 解密/Room 缓存路径只做了构建与静态验证；模拟器只跑了 DAO/迁移/Tink/Typography。
+- 词典查询/翻译缓存没有按书清理入口；缓存清理只有设置页全量清除。
+- 默认 `doubleClickTranslation = true` 会让分页单击翻页多等约 300ms；可在设置关闭。
+
 ---
 
 ## 4. 真机验证结果

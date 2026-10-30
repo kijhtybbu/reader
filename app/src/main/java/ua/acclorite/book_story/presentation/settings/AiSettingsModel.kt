@@ -25,6 +25,8 @@ import ua.acclorite.book_story.data.ai.AiError
 import ua.acclorite.book_story.data.ai.AiException
 import ua.acclorite.book_story.data.ai.AiKeyStore
 import ua.acclorite.book_story.data.ai.AiTranslationRepository
+import ua.acclorite.book_story.data.ai.cache.TranslationCacheRepository
+import java.util.Locale
 import javax.inject.Inject
 
 private const val TAG = "AiSettingsModel"
@@ -36,10 +38,34 @@ sealed interface AiTestState {
     data class Error(val error: AiError, val statusCode: Int?) : AiTestState
 }
 
+/**
+ * 「翻译缓存」一行的状态（S9）。
+ *
+ * [Loading] 同时覆盖「首次读占用」与「正在清除」：两种情况按钮都该禁用。
+ * [Ready.cleared] 只在刚清除成功的那一次为 true，用来显示一次「缓存已清除」的结果；
+ * 离开页面重建 ViewModel 后自然消失；本页没有下拉刷新。
+ */
+sealed interface AiCacheState {
+    data object Loading : AiCacheState
+    data class Ready(
+        val count: Int,
+        val payloadBytes: Long,
+        val cleared: Boolean = false
+    ) : AiCacheState
+
+    data object LoadError : AiCacheState
+    data object ClearError : AiCacheState
+}
+
+/** 缓存占用按 MB 显示（设计 §7.3 的预算是 200MB，用字节数反而不直观）。 */
+internal fun formatCachePayloadSize(bytes: Long): String =
+    String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0))
+
 @HiltViewModel
 class AiSettingsModel @Inject constructor(
     private val keyStore: AiKeyStore,
-    private val repository: AiTranslationRepository
+    private val repository: AiTranslationRepository,
+    private val cache: TranslationCacheRepository
 ) : ViewModel() {
 
     private val _hasKey = MutableStateFlow(false)
@@ -59,11 +85,63 @@ class AiSettingsModel @Inject constructor(
     private val _testState = MutableStateFlow<AiTestState>(AiTestState.Idle)
     val testState: StateFlow<AiTestState> = _testState.asStateFlow()
 
+    private val _cacheState = MutableStateFlow<AiCacheState>(AiCacheState.Loading)
+    val cacheState: StateFlow<AiCacheState> = _cacheState.asStateFlow()
+
     private var testJob: Job? = null
+    private var cacheJob: Job? = null
 
     init {
         viewModelScope.launch {
             _hasKey.value = keyStore.get() != null
+        }
+        refreshCache()
+    }
+
+    /** 重新读取缓存的条数与占用；失败只改变这一行的状态，不影响 Key/连接的交互。 */
+    fun refreshCache() {
+        cacheJob?.cancel()
+        cacheJob = viewModelScope.launch {
+            _cacheState.value = AiCacheState.Loading
+            _cacheState.value = try {
+                val stats = cache.stats()
+                AiCacheState.Ready(count = stats.count, payloadBytes = stats.payloadBytes)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logW(TAG, "Could not read the AI cache usage: ${e.message}")
+                AiCacheState.LoadError
+            }
+        }
+    }
+
+    /** 清空全部翻译缓存（用户确认后调用）。清除成功后显示 0 条，不保留旧占用。 */
+    fun clearCache() {
+        cacheJob?.cancel()
+        cacheJob = viewModelScope.launch {
+            _cacheState.value = AiCacheState.Loading
+            _cacheState.value = try {
+                cache.clear()
+                val stats = try {
+                    cache.stats()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 缓存已经清空了；读不到新的占用也按 0 显示，不能把成功报成失败。
+                    logW(TAG, "Could not read the AI cache usage after clearing: ${e.message}")
+                    null
+                }
+                AiCacheState.Ready(
+                    count = stats?.count ?: 0,
+                    payloadBytes = stats?.payloadBytes ?: 0L,
+                    cleared = true
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logW(TAG, "Could not clear the AI cache: ${e.message}")
+                AiCacheState.ClearError
+            }
         }
     }
 

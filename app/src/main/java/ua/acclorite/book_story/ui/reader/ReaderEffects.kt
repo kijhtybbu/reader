@@ -73,7 +73,8 @@ fun ReaderEffects(
 
                     translatorIntent.launchActivity(
                         activity = activity,
-                        createChooser = !effect.translateWholeParagraph,
+                        // 只剩错误态的回退路径，多个翻译应用时仍然让用户选一个。
+                        createChooser = true,
                         success = {
                             return@collect
                         }
