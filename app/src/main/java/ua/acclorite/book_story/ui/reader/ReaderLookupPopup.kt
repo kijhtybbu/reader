@@ -15,7 +15,6 @@
 
 package ua.acclorite.book_story.ui.reader
 
-import android.content.Intent
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -36,7 +35,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.VolumeUp
@@ -46,9 +44,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -112,7 +107,8 @@ fun ReaderLookupPopup(
     onDismiss: () -> Unit,
     onImportDictionary: () -> Unit,
     onExternalLookup: (String) -> Unit,
-    onAiExplain: ((String) -> Unit)? = null
+    onAiExplain: ((String) -> Unit)? = null,
+    onTtsUnavailable: () -> Unit = {}
 ) {
     val palette = LocalReaderPalette.current
     val density = LocalDensity.current
@@ -145,7 +141,6 @@ fun ReaderLookupPopup(
     val anchor = state.anchor
     val context = LocalContext.current
     val speaker = remember { WordSpeaker(context) }
-    var ttsUnavailable by remember { mutableStateOf(false) }
     DisposableEffect(speaker) {
         onDispose { speaker.shutdown() }
     }
@@ -157,7 +152,7 @@ fun ReaderLookupPopup(
         LookupState.Idle -> ""
     }
     val onSpeak = {
-        speaker.speak(currentWord) { ttsUnavailable = true }
+        speaker.speak(currentWord) { onTtsUnavailable() }
     }
 
     val positionProvider = remember(anchor, safeBounds, margin, gap) {
@@ -213,49 +208,6 @@ fun ReaderLookupPopup(
             }
         }
     }
-
-    if (ttsUnavailable) {
-        TtsUnavailableDialog(
-            onDismiss = { ttsUnavailable = false },
-            onOpenSettings = {
-                ttsUnavailable = false
-                runCatching {
-                    context.startActivity(
-                        Intent("com.android.settings.TTS_SETTINGS")
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }.onFailure {
-                    android.widget.Toast.makeText(
-                        context,
-                        context.getString(R.string.lookup_popup_tts_unavailable),
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun TtsUnavailableDialog(
-    onDismiss: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { StyledText(text = stringResource(id = R.string.lookup_popup_tts_unavailable_title)) },
-        text = { StyledText(text = stringResource(id = R.string.lookup_popup_tts_unavailable)) },
-        confirmButton = {
-            TextButton(onClick = onOpenSettings) {
-                StyledText(text = stringResource(id = R.string.lookup_popup_tts_open_settings))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                StyledText(text = stringResource(id = R.string.cancel))
-            }
-        }
-    )
 }
 
 @Composable

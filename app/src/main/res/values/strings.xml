@@ -618,7 +618,7 @@
     <string name="lookup_popup_pronounce">Pronounce word</string>
     <string name="lookup_popup_tts_unavailable">Android has no English text-to-speech voice installed. Install one in the system text-to-speech settings.</string>
     <string name="lookup_popup_tts_unavailable_title">Cannot pronounce this word</string>
-    <string name="lookup_popup_tts_open_settings">Open TTS settings</string>
+    <string name="lookup_popup_tts_install_data">Install voice data</string>
     <string name="lookup_popup_source">From %1$s</string>
 
     <!-- fork: phase 2 / S6 AI settings -->

@@ -13,6 +13,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.text.TextStyle
@@ -180,6 +181,8 @@ fun ReaderContent(
     // fork: 取词卡片。状态与回调都在这里收口，两种布局只负责「点到哪个词」。
     val lookupModel: DictionaryLookupModel = hiltViewModel()
     val lookupState by lookupModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var ttsUnavailable by remember { mutableStateOf(false) }
     val navigator = LocalNavigator.current
     val lookup = remember(lookupGesture, lookupModel) {
         ReaderLookupActions(
@@ -380,7 +383,8 @@ fun ReaderContent(
                 onExternalLookup = { word ->
                     lookupModel.dismiss()
                     openDictionary(ReaderEvent.OnOpenDictionary(word))
-                }
+                },
+                onTtsUnavailable = { ttsUnavailable = true }
             )
         }
 
@@ -395,6 +399,16 @@ fun ReaderContent(
                 // S8 之前双击段落走的就是这个外部 Intent；现在它只是错误态的退路。
                 onExternalTranslate = { text ->
                     openTranslator(ReaderEvent.OnOpenTranslator(text))
+                }
+            )
+        }
+
+        if (ttsUnavailable) {
+            TtsUnavailableDialog(
+                onDismiss = { ttsUnavailable = false },
+                onOpenInstaller = {
+                    ttsUnavailable = false
+                    openTtsVoiceInstaller(context)
                 }
             )
         }

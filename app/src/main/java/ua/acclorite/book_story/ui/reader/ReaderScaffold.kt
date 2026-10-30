@@ -18,6 +18,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -25,6 +28,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -138,21 +143,29 @@ fun ReaderScaffold(
     loadNodesBefore: suspend (NodeId, Int) -> List<Node>
 ) {
     val palette = LocalReaderPalette.current
+    var scaffoldOrigin by remember { mutableStateOf(Offset.Zero) }
     Scaffold(
         Modifier
             .fillMaxSize()
+            .onGloballyPositioned { scaffoldOrigin = it.positionInWindow() }
             .drawWithContent {
                 drawContent()
                 lookupAnchor?.takeIf { it.width > 0f && it.height > 0f }?.let { anchor ->
+                    // anchor 来自窗口坐标系；Scaffold 根的绘制原点可能因 insets/父布局偏移，
+                    // 所以先减去根在窗口中的位置，否则高亮会整体错位。
+                    val topLeft = Offset(
+                        anchor.left - scaffoldOrigin.x,
+                        anchor.top - scaffoldOrigin.y
+                    )
                     drawRoundRect(
                         color = palette.accent.copy(alpha = 0.26f),
-                        topLeft = Offset(anchor.left, anchor.top),
+                        topLeft = topLeft,
                         size = Size(anchor.width, anchor.height),
                         cornerRadius = CornerRadius(4.dp.toPx())
                     )
                     drawRoundRect(
                         color = palette.accent.copy(alpha = 0.65f),
-                        topLeft = Offset(anchor.left, anchor.top),
+                        topLeft = topLeft,
                         size = Size(anchor.width, anchor.height),
                         cornerRadius = CornerRadius(4.dp.toPx()),
                         style = Stroke(width = 1.5.dp.toPx())

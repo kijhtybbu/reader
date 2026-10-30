@@ -13,6 +13,8 @@
 package ua.acclorite.book_story.ui.reader
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import java.util.Locale
 
@@ -23,6 +25,8 @@ internal class WordSpeaker(context: Context) {
     private var ready = false
     private var pendingWord: String? = null
     private var pendingFailure: (() -> Unit)? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var failureTimeout: Runnable? = null
 
     /** 第一次调用会异步初始化；初始化中的重复点击只保留最后一个词。 */
     fun speak(word: String, onUnavailable: () -> Unit) {
@@ -33,9 +37,12 @@ internal class WordSpeaker(context: Context) {
         if (current == null) {
             pendingWord = normalized
             pendingFailure = onUnavailable
+            scheduleFailureTimeout()
             engine = TextToSpeech(appContext) { status ->
                 val tts = engine
                 if (tts != null) {
+                    failureTimeout?.let { handler.removeCallbacks(it) }
+                    failureTimeout = null
                     if (status != TextToSpeech.SUCCESS || !configure(tts)) {
                         ready = false
                         pendingFailure?.invoke()
@@ -54,7 +61,25 @@ internal class WordSpeaker(context: Context) {
         } else {
             pendingWord = normalized
             pendingFailure = onUnavailable
+            scheduleFailureTimeout()
         }
+    }
+
+    /**
+     * 某些 ROM 的 TTS 服务不回调，或者初始化卡住；4 秒还没 ready 就给用户一个可操作的提示，
+     * 而不是点了喇叭毫无反应。拿到成功回调后取消。
+     */
+    private fun scheduleFailureTimeout() {
+        failureTimeout?.let { handler.removeCallbacks(it) }
+        val runnable = Runnable {
+            if (!ready) {
+                pendingFailure?.invoke()
+                pendingFailure = null
+                pendingWord = null
+            }
+        }
+        failureTimeout = runnable
+        handler.postDelayed(runnable, 4_000L)
     }
 
     private fun configure(tts: TextToSpeech): Boolean {
@@ -74,6 +99,8 @@ internal class WordSpeaker(context: Context) {
     }
 
     fun shutdown() {
+        failureTimeout?.let { handler.removeCallbacks(it) }
+        failureTimeout = null
         engine?.stop()
         engine?.shutdown()
         engine = null
