@@ -607,7 +607,7 @@
     <string name="lookup_gesture_single_tap">Single tap</string>
     <string name="lookup_gesture_long_press">Long press</string>
     <string name="lookup_gesture_off">Off</string>
-    <string name="lookup_gesture_note">Single tap shows the dictionary card for the word you tap; taps on blank areas still turn the page or open the menu. Long press keeps single-tap page turns and looks the word up after you select it.</string>
+    <string name="lookup_gesture_note">Single tap shows the dictionary card for the word you tap; taps on blank areas still turn the page or open the menu, and long press still selects text to copy, translate or look up. Long press looks a word up as soon as you press and hold, and leaves single-tap page turns alone; text selection is unavailable in that mode, so switch back to single tap when you need to copy a passage.</string>
     <string name="dictionary_priority_note">The radio button marks the preferred dictionary. It is looked up first, but every enabled dictionary is still searched.</string>
     <string name="lookup_popup_loading">Looking up…</string>
     <string name="lookup_popup_not_found">No entry in the installed dictionaries.</string>

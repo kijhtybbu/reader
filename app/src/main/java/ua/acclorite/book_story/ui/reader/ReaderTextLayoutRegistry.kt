@@ -63,14 +63,11 @@ internal data class ReaderTextLayoutKey(
  *
  * @param rect 词在窗口坐标系里的包围盒。竖向是**基线与字号**算出的字形带（不是行框）：
  *   行框会随用户的「行高」设置变胖，高亮跟着变高就会显得错位。
- * @param lineWidth 词所在行的行框宽度（窗口像素）。判断「长按选区是否跨行」需要它：
- *   跨行选区的包围盒宽度总是≥首行行宽，单词选区则≈词宽。
  */
 internal data class WordHit(
     val nodeId: NodeId,
     val word: String,
-    val rect: Rect,
-    val lineWidth: Float = rect.width
+    val rect: Rect
 )
 
 /**
@@ -283,8 +280,7 @@ internal fun readerWordAt(
         word = word.text,
         rect = layout.wordRect(wordStart, wordEnd, fontSizePx, inkPaint)
             .translate(origin)
-            .translate(wordShift, 0f),
-        lineWidth = kotlin.math.abs(layout.getLineRight(line) - layout.getLineLeft(line))
+            .translate(wordShift, 0f)
     )
 }
 

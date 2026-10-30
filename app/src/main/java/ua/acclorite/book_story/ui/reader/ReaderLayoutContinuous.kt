@@ -337,7 +337,8 @@ fun ReaderLayoutContinuous(
                 openDictionary(ReaderEvent.OnOpenDictionary(textToDefine))
             }
         },
-        onSelectionSettled = rememberLookupSelectionHandler(lookup, textLayouts)
+        // fork: 长按取词接管长按时关掉正文选区（见 ReaderLookupActions.selectionEnabled）。
+        selectionEnabled = lookup.selectionEnabled
     ) { toolbarHidden ->
         Column(
             Modifier
@@ -354,17 +355,31 @@ fun ReaderLayoutContinuous(
                                     // fork: 手指按下就先高亮命中的词。单击要等双击判定
                                     // （~300ms）才会回调 onTap，没有这个预览用户会觉得「点了没反应」。
                                     onPress = press@{ offset ->
-                                        if (!lookup.singleTapEnabled || showMenu) return@press
+                                        if (!lookup.lookupEnabled || showMenu) return@press
                                         val window = contentCoordinates
                                             ?.takeIf { it.isAttached }
                                             ?.localToWindow(offset)
                                         val word = window?.let(textLayouts::hitTest)
                                         if (word != null) {
                                             lookup.onPreview(word.rect)
-                                            // 手指抬起 = 这次按下会走 onTap/onDoubleTap，高亮保持；
-                                            // 被取消（拖动滚动）则撤掉预览。
-                                            if (!tryAwaitRelease()) lookup.onPreviewDismiss()
+                                            // 单击模式：抬起后 onTap 会落地成卡片，高亮保持到那时；
+                                            // 长按模式：短按只是切菜单、没有卡片，抬起就撤掉预览。
+                                            val released = tryAwaitRelease()
+                                            if (!released || lookup.longPressEnabled) {
+                                                lookup.onPreviewDismiss()
+                                            }
                                         }
+                                    },
+                                    // fork: 长按取词。与单击共用注册表命中，不借 SelectionContainer
+                                    // 的选区（Compose 的 WordAdjustment 与注册表词边界不一致，
+                                    // 两块高亮会叠在一起；选择手柄/ActionMode 重报还会顶回卡片）。
+                                    onLongPress = if (!lookup.longPressEnabled) null else longPress@{ offset ->
+                                        val window = contentCoordinates
+                                            ?.takeIf { it.isAttached }
+                                            ?.localToWindow(offset)
+                                            ?: return@longPress
+                                        val word = textLayouts.hitTest(window) ?: return@longPress
+                                        lookup.onWord(word.word, word.rect)
                                     },
                                     // 非 null 时单击会等双击超时（~300ms）；设置里关掉双击翻译时
                                     // 必须传 null，否则每次切菜单都慢一拍。

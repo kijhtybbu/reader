@@ -20,7 +20,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.PagerScope
@@ -67,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 import ua.acclorite.book_story.R
@@ -99,6 +103,20 @@ import ua.acclorite.book_story.ui.reader.paged.loadReaderPageWindow
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
 import kotlin.math.ceil
 import ua.acclorite.book_story.ui.theme.Motion
+
+/**
+ * 屏幕左右两侧「按下即翻页」的带宽（占正文区宽度）。
+ *
+ * 这个范围内若分区判定是「上一页/下一页」，就跳过双击判定（`detectTapGestures` 在
+ * `onDoubleTap != null` 时会把单击压后 ~200ms）；其它分区（顶部菜单带、CENTER_ONLY 空白区）
+ * 照旧等双击。10% 是用户实测手感给出的值，再宽会吃掉正文左侧的取词点击。
+ */
+private const val EDGE_FAST_PAGE_FRACTION = 0.10f
+
+/** 横向坐标是否落在左右「快速翻页」带内（带内翻页由快速路径负责，外层不再重复翻）。 */
+private fun inFastPageBand(x: Float, width: Float): Boolean =
+    width > 0f &&
+        (x <= width * EDGE_FAST_PAGE_FRACTION || x >= width * (1f - EDGE_FAST_PAGE_FRACTION))
 
 @Composable
 fun ReaderLayoutPaged(
@@ -208,7 +226,8 @@ fun ReaderLayoutPaged(
             if (word != null) lookup.onWord(word, null)
             else openDictionary(ReaderEvent.OnOpenDictionary(textToDefine))
         },
-        onSelectionSettled = rememberLookupSelectionHandler(lookup, textLayouts)
+        // fork: 长按取词接管长按时关掉正文选区（见 ReaderLookupActions.selectionEnabled）。
+        selectionEnabled = lookup.selectionEnabled
     ) { toolbarHidden ->
         Column(
             Modifier
@@ -390,6 +409,35 @@ fun ReaderLayoutPaged(
                 }
 
                 if (pages.isNotEmpty()) {
+                    // fork: 翻页。点击分区的 onTap 与「边缘快速翻页」共用这一份，
+                    // 两处各写一遍迟早会出现「双击后第二下不接着排队」的偏差。
+                    fun turnPage(action: ReaderTapAction) {
+                        if (action != ReaderTapAction.NEXT && action != ReaderTapAction.PREVIOUS) return
+                        // 连点两次时，第二次从「已排队的目标」继续，而不是从 currentPage 重新算
+                        // （否则两次点击只翻一页）
+                        // fork: 分区 → 语义动作（tapActionFor）→ 页码增量（pageDeltaFor）。
+                        // 反向阅读方向下翻转的是 delta，不是分区。
+                        val delta = pageDeltaFor(action, reversed = reversed)
+                        // 目标距当前页超过 1 页说明上一次连点被用户滚动打断了，丢弃
+                        val from = pendingTapTarget
+                            ?.takeIf { kotlin.math.abs(it - pagerState.currentPage) <= 1 }
+                            ?: pagerState.currentPage
+                        val target = (from + delta)
+                            .coerceIn(0, (pagerState.pageCount - 1).coerceAtLeast(0))
+                        pendingTapTarget = target
+                        tapScope.launch {
+                            // fork: 默认 spring 要 ~400ms 才落定，点击翻页显得拖沓；
+                            // 用 200ms tween，配合双击判定窗口缩短，整体更跟手。
+                            pagerState.animateScrollToPage(
+                                page = target,
+                                animationSpec = tween(
+                                    durationMillis = Motion.Base,
+                                    easing = Motion.Standard
+                                )
+                            )
+                        }
+                    }
+
                     val pageContent: @Composable PagerScope.(Int) -> Unit = { index ->
                         val page = pages.getOrNull(index - leadingPages)
                         if (page == null) {
@@ -448,7 +496,7 @@ fun ReaderLayoutPaged(
                                         // fork: 手指按下就先高亮命中的词。单击要等双击判定
                                         // （~300ms）才会回调 onTap，没有这个预览用户会觉得「点了没反应」。
                                         onPress = press@{ offset ->
-                                            if (!lookup.singleTapEnabled || showMenu) return@press
+                                            if (!lookup.lookupEnabled || showMenu) return@press
                                             val word = wordAtPageOffset(
                                                 page = pages.getOrNull(pagerState.currentPage - leadingPages),
                                                 tapInPager = offset,
@@ -459,10 +507,30 @@ fun ReaderLayoutPaged(
                                             )
                                             if (word != null) {
                                                 lookup.onPreview(word.rect)
-                                                // 手指抬起 = 这次按下会走 onTap/onDoubleTap，高亮保持；
-                                                // 被取消（拖动翻页）则撤掉预览。
-                                                if (!tryAwaitRelease()) lookup.onPreviewDismiss()
+                                                // 单击模式：抬起后 onTap 会落地成卡片，高亮保持到那时；
+                                                // 长按模式：短按只是翻页、没有卡片，抬起就撤掉预览
+                                                // （长按真的取词时卡片自己带锚点，撤掉预览不影响高亮）。
+                                                val released = tryAwaitRelease()
+                                                if (!released || lookup.longPressEnabled) {
+                                                    lookup.onPreviewDismiss()
+                                                }
                                             }
+                                        },
+                                        // fork: 长按取词。走与单击同一个注册表命中（锚点就是卡片用的
+                                        // 精确词矩形），不再借 SelectionContainer 的选区：Compose 的
+                                        // WordAdjustment 与注册表的词边界不是一个坐标系（两端对齐还会
+                                        // 偏一个词），会出现「选区高亮 + 卡片高亮」两块区间，拖动选择
+                                        // 手柄与 ActionMode 重报还会把卡片顶回来。
+                                        onLongPress = if (!lookup.longPressEnabled) null else longPress@{ offset ->
+                                            val word = wordAtPageOffset(
+                                                page = pages.getOrNull(pagerState.currentPage - leadingPages),
+                                                tapInPager = offset,
+                                                pagerOrigin = pagerCoordinates
+                                                    ?.takeIf { it.isAttached }
+                                                    ?.localToWindow(Offset.Zero),
+                                                textLayouts = textLayouts
+                                            ) ?: return@longPress
+                                            lookup.onWord(word.word, word.rect)
                                         },
                                         // 关键：onDoubleTap 非 null 时 detectTapGestures 会把单击
                                         // 延后到双击超时（~300ms）再回调。设置里关掉双击翻译时
@@ -471,7 +539,11 @@ fun ReaderLayoutPaged(
                                             // fork: 双击翻译原来挂在段落自己的 combinedClickable 上，
                                             // 那是个「第二套点击检测器」，会把单击吞掉，导致正文上的
                                             // 分区点击失效。现在统一在这里处理。
-                                            if (doubleClickTranslation) {
+                                            // 左右 10% 的快速翻页带里不认双击：那里第一下就已经翻页了，
+                                            // 再弹翻译只会让人以为点错了。
+                                            if (doubleClickTranslation &&
+                                                !inFastPageBand(offset.x, size.width.toFloat())
+                                            ) {
                                                 // 双击 = 翻译：把第一下按下时的取词预览/卡片撤掉。
                                                 lookup.onDismiss()
                                                 val page = pages.getOrNull(
@@ -522,34 +594,79 @@ fun ReaderLayoutPaged(
                                             ReaderTapAction.MENU ->
                                                 menuVisibility(ReaderEvent.OnMenuVisibility(!showMenu, true))
                                             ReaderTapAction.NONE -> Unit
-                                            ReaderTapAction.NEXT, ReaderTapAction.PREVIOUS -> {
-                                                // 连点两次时，第二次从「已排队的目标」继续，
-                                                // 而不是从 currentPage 重新算（否则两次点击只翻一页）
-                                                // fork: 分区 → 语义动作（tapActionFor）→ 页码增量（pageDeltaFor）。
-                                                // 反向阅读方向下翻转的是 delta，不是分区。
-                                                val delta = pageDeltaFor(action, reversed = reversed)
-                                                // 目标距当前页超过 1 页说明上一次连点被用户滚动打断了，丢弃
-                                                val from = pendingTapTarget
-                                                    ?.takeIf { kotlin.math.abs(it - pagerState.currentPage) <= 1 }
-                                                    ?: pagerState.currentPage
-                                                val target = (from + delta)
-                                                    .coerceIn(0, (pagerState.pageCount - 1).coerceAtLeast(0))
-                                                pendingTapTarget = target
-                                                tapScope.launch {
-                                                    // fork: 默认 spring 要 ~400ms 才落定，点击翻页显得拖沓；
-                                                    // 用 200ms tween，配合双击判定窗口缩短，整体更跟手。
-                                                    pagerState.animateScrollToPage(
-                                                        page = target,
-                                                        animationSpec = tween(
-                                                            durationMillis = Motion.Base,
-                                                            easing = Motion.Standard
-                                                        )
-                                                    )
+                                            // 边缘带的翻页由下面的快速路径负责（它在抬手时就翻了），
+                                            // 这里再翻一次就是「点一下翻两页」。
+                                            ReaderTapAction.NEXT, ReaderTapAction.PREVIOUS ->
+                                                if (!inFastPageBand(offset.x, size.width.toFloat())) {
+                                                    turnPage(action)
                                                 }
-                                            }
                                         }
                                         }
                                     )
+                                }
+                                // fork: 边缘快速翻页。左右各 10% 的点击**不等双击判定**
+                                // （`detectTapGestures` 的 onDoubleTap 非 null 时，单击要等
+                                // ~200ms 才知道不是双击），按下即翻。
+                                // 位置放在 tap 检测器之后 = 修改器链更内层 = Main pass 先执行，
+                                // 消费掉 down 后外层的 `awaitFirstDown()` 收不到这次手势，
+                                // 所以只翻一次页（不会被外层的 onTap 再翻一次）。
+                                // 只接管「翻页」动作：Kindle 的顶部菜单带、TOP_BOTTOM 的中间带、
+                                // CENTER_ONLY 的空白区仍然走原来那条「等双击」的路。
+                                .pointerInput(tapZones, showMenu) {
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                        if (showMenu) return@awaitEachGesture
+                                        val width = size.width.toFloat()
+                                        val height = size.height.toFloat()
+                                        if (width <= 0f || height <= 0f) return@awaitEachGesture
+                                        val edge = width * EDGE_FAST_PAGE_FRACTION
+                                        if (down.position.x > edge && down.position.x < width - edge) {
+                                            return@awaitEachGesture
+                                        }
+                                        val action = tapActionFor(
+                                            zones = tapZones,
+                                            x = (down.position.x / width).coerceIn(0f, 1f),
+                                            y = (down.position.y / height).coerceIn(0f, 1f)
+                                        )
+                                        if (action != ReaderTapAction.NEXT &&
+                                            action != ReaderTapAction.PREVIOUS
+                                        ) {
+                                            return@awaitEachGesture
+                                        }
+                                        val word = wordAtPageOffset(
+                                            page = pages.getOrNull(pagerState.currentPage - leadingPages),
+                                            tapInPager = down.position,
+                                            pagerOrigin = pagerCoordinates
+                                                ?.takeIf { it.isAttached }
+                                                ?.localToWindow(Offset.Zero),
+                                            textLayouts = textLayouts
+                                        )
+
+                                        if (word == null) {
+                                            // 空白（页边距、行尾、段间空隙、页脚）：整条手势归这里。
+                                            // 消费 down 让外层 `detectTapGestures` 收不到，松手即翻。
+                                            down.consume()
+                                            // 拖动/滑动返回 null —— 这一下不是点击，交给 Pager 自己翻。
+                                            if (waitForUpOrCancellation() == null) {
+                                                return@awaitEachGesture
+                                            }
+                                            turnPage(action)
+                                            return@awaitEachGesture
+                                        }
+
+                                        // 命中了单词：`SINGLE_TAP` 模式下这次点击属于取词，直接放手。
+                                        if (word != null && lookup.singleTapEnabled) return@awaitEachGesture
+
+                                        // 其余取词模式（`LONG_PRESS` / `OFF`）下，边缘带里的单击既不是
+                                        // 取词也不是选文本（那要长按），没理由等双击窗口：
+                                        // down 不消费，长按留给外层（`onLongPress` 取词 / 选文本），
+                                        // 在长按超时内抬手就算单击 → 立刻翻页。
+                                        val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                                            waitForUpOrCancellation()
+                                        } ?: return@awaitEachGesture
+                                        up.consume()
+                                        turnPage(action)
+                                    }
                                 }
                             } else {
                                 Modifier

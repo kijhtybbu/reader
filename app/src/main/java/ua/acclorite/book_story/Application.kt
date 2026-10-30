@@ -7,6 +7,8 @@
 package ua.acclorite.book_story
 
 import android.app.Application
+import androidx.compose.foundation.ComposeFoundationFlags
+import androidx.compose.foundation.ExperimentalFoundationApi
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +27,8 @@ class Application : Application() {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
+        // 必须早于任何 Compose 代码加载（官方 flag 文档：加载之后再改是未定义行为）。
+        applyComposeCompatibilityFlags()
         super.onCreate()
         Thread.setDefaultUncaughtExceptionHandler(CrashHandler(this))
 
@@ -46,4 +50,22 @@ class Application : Application() {
         // 版本标记命中时这条路径只做一次打开引擎（读 .jidx 缓存）。
         applicationScope.launch { DictionaryRegistry.ensureBuiltIn(this@Application) }
     }
+}
+
+/**
+ * 关掉 Compose 1.9 默认启用的「新上下文菜单」。
+ *
+ * 为什么必须关：`SelectionContainer` 在 flag 打开时走 `toolbarRequester`（新上下文菜单），
+ * 完全不读 `LocalTextToolbar` —— 阅读页自定义的 `SelectionToolbar` 收不到 `showMenu`，
+ * 于是长按取词（`onSelectionSettled`）永远不触发，选区的翻译/词典项也一并消失。
+ * flag 为 false 时 `SelectionManager.updateSelectionTextToolbar()` 重新调用
+ * `textToolbar.showMenu(...)`，回到 1.8 及之前的行为（设计 §5.1、§A.8）。
+ *
+ * 关掉的是全局 flag：应用内所有文本输入/选区都回落到旧的上下文菜单
+ * （平台 ActionMode / 旧 DrawableMenu），即升级 Compose 1.9 之前的既有行为。
+ * 等这里迁移到新上下文菜单 API（`text.contextmenu.provider`）后再删掉本函数。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+internal fun applyComposeCompatibilityFlags() {
+    ComposeFoundationFlags.isNewContextMenuEnabled = false
 }

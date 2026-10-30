@@ -436,7 +436,7 @@
     <string name="lookup_gesture_single_tap">单击</string>
     <string name="lookup_gesture_long_press">长按</string>
     <string name="lookup_gesture_off">关闭</string>
-    <string name="lookup_gesture_note">单击：点到单词就弹出词典卡片；点到空白区仍然是翻页/呼出菜单。长按：单击保持翻页，选中单词后再取词。</string>
+    <string name="lookup_gesture_note">单击：点到单词就弹出词典卡片；点到空白区仍然是翻页/呼出菜单，长按仍可选中文本复制、翻译或查词。长按：单击保持翻页，按住不动就直接取出那个词；该模式下长按不再选中文本，需要选文本时请切回「单击」。</string>
     <string name="dictionary_priority_note">单选 = 优先词典：先查它，再查其余已启用的词典；它不会屏蔽其它词典。</string>
     <string name="lookup_popup_loading">正在查询…</string>
     <string name="lookup_popup_not_found">已安装的词典里没有这个词。</string>

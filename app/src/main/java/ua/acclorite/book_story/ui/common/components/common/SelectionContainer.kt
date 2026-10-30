@@ -15,6 +15,7 @@ import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -22,7 +23,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -149,8 +149,7 @@ private class SelectionToolbar(
     private val onShareRequest: ((String) -> Unit)?,
     private val onWebSearchRequest: ((String) -> Unit)?,
     private val onTranslateRequest: ((String) -> Unit)?,
-    private val onDictionaryRequest: ((String) -> Unit)?,
-    private val onSelectionSettled: ((Rect, () -> Unit) -> Unit)?
+    private val onDictionaryRequest: ((String) -> Unit)?
 ) : TextToolbar {
     private var actionMode: ActionMode? = null
     private val callback = TextActionModeCallback(context = context)
@@ -168,14 +167,6 @@ private class SelectionToolbar(
         onSelectAllRequested: (() -> Unit)?
     ) {
         callback.rect = rect
-        // fork: 选区落定（工具栏即将弹出）时上报一次。rect 已经是**窗口坐标**：同一个 rect
-        // 会原样交给 `FloatingTextActionModeCallback.onGetContentRect`，而 ActionMode 的
-        // `onGetContentRect` 契约就是 view（= root/window）坐标。所以这里**不能**再叠加一次
-        // `localToWindow`，否则窗口有 inset 时选区会被算成偏移后的位置。
-        // 不在这里读剪贴板：Android 13+ 每次写剪贴板都会弹系统提示，选区每动一下弹一次不能接受。
-        // 第二个参数是「收起工具栏」：系统 ActionMode 是触摸模态窗口，卡片弹出后不收起它，
-        // 卡片外的点击会被它吞掉。工具栏实例只有这里持有，所以由这里交给回调。
-        onSelectionSettled?.invoke(rect) { hide() }
         callback.onCopyRequested = {
             onCopyRequested?.invoke()
             onCopyRequest?.invoke()
@@ -265,10 +256,10 @@ private class SelectionToolbar(
  * @param onCopyRequested Callback for when the copy option is clicked.
  * @param onTranslateRequested Callback for when the translate option is clicked.
  * @param onDictionaryRequested Callback for when the dictionary option is clicked.
- * @param onSelectionSettled fork（S5）：选区落定时回调。第一个参数是选区在**窗口坐标**里的
- *   矩形（与交给 ActionMode `onGetContentRect` 的是同一个 rect，不再二次换算）；第二个参数把
- *   选区工具栏（ActionMode）收起来，取词卡片弹出前调用 —— 否则触摸模态的工具栏会吞掉卡片外的
- *   点击。拖动选择手柄时会被连续调用，需要防抖的调用方自己处理（阅读页是 350ms）。
+ * @param selectionEnabled fork：正文是否可选中。false 时用 [DisableSelection] 把文本挡在
+ *   `SelectionContainer` 之外 —— 长按取词（`ReaderLookupGesture.LONG_PRESS`）下长按属于取词，
+ *   不能再同时长按选区：两套手势并存会画出「选区高亮 + 卡片高亮」两块区间，拖动选择手柄与
+ *   ActionMode 重报还会把刚关掉的卡片顶回来。
  * @param content Selection container content.
  */
 @Composable
@@ -278,13 +269,11 @@ fun SelectionContainer(
     onWebSearchRequested: ((String) -> Unit),
     onTranslateRequested: ((String) -> Unit),
     onDictionaryRequested: ((String) -> Unit),
-    onSelectionSettled: ((Rect, () -> Unit) -> Unit)? = null,
+    selectionEnabled: Boolean = true,
     content: @Composable (toolbarHidden: Boolean) -> Unit
 ) {
     val view = LocalView.current
     val context = LocalContext.current
-
-    val currentOnSelectionSettled = rememberUpdatedState(onSelectionSettled)
 
     val selectionToolbar = remember {
         SelectionToolbar(
@@ -305,9 +294,6 @@ fun SelectionContainer(
             },
             onDictionaryRequest = {
                 onDictionaryRequested(it)
-            },
-            onSelectionSettled = { rect, hideToolbar ->
-                currentOnSelectionSettled.value?.invoke(rect, hideToolbar)
             }
         )
     }
@@ -321,7 +307,14 @@ fun SelectionContainer(
         LocalTextToolbar provides selectionToolbar
     ) {
         SelectionContainer(modifier = Modifier) {
-            content(isToolbarHidden.value)
+            // [DisableSelection] 必须套在 `SelectionContainer` **内部**：它自己会 provide 一个
+            // 新的 `LocalSelectionRegistrar`，在外面置空会被立刻覆盖，正文照样注册成可选中
+            // （真机反馈：长按取词模式下仍能拖出选择手柄）。
+            if (selectionEnabled) {
+                content(isToolbarHidden.value)
+            } else {
+                DisableSelection { content(isToolbarHidden.value) }
+            }
         }
     }
 }
