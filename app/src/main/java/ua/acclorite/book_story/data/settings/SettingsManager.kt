@@ -25,6 +25,10 @@ import ua.acclorite.book_story.core.data.CoreData
 import ua.acclorite.book_story.core.language.Language
 import ua.acclorite.book_story.core.language.LanguageUtils
 import ua.acclorite.book_story.core.log.logI
+import ua.acclorite.book_story.data.ai.AiTargetLanguage
+import ua.acclorite.book_story.data.ai.DEFAULT_AI_BASE_URL
+import ua.acclorite.book_story.data.ai.DEFAULT_AI_MODEL
+import ua.acclorite.book_story.data.ai.normalizeAiBaseUrl
 import ua.acclorite.book_story.data.settings.model.HeaderSettings
 import ua.acclorite.book_story.data.settings.model.Setting
 import ua.acclorite.book_story.data.storage.data_store.DataStore
@@ -193,6 +197,24 @@ class SettingsManager @Inject constructor(
         key = stringPreferencesKey("lookup_gesture"), default = ReaderLookupGesture.SINGLE_TAP,
         serialize = { it.name },
         deserialize = { name -> ReaderLookupGesture.fromName(name) }
+    )
+    // fork: AI 配置（设计 §6.1）。Key 不在这里 —— 它在 AiKeyStore 的加密密文里。
+    // Base URL 存取两端都规范化：恢复备份或手改 DataStore 留下的值也能用。
+    val aiBaseUrl = setting<String, String>(
+        key = stringPreferencesKey("ai_base_url"), default = DEFAULT_AI_BASE_URL,
+        serialize = { normalizeAiBaseUrl(it) }, deserialize = { normalizeAiBaseUrl(it) }
+    )
+    val aiModel = setting<String, String>(
+        key = stringPreferencesKey("ai_model"), default = DEFAULT_AI_MODEL,
+        serialize = { it.trim().ifBlank { DEFAULT_AI_MODEL } },
+        deserialize = { it.trim().ifBlank { DEFAULT_AI_MODEL } }
+    )
+    val aiTargetLanguage = setting<AiTargetLanguage, String>(
+        key = stringPreferencesKey("ai_target_language"), default = AiTargetLanguage.FOLLOW_UI,
+        serialize = { it.name }, deserialize = { AiTargetLanguage.fromName(it) }
+    )
+    val aiGrammarEnabled = setting<Boolean, Boolean>(
+        key = booleanPreferencesKey("ai_grammar_enabled"), default = true
     )
     val fastColorPresetChange = setting<Boolean, Boolean>(
         key = booleanPreferencesKey("fast_color_preset_change"), default = true

@@ -190,28 +190,46 @@ ReaderLayout (Paged/Continuous)
 
 ### 6.1 设置项
 
-- `aiBaseUrl`：默认 `https://api.openai.com/v1/`；规范化补尾部 `/`。
+- `aiBaseUrl`：默认 `https://api.openai.com/v1/`；规范化补尾部 `/`，没写协议时补 `https://`
+  （`api.openai.com/v1` 直接可用，不再是一个被映射成 UNKNOWN 的相对路径）。
 - `aiModel`：自由文本 + 常用预设。
 - `aiTargetLanguage`：跟随界面 / 简体中文 / 繁體中文 / English / 日本語 / 한국어 / 自定义。
+  S6 已实现前六项；「自定义」未做（枚举无法同时表达预设与自由文本，留到有需求时再评估）。
 - `aiGrammarEnabled`：默认开启（只影响是否显示语法标签）。
 - API Key：不进入普通 DataStore 明文。
 
 ### 6.2 Key 存储
 
 - `com.google.crypto.tink:tink-android` 的 `AndroidKeysetManager` 管理 AES256-GCM keyset。
-- 密文 base64 存 DataStore；解密失败提示重填；日志绝不打印 Key 与正文。
+- 密文 base64 存 DataStore（`stringPreferencesKey("ai_api_key_enc")`）；解密失败清空存量并
+  提示重填；日志绝不打印 Key 与正文。Tink 初始化/加解密放到 `Dispatchers.IO`，不占主线程。
 - `allowBackup=false` 已关闭备份。
 
 ### 6.3 客户端
 
 - `openai-kotlin`：`OpenAIConfig(token, host = OpenAIHost(baseUrl), timeout, headers,
   logging = LoggingConfig(logLevel = None), retry = RetryStrategy(maxRetries = 0/1))`。
+  引擎显式传 OkHttp（`ktor-client-okhttp`），**不**依赖 Ktor 的 ServiceLoader 运行时发现——
+  那条路 R8 之后编译期看不见、单测也盖不到。
 - 翻译：`ChatCompletionRequest(stream = true)`，`chatCompletions()` 收集流。
 - 语法：`responseFormat = ChatResponseFormat.JsonObject`，非流式或流式聚合均可。
 - 错误映射：401 Key 无效、403、404 模型/路径不存在、429 限流、5xx、超时、断网。
+  5xx 的状态码不在 `OpenAIServerException` 上，要从它的 cause（Ktor 的 `ResponseException`）
+  捞回来，UI 才能显示「(HTTP 503)」。
+- 超时：非流式请求（`/models`、语法）整次调用 60s；**流式**请求用 per-request
+  `RequestOptions(timeout = Timeout(request = INFINITE))` 覆盖掉整次调用上限，否则一个慢但正常的
+  长 SSE 会在第 60 秒被掐成 TIMEOUT；卡死由 socket 超时（60s 无数据）兜住。
 - 长段落按句子边界切块（≤3000 字符）顺序输出；关闭对话框取消 Job。
 - 明文 HTTP 只放行 `localhost` / `127.0.0.1` / `10.0.2.2`（`res/xml/network_security_config.xml`），
-  其余流量强制 HTTPS。IPv6 回环 `::1` 与局域网 HTTP 本期**不**放行，本机/局域网明文策略留给 S6 决定。
+  其余流量强制 HTTPS。IPv6 回环 `::1` 与局域网 HTTP 本期**不**放行。
+  S6 决定保持该策略：Base URL 可以指向 `localhost`/`127.0.0.1`/`10.0.2.2` 上的本地服务，
+  但局域网明文 HTTP 需要用户自己用反向代理/HTTPS 解决。
+- **本机地址免 Key**：与上面放行明文的正是同一组主机。这类地址上的本地服务（Ollama、LM Studio、
+  llama.cpp server 等）通常不校验鉴权，所以 Base URL 的 host 是 `localhost`/`127.0.0.1`/`10.0.2.2`
+  时允许不配 Key；公网地址没有 Key 仍然在建连之前抛 `NO_KEY`，不会把空凭据发出去。
+  空 Key 时 `OpenAIConfig.token` 传空串：openai-kotlin 4.1.0 无条件安装 Bearer 鉴权（没有
+  「跳过鉴权」的开关），所以请求上会带一个空的 `Authorization: Bearer`，本机服务不校验它。
+  设置页对这类 Base URL 会说明「可以留空」，并且允许在没存过 Key 时直接保存空值。
 
 ### 6.4 提示词
 
@@ -291,7 +309,8 @@ cacheKey = SHA-256(
   - 词典：内置 ECDICT 版本/状态、导入/启用/删除、导入进度与错误。
   - AI：Base URL、Model、Key（密码框/显示切换）、目标语言、测试连接。
   - 缓存：条数/占用、清除。
-  - 隐私与费用说明：正文会发送给配置的第三方；切换语法标签即请求。
+  - 隐私与费用说明：正文会发送给配置的第三方。S6 的设置页只说明这一点；
+    「切到语法标签即请求」是 S8 对话框的行为，S6 的用户可见文案里不许诺。
 - 新文案进 `values/strings.xml` 与 `values-zh-rCN/strings.xml`，其他语言回退英文。
 
 ## 10. 分阶段实施与验收
@@ -311,8 +330,10 @@ cacheKey = SHA-256(
 | S8 | `TranslationModel`、双击整段、翻译/语法对话框、缓存优先、语法点击即分析 | 二次双击 0 请求；语法二次点击 0 请求；杀进程后仍命中；取消不写半截 |
 | S9 | 文案/许可/文档、全量回归、release-debug、终审 | 全量测试通过；体积/内存记录；`reviewer-expert` 整体 review |
 
-> S1–S3 已完成。S3 的验收只在 JVM 上做过（真实资产解压 + `apple` 查询 + 二次安装跳过），
+> S1–S6 已完成。S3 的验收只在 JVM 上做过（真实资产解压 + `apple` 查询 + 二次安装跳过），
 > 真机首启耗时/内存峰值与 minified 构建下的 7z 解压仍待验证；实测数据见 `PROGRESS.md` §3.3。
+> S6 的 `AiKeyStore` 只在 JVM 上用假 cipher 测过；真实 Tink/AndroidKeysetManager 仪器测试已写但**未执行**；
+> 真实服务商的测试连接/流式/401/429 也未在设备上验证，见 `PROGRESS.md` §3.6。
 
 ## 11. 测试矩阵
 
@@ -324,7 +345,10 @@ cacheKey = SHA-256(
   （运行时合成的合法 MDX 2.0，覆盖 probe → open → lookup → 渲染）。
 - 缓存键：模型/语言/提示词/空白变化；SHA-256 稳定。
 - `TranslationModel`：缓存命中、miss、并发去重、取消、重新生成（fake repository）。
-- AI：Ktor `MockEngine` 的流式拼接、`[DONE]`、错误码、JSON 围栏、取消。
+- AI：Ktor `MockEngine` 的流式拼接、`[DONE]`、401/404/429/5xx（带状态码）/超时映射、
+  JSON 请求、取消、按句切块与 Base URL 规范化（补 `/`、补 `https://`、本机/远程判定）、
+  本机地址免 Key 与公网地址无 Key 的 `NO_KEY`。生产引擎用 loopback 的最小 HTTP 服务验证
+  （`AiOkHttpEngineTest`），不走 ServiceLoader。
 - 取词候选：word boundary 纯函数、CJK 限长、标点剥离。
 
 ### Android / 仪器

@@ -2,7 +2,7 @@
 
 > 快照时间：2026-10-29
 > 基线：`upstream/master` = `464891e`（Acclorite/book-story，GPL-3.0-only）
-> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.5）
+> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.6）
 
 ---
 
@@ -305,7 +305,7 @@ S5 的手工矩阵**未执行**（没有 Compose UI 测试依赖，按项目约�
 | 6 | 长按拖选跨行文本（包括刚好选中两行） | 不取词；复制/分享/翻译工具栏动作仍然正常 |
 | 7 | 选中单词后点工具栏「词典」 | 应用内卡片（不再跳外部词典应用） |
 | 7b | 选中**两个词**后点工具栏「词典」 | 只查第一个词（不是「未找到」）；真查不到时卡片上的「用其他应用查询」仍能拉起外部应用 |
-| 8 | 查一个不存在的词 | 卡片显示「未找到」+「导入词典」/「AI 解释（S6，禁用）」/「用其他应用查询」 |
+| 8 | 查一个不存在的词 | 卡片显示「未找到」+「导入词典」/「AI 解释（S8，禁用）」/「用其他应用查询」 |
 | 9 | 导入 MDX 后查一个内置词库没有的词 | 命中导入词典，卡片显示该词典名；多词典命中时 chip 可切换 |
 | 10 | 卡片开着时点卡片外/按返回/翻页/滚动/切菜单 | 卡片关闭，且不误触翻页；**菜单开着时**点正文第一下只收菜单 + 关卡片（两种布局一致） |
 | 11 | 卡片正文里的 `juice://lookup/` 链接 | 在原位换成目标词的释义 |
@@ -314,6 +314,62 @@ S5 的手工矩阵**未执行**（没有 Compose UI 测试依赖，按项目约�
 | 14 | 超大字号 + 横屏（带刘海/挖孔） | 卡片不超过 45% **安全区**高，不会钻到状态栏/挖孔下面，内部可滚动 |
 | 15 | 双击段落（分页 + 连续） | 分页照旧；连续下双击正文文字仍打开翻译，双击行尾空白无响应（见偏差 2） |
 | 16 | 取词手势设为 OFF | 单击完全不取词；工具栏「词典」仍可用 |
+
+### 3.6 第二阶段（翻译与词典）/ S6
+
+| 项 | 内容 |
+| --- | --- |
+| 设置项 | `SettingsManager.aiBaseUrl`（`stringPreferencesKey("ai_base_url")`，默认 `https://api.openai.com/v1/`，存取两端 `normalizeAiBaseUrl`：没写协议补 `https://`、再补尾部 `/`）；`aiModel`（默认 `gpt-4o-mini`，空值回落默认）；`aiTargetLanguage`（`AiTargetLanguage`，默认 `FOLLOW_UI`）；`aiGrammarEnabled`（默认 `true`） |
+| 目标语言 | `data/ai/AiTargetLanguage`：跟随界面 + zh-CN / zh-TW / en / ja / ko；设置里存枚举名，提示词用 `promptName(uiLocale)`，`FOLLOW_UI` 每次请求按 `SettingsManager.language` 解析（zh-TW/HK/MO → 繁体，其余 zh → 简体，未知语言用英文语言名 + BCP-47 标签）。**自定义语言未做**（见偏差 1） |
+| Key 加密 | `data/ai/AiKeyCipher` 接口 + `TinkAiKeyCipher`（`AndroidKeysetManager` + `AeadKeyTemplates.AES256_GCM`，主密钥在 Android Keystore，keyset 在应用私有 SharedPreferences）；`AiKeyStore` 把 base64 密文存 `stringPreferencesKey("ai_api_key_enc")`。`get/set/clear` 均为 suspend，加解密在 `Dispatchers.IO`；解密失败清空存量并返回 null，日志只有固定文案、不含 Key/密文/正文。`clear()` 写空串（`DataStore` 接口没有 remove）；`set/clear` 共用一把 `Mutex`（晚到的 `set` 不能盖掉 `clear`）。`AiKeyStore.get()` 与 `AiSettingsModel` 的保存/清除都捕 `Throwable`（`CancellationException` 原样抛）：R8 删掉 Tink 后抛的是 `NoClassDefFoundError`/`ExceptionInInitializerError`，只捕 `Exception` 会让设置页直接崩 |
+| 客户端 | `data/ai/AiTranslationRepository`：`OpenAI(OpenAIConfig(token, host = OpenAIHost(baseUrl), timeout, headers = X-Title, logging = None, retry = maxRetries 0, engine))`；`testConnection()` 调 `/models`；`translate()` 用 `chatCompletions()` 收集流式 delta，长文本按句末标点切块（≤3000 字符，拼回去等于原文）后顺序请求；`analyzeGrammar()` 非流式 + `ChatResponseFormat.JsonObject`，返回原始 JSON 字符串给 S8。Ktor engine 可注入（MockEngine 测试），**生产显式传 `OkHttp.create()`**（`AppModule`），不依赖 Ktor 的 ServiceLoader。**本机地址免 Key**：Base URL 的 host 是 `localhost`/`127.0.0.1`/`10.0.2.2` 时允许不配 Key（空串 token，请求上带一个空的 `Authorization: Bearer`，本机服务不校验），公网地址无 Key 仍在建连前抛 `NO_KEY`。流式请求用 per-request `RequestOptions(Timeout(request = INFINITE))` 覆盖整次调用 60s 上限，卡死由 socket 超时兜住 |
+| 生命周期 | 客户端按请求创建、`finally` 关闭（翻译的多块共用一个）。不跨请求缓存客户端，Key/Base URL 改完下一次请求必然用新配置；没有「旧客户端还挂着旧 Key」的窗口 |
+| 错误 | `AiError`（NO_KEY / INVALID_KEY / RATE_LIMIT / NOT_FOUND / TIMEOUT / NETWORK / SERVER / CANCELLED / UNKNOWN）+ `AiException(error, statusCode)`；401/403 → INVALID_KEY、404 → NOT_FOUND、429 → RATE_LIMIT、5xx → SERVER（状态码从 `OpenAIServerException` 的 cause 里捞，UI 能显示「(HTTP 503)」）、`OpenAITimeoutException` → TIMEOUT、IO/HTTP → NETWORK。异常消息只含错误名与状态码，不含响应体/Key；`CancellationException` 原样传播，不映射成 CANCELLED |
+| 设置页 | `presentation/settings/AiSettingsScreen` + `presentation/settings/AiSettingsModel` + `ui/settings/reader/ai/{AiSettingsContent,AiSettingsLayout,AiSettingsScaffold,AiSettingsTopBar}`：Base URL（失焦提交，提交后输入框回填真正生效的值——空值会变回默认值，不会显示 `""` 却用着默认地址）、模型（失焦提交 + 常用预设 chip，同样回填）、API Key（密码框 + 显示/隐藏 + 显式保存/清除，**不**用 `rememberSaveable`，明文不进 saved instance state；**保存成功后才清空输入框**，失败保留已输入内容；本机 Base URL 允许空 Key 并给出说明）、目标语言 chip、语法开关、「测试连接」按钮（loading/成功/失败）、隐私与费用说明（只说「AI 请求会把正文发给配置的服务」，不许诺 S8 的语法自动请求）。`TranslatorSubcategory` 新增「AI 翻译设置」行，词典管理行保留 |
+| 文案/DI | 新文案进 `values/strings.xml` 与 `values-zh-rCN/strings.xml`；`AppModule` 提供 `AiKeyCipher`（Tink）与 `AiTranslationRepository`（`@Singleton`，配置用 lambda 现取 `SettingsManager.lastValue`） |
+| 状态 | ✅ `:app:testDebugUnitTest` **305 个用例全绿**（47 个文件，新增 48 个）；`:dict-engine:test` 101 个全绿（未改动）；`:app:assembleDebug` 通过；`:app:assembleRelease-debug` 通过（本机 2g Gradle 堆在 R8/lint 阶段 GC thrash，改用 `-Xmx4096m` 后通过，见偏差 6） |
+
+S6 的测试（全部纯 JVM，无 Android 上下文、无真实网络）：
+
+| 测试 | 钉住什么 |
+| --- | --- |
+| `AiKeyStoreTest`（6） | set 后 DataStore 里是密文、get 解密回原值、缺失返回 null、空白 set 等同 clear、clear 清空、密文损坏时返回 null 且清掉存量、类加载 `Error`（Tink 被 R8 删光）退化成「没有 Key」而不是崩 |
+| `AiClientConfigTest`（5） | 空/空白 Base URL 回落默认、trim + 补尾部 `/`、已有 `/` 不重复、没写协议补 `https://`、本机 host（`localhost`/`127.0.0.1`/`10.0.2.2`，含大小写与带端口）被识别且 `localhost.example.com`/局域网 IP 不算本机 |
+| `AiTargetLanguageTest`（5） | 枚举名 round-trip、未知/null 回落 FOLLOW_UI、固定语言提示词名、FOLLOW_UI 按 zh-CN/zh-TW/zh-HK/ja/ko/fr 解析、语言名为空时回落 `English (en)` |
+| `AiPromptsTest`（7） | 短文本单块、长文本每块 ≤3000 且拼回原文、英文句号切块、CJK 句号切块、无空白硬切、翻译提示词含目标语言/只输出译文/保留段落、语法提示词含完整 JSON schema |
+| `AiErrorMappingTest`（9） | 401/403/429/404/400/5xx/超时/网络/未知异常映射；5xx 从 cause 里取回 HTTP 状态码（真实 Ktor `ServerResponseException` 构造）；已有 `AiException` 透传；`CancellationException` 不被映射；异常消息不含原始 body |
+| `AiTranslationRepositoryTest`（15） | MockEngine 下 URL/host/Bearer/X-Title 断言、SSE delta 拼接、长文本多请求顺序输出、`/models` 测试连接成功、401→INVALID_KEY、404→NOT_FOUND、500→SERVER+500、`SocketTimeoutException`→TIMEOUT、429→RATE_LIMIT、**本机地址无 Key 可直连且不带凭据**、公网地址无 Key 时 testConnection/translate 均 NO_KEY 且不碰网络、语法 JSON 请求 + 原始 JSON 返回、取消传播且不发出半截文本、空文本一次请求都不发（计 MockEngine 调用次数）、**流式不受整次调用 request 超时影响**（同配置下 `/models` 会 TIMEOUT、SSE 正常读完） |
+| `AiOkHttpEngineTest`（1） | 生产引擎（`OkHttp.create()`）+ loopback 最小 HTTP 服务：同一个仓库实例先 `testConnection()`（`/models`）再 `translate()`（流式 `/chat/completions`），两次顺序请求共用一个注入引擎——证明生产不靠 ServiceLoader 发现引擎，且关闭每次请求的 `OpenAI` 不会关掉共享引擎（第二次请求失败即为回归）；无 Key，服务端 trim 后只看到空的 `Bearer` |
+| `TinkAiKeyCipherTest`（androidTest，**未执行**） | 真实 Android Keystore：两次加密 nonce 不同、往返解密、跨实例 keyset 复用、坏密文抛异常 |
+
+与设计稿的偏差（实施时的结论，已同步进 `docs/phase-2-design.md` §6）：
+
+1. **自定义目标语言未做**：枚举无法同时表达「预设」与「自由文本」；设计里是可选项，留到有需求时再评估。
+2. **测试连接只用 `/models`**：这是最便宜的鉴权/地址探测，但部分 OpenAI 兼容服务（尤其只实现 chat 的本地服务）可能没有该端点，会显示 NOT_FOUND/UNKNOWN。没有做「失败后改发最小 chat 请求」的回退——那会产生真实费用，先不静默做。
+3. **客户端不缓存**：每次请求新建 `OpenAI` 并在 `finally` 关闭。比「缓存客户端 + 配置变化时关闭」多一次 Ktor 客户端构造，但不存在关闭正在流式的旧客户端的问题，也天然满足「不跨 Key/Base URL 复用」。
+4. **`AiError.CANCELLED` 只用于 UI 兜底**：仓库对 `CancellationException` 直接重抛，不把它变成一条错误状态；否则关闭对话框会被画成「未知错误」。
+5. **AI 单词解释仍未接**：取词卡片的按钮仍是禁用态，文案从 `(S6)` 改成 `(S8)`；S6 只做配置/客户端/设置页。
+6. **本机 2g Gradle 堆在 `assembleRelease-debug` 的 R8/lint 阶段 GC thrash**：`./gradlew ... -Dorg.gradle.jvmargs='-Xmx4096m ...'` 后通过；这是本机内存/守护进程问题，不是代码或 R8 规则失败。
+7. **明文 HTTP 策略保持 S1 的决定**：只放行 `localhost` / `127.0.0.1` / `10.0.2.2`；IPv6 回环与局域网 HTTP 不放行，局域网用户需自行反向代理/HTTPS。`network_security_config.xml` 注释已更新。
+8. **本机地址免 Key 用的是空 Bearer**：openai-kotlin 4.1.0 无条件安装 Bearer 鉴权，没有「跳过鉴权」的开关，所以本机地址不配 Key 时请求仍带一个空的 `Authorization: Bearer`（服务端看到的可能是 `Bearer` 或 `Bearer `）。本机服务不校验它；公网地址在 `resolve()` 里就被 `NO_KEY` 拦下。loopback 测试在服务端 trim 后断言，钉住的性质是「没有真凭据」，不依赖引擎对尾部空格的处理。
+9. **流式请求没有整次调用超时**：`chatCompletions` 用 per-request `RequestOptions(Timeout(request = INFINITE))`，只保留 60s socket 超时；否则长 SSE 会在第 60 秒被误判成 TIMEOUT。`/models` 与语法请求仍保留 60s 整次上限。
+
+S6 的手工/真机矩阵**未执行**，不得当作已验证：
+
+| # | 场景 | 期望 |
+| --- | --- | --- |
+| 1 | 设置页填 Base URL/模型/目标语言，杀进程重开 | 值保留；Base URL 自动补 `/` |
+| 2 | 保存 Key → 杀进程重开 | 显示「已保存 Key」，不显示明文；再输入新 Key 可覆盖 |
+| 2b | Base URL 刚输入完还没失焦，直接点「保存 Key」 | 点击先提交 Base URL（输入框回填规范化值）再保存 Key；之后的「测试连接」用的是这个地址 |
+| 3 | 清除 Key / 手改 DataStore 密文 | 显示未配置/解密失败后清空，不崩溃、不把密文发出去 |
+| 4 | 测试连接（真实 OpenAI/DeepSeek；本机 Ollama 不填 Key） | 成功显示「连接成功」；错误只显示类别 + HTTP 状态码；Ollama 这类本机服务留空 Key 也能连 |
+| 5 | 401 / 429 / 断网 / 错误 Base URL | 分别显示 INVALID_KEY / RATE_LIMIT / NETWORK / NOT_FOUND，不泄露响应体 |
+| 6 | 长段落（>3000 字符）翻译 | 顺序流式输出，段落不丢不重 |
+| 7 | 翻译中途关闭/取消 | 请求取消，不追加错误文本 |
+| 8 | 跟随界面语言 + zh-TW 界面 | 提示词目标语言为繁体中文 |
+| 9 | minified `release-debug` 上保存/读取 Key | Tink/Keystore 路径正常（S1 遗留的 R8 回查项） |
+| 9b | minified `release-debug` 上真发一次对话/流式（引擎已显式 OkHttp，仍需实测） | 有响应、流式不中断（若这里失败，第一嫌疑是 R8 规则而非 ServiceLoader） |
+| 10 | Base URL 指向 `http://127.0.0.1:11434/v1/`，**不填 Key** | 允许明文、允许空 Key（设置页说明「可以留空」），测试连接/翻译能通；换成局域网 IP 则被网络安全配置拒绝；公网地址不填 Key 显示「尚未保存 API Key」 |
 
 ---
 

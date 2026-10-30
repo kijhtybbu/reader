@@ -2,7 +2,9 @@
 <!-- fork: phase 2 只放行本机/模拟器回环地址的明文 HTTP（Ollama 等本地 OpenAI 兼容服务），
      其余流量仍然强制 HTTPS。不要为了图省事改成 cleartextTrafficPermitted="true"，
      API Key 与正文都会走这条通道。
-     IPv6 回环 ::1 与局域网 HTTP 本期故意不放行，本机/局域网明文策略留给 S6 决定。 -->
+     IPv6 回环 ::1 与局域网 HTTP 本期故意不放行。
+     S6 决定保持这一策略：AI 的 Base URL 可以指向 localhost/127.0.0.1/10.0.2.2 上的
+     本地 OpenAI 兼容服务，但局域网明文 HTTP 仍需用户自己解决（反向代理/HTTPS）。 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
