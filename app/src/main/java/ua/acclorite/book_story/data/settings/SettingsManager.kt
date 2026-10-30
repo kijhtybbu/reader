@@ -181,8 +181,11 @@ class SettingsManager @Inject constructor(
     val verticalPadding = setting<Int, Int>(
         key = intPreferencesKey("vertical_padding"), default = 0
     )
+    // fork: 双击段落翻译（设计 §0/§8）。S5 时双击只是拉起外部翻译 Intent，默认关闭；
+    // S8 起它是应用内对话框（缓存优先），按设计改成**默认开启**，开关保留：
+    // 开启时单击翻页/呼菜单要等约 300ms 的双击判定，设置项说明里写明了这个取舍。
     val doubleClickTranslation = setting<Boolean, Boolean>(
-        key = booleanPreferencesKey("double_click_translation"), default = false
+        key = booleanPreferencesKey("double_click_translation"), default = true
     )
     // fork: 取词时的**优先**词典（不是唯一词典）。内置 ECDICT 的 id 固定为 "builtin"（见
     // DictionaryCatalog）；DictionaryRepository 先查这部、再查其余已启用的词典，所以它只影响

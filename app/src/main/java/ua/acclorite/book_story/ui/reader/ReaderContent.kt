@@ -51,6 +51,7 @@ import ua.acclorite.book_story.domain.model.bookmark.bookmarkForNode
 import ua.acclorite.book_story.presentation.reader.BookmarkViewModel
 import ua.acclorite.book_story.presentation.reader.DictionaryLookupModel
 import ua.acclorite.book_story.presentation.reader.LookupState
+import ua.acclorite.book_story.presentation.reader.TranslationModel
 import ua.acclorite.book_story.presentation.reader.anchor
 import ua.acclorite.book_story.presentation.reader.model.ReaderLookupGesture
 import ua.acclorite.book_story.presentation.settings.DictionaryManagerScreen
@@ -187,6 +188,16 @@ fun ReaderContent(
             onDismiss = { lookupModel.dismiss() }
         )
     }
+    // fork: 翻译对话框（S8）。双击段落与选区工具栏「翻译」共用这一个模型：
+    // 缓存优先、同一 cacheKey 去重、关闭取消都在模型里。
+    val translationModel: TranslationModel = hiltViewModel()
+    val translationState by translationModel.state.collectAsStateWithLifecycle()
+    val translation = remember(translationModel, book.id) {
+        ReaderTranslationActions { text, nodeId ->
+            translationModel.open(text = text, bookId = book.id, nodeId = nodeId)
+        }
+    }
+
     // 切菜单/跳转都要先关卡片：它是贴在某一段文字上的，位置一变就贴错了。
     val menuVisibilityDismissingLookup = remember(menuVisibility, lookupModel) {
         { event: ReaderEvent.OnMenuVisibility ->
@@ -322,6 +333,7 @@ fun ReaderContent(
                     horizontalAlignment = horizontalAlignment,
                     doubleClickTranslation = doubleClickTranslation,
                     lookup = lookup,
+                    translation = translation,
                     switchColorPreset = switchColorPreset,
                     menuVisibility = menuVisibilityDismissingLookup,
                     leave = leave,
@@ -329,7 +341,6 @@ fun ReaderContent(
                     scroll = scrollDismissingLookup,
                     openShareApp = openShareApp,
                     openWebBrowser = openWebBrowser,
-                    openTranslator = openTranslator,
                     openDictionary = openDictionary,
                     showSettingsBottomSheet = showSettingsBottomSheet,
                     showChaptersDrawer = showChaptersDrawer,
@@ -368,6 +379,20 @@ fun ReaderContent(
                 onExternalLookup = { word ->
                     lookupModel.dismiss()
                     openDictionary(ReaderEvent.OnOpenDictionary(word))
+                }
+            )
+        }
+
+        if (translationState.visible) {
+            ReaderTranslationDialog(
+                state = translationState,
+                onSelectTab = translationModel::selectTab,
+                onRegenerate = translationModel::regenerate,
+                onDismiss = translationModel::dismiss,
+                onShare = { text -> openShareApp(ReaderEvent.OnOpenShareApp(text)) },
+                // S8 之前双击段落走的就是这个外部 Intent；现在它只是错误态的退路。
+                onExternalTranslate = { text ->
+                    openTranslator(ReaderEvent.OnOpenTranslator(text, false))
                 }
             )
         }

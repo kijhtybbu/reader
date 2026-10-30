@@ -241,7 +241,7 @@
     <string name="side_padding_option">Side margins</string>
     <string name="vertical_padding_option">Vertical margins</string>
     <string name="double_click_translation_option">Double click translation</string>
-    <string name="double_click_translation_option_desc">Double click on paragraph to translate it</string>
+    <string name="double_click_translation_option_desc">Double click a paragraph to translate the whole paragraph in the app. While this is on, a single tap waits about 300 ms so it can tell a double click apart; turn it off for instant single taps.</string>
     <string name="fast_color_preset_change_option">Fast color preset change</string>
     <string name="fast_color_preset_change_option_desc">Swipe top bar left or right to change color preset</string>
     <string name="text_alignment_option">Text alignment</string>
@@ -613,7 +613,7 @@
     <string name="lookup_popup_not_found">No entry in the installed dictionaries.</string>
     <string name="lookup_popup_error">The lookup failed.</string>
     <string name="lookup_popup_import_dictionary">Import dictionary</string>
-    <string name="lookup_popup_ai_explain">Explain with AI (S8)</string>
+    <string name="lookup_popup_ai_explain">Explain with AI (S9)</string>
     <string name="lookup_popup_external">Look up in another app</string>
     <string name="lookup_popup_source">From %1$s</string>
 
@@ -661,4 +661,23 @@
     <string name="ai_error_cancelled">Request cancelled.</string>
     <string name="ai_error_unknown">Unknown error.</string>
     <string name="ai_error_with_status">%1$s (HTTP %2$d)</string>
+
+    <!-- fork: phase 2 / S8 translation dialog -->
+    <string name="translation_dialog_title">Translation</string>
+    <string name="translation_dialog_close">Close</string>
+    <string name="translation_dialog_tab_translation">Translation</string>
+    <string name="translation_dialog_tab_grammar">Grammar</string>
+    <string name="translation_dialog_translating">Translating…</string>
+    <string name="translation_dialog_analyzing">Analyzing grammar…</string>
+    <string name="translation_dialog_from_cache">Cached result</string>
+    <string name="translation_dialog_show_original">Show original text</string>
+    <string name="translation_dialog_hide_original">Hide original text</string>
+    <string name="translation_dialog_regenerate">Regenerate</string>
+    <string name="translation_dialog_external">Translate in another app</string>
+    <string name="translation_dialog_meta">Model %1$s · %2$s</string>
+    <string name="translation_dialog_summary">Summary</string>
+    <string name="translation_dialog_sentences">Sentences</string>
+    <string name="translation_dialog_vocabulary">Vocabulary</string>
+    <string name="translation_dialog_raw_note">The model did not return valid JSON. Showing the raw response.</string>
+    <string name="translation_dialog_empty_analysis">The model did not return any grammar details.</string>
 </resources>

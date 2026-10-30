@@ -2,7 +2,7 @@
 
 > 快照时间：2026-10-29
 > 基线：`upstream/master` = `464891e`（Acclorite/book-story，GPL-3.0-only）
-> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.7）
+> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.8）
 
 ---
 
@@ -414,6 +414,86 @@ S8 必须这样调用（设计 §7.4 已写）：
 - **真机**：所有仪器测试跑在模拟器 `reader34`（API 34）上，没有在真机（Lenovo TB322FC / API 36）上跑过。
 - minified `release-debug` 上的 Room 迁移：只验证了构建能过，没有装到设备上跑 20→21。
 - 顺带：`TinkAiKeyCipherTest`（S6 记录为「仪器测试已写但未执行」）这次随整套 connected 测试在模拟器上跑过并通过（3 例）；真机仍未验证，§3.6 的结论不变。
+
+### 3.8 第二阶段（翻译与词典）/ S8
+
+| 项 | 内容 |
+| --- | --- |
+| 状态机 | `presentation/reader/TranslationModel`（`@HiltViewModel`）+ `model/TranslationState`（`TranslationTab`、`AsyncText`、`AsyncGrammar`、`TranslationState`）：`open(text, bookId, nodeId)` 固定一份 `Session`（配置快照 + translation/grammar 两个 cacheKey + 正文 + 节点），缓存优先、`Map<cacheKey, Job>` 去重、`dismiss()` 取消并递增 `requestId`、`regenerate(tab)` 只重置该标签 |
+| 配置快照 | `data/ai/AiRequestConfig` + `AiRequestConfigProvider`（`@Singleton`，现取 `SettingsManager` 的 `aiModel/aiBaseUrl/aiTargetLanguage/aiGrammarEnabled/language`）：缓存键用 `open` 那一刻的快照（model/baseUrl/目标语言名，FOLLOW_UI 已按界面语言解析）；**只有目标语言同时进了请求**，model/baseUrl 由 `AiTranslationRepository` 在请求开始时现取设置（见偏差 1） |
+| 双击整段 | `ui/reader/ReaderTranslationActions` + `ReaderNode.Paragraph.wholeParagraphText()`（取 `NodeContent.Paragraph.text`，不是分页切片）；分页与连续布局都传整段 + 节点 id；选区工具栏「翻译」传选中文字 + `nodeId = null` |
+| 对话框 | `ui/reader/ReaderTranslationDialog`：Compose `Dialog`（`usePlatformDefaultWidth = false`）+ 居中 `Surface`，最大宽 600dp、高 80%，配色只用 `LocalReaderPalette`；标签「翻译 / 语法分析」（跟随 `ai_grammar_enabled`）；翻译标签流式输出、原文可折叠、复制/分享、模型/目标语言、缓存标记、重新生成；语法标签切到即分析（无「开始分析」按钮），结构化展示 summary/sentences/vocabulary，JSON 不合法时展示原始文本、JSON 合法但没有字段时只提示结果为空；翻译标签错误态给「重试」与「用其他应用翻译」，语法标签错误态只有「重试」 |
+| 语法解析 | `presentation/reader/model/GrammarAnalysis`（纯 JVM）：取第一个 `{` 到最后一个 `}`（围栏/前后说明文字自动跳过），字段全部可空、多字段忽略、`points` 支持数组或字符串、空条目跳过；解析失败返回 null |
+| 默认值 | `SettingsManager.doubleClickTranslation` 默认 `false` → **`true`**（设计 §0/§8 的既定决策；S5 时期双击只是外部 Intent 才保持关闭），设置项说明写明「单击会等约 300ms」 |
+| 状态 | ✅ `:app:testDebugUnitTest` **349 个用例全绿**（51 个测试类；新增 34 个用例 / 3 个测试类，另有 1 个测试辅助 `FakeTranslationCache`）；`:dict-engine:test` 101 个全绿（未改动）；`:app:compileDebugAndroidTestKotlin` 通过（未新增仪器测试）；`:app:assembleDebug` 通过；`:app:assembleRelease-debug` 通过（`minifyRelease-debugWithR8 --rerun-tasks` 也在默认堆下跑过，本机这次不需要 S6 的 `-Xmx4096m`） |
+
+S8 的测试（全部纯 JVM，无 Android 上下文、无真实网络；AI 用 MockK，缓存用内存 fake）：
+
+| 测试 | 钉住什么 |
+| --- | --- |
+| `TranslationModelTest`（21） | 缓存命中 → 译文立即展示且 **0 次** `translate`/`analyzeGrammar`、不写库；未命中 → 流式拼接并 `put` 完整结果（键/kind/bookId/nodeId/payload/model/baseUrl/目标语言/promptVersion 全对）；同一段第二次打开 → 命中缓存（只请求 1 次）；语法缓存命中 → 切标签 0 请求；语法未命中 → 切标签立即请求并解析；重复点标签/来回切 → 在途请求只发 1 次；`dismiss()` → 取消且**不写半截**、状态复位；**不响应取消的上游在 `dismiss()` 之后继续发一块 → 状态仍是 `Idle`、不写库**（真的走到 `publish` 的 `isActive`/`requestId` 校验）；重新生成 → 同一 cacheKey 写两次、只重置该标签，**被取消的旧请求在重新生成之后才结束也盖不掉新结果**（落库前复查）；空译文 → `Error(UNKNOWN)` 且不写库；`AiException(429)` → `Error(RATE_LIMIT, 429)`；语法失败 → `Error(NO_KEY)` 且「重试」重新请求成功；写缓存失败/读缓存失败都不影响展示；整段正文原样送进 `translate`（含换行，不是切片）；`nodeId = null` 落库 `-1`；空白文本不打开对话框；设置里关掉语法时标签不可用且不发请求；语法解析默认在 `Dispatchers.Default` 上 |
+| `TranslationModelCacheKeyTest`（4） | 模型读的键**等于** `translationCacheKey(text, kind, promptName, model, baseUrl)`（两个 kind 各一次，顺序也钉住）；同配置同文本第二次打开命中（0 额外请求）；换模型 / 换目标语言 → 换键 → 必 miss 并重新写一条 |
+| `GrammarAnalysisTest`（9） | 完整字段解析；``` 围栏 + 前后说明文字；缺字段为 null/空列表；多字段忽略；`points` 是字符串；空句子/非对象条目跳过；空对象 `isEmpty`；非 JSON/截断/顶层数组/空串 → null（UI 退化成原始文本）；数字/布尔字段不崩 |
+
+**缓存行为（JVM 已验证的部分）**：
+
+- 命中：`open` 只 `get`，不 `put`、不请求；第二次 `open` 同一段文字（甚至不同 bookId/nodeId）命中 —— 键不含书/节点。
+- 未命中：流式过程中**不**写库；只有流结束后写一次 `complete = true` 的行；写失败只记日志。
+- 语法：`open` 时只预取缓存，不请求；切标签时先等预取落定，再决定是否需要请求。
+- 重新生成：重新请求后 `put` 覆盖同一键（`REPLACE`），没有先删。
+- 错误/取消：不写库；状态里只有 `AiError` + HTTP 状态码，不含响应体/Key。
+
+**未验证（不要当成已验证）**：
+
+- 对话框的 UI 行为一条都没在设备上走过（见下方手工矩阵）；S8 **没有**新增 `androidTest`。
+- **缓存跨进程重建**（杀进程后再次双击命中）：仍然只有 JVM 的内存 fake，没有「写文件库 → 关库 → 重开」的仪器测试。S7 的这条欠账顺延到 S9。
+- minified `release-debug` 上的真实流式/语法请求、Tink 解密 Key、Room 缓存读写：只验证了构建与 R8 能过。
+- 真机上的双击判定延迟（默认开启后单击翻页会等约 300ms）是否可接受：只有设计上的取舍，没有手感数据。
+
+与设计稿的偏差 / 实施时的结论（已同步进 `docs/phase-2-design.md` §8.1）：
+
+1. **配置快照只保证目标语言**：`AiRequestConfigProvider` 在 `open` 时取一次配置，缓存键用这份快照；但请求里只有目标语言是按快照传的，model/baseUrl 由 `AiTranslationRepository` 在请求开始时现取设置。所以「键与请求同一份配置」只对目标语言成立，model/baseUrl 只在设置没变时一致（对话框挡住设置页，app 内碰不到这条缝隙；S9 若要让键与请求严格同源，得把 model/baseUrl 也传进 `translate/analyzeGrammar`）。
+2. **空译文按失败处理**（`AiError.UNKNOWN`，不写缓存）：否则空串会被缓存成一张白纸，下次命中反而看不到任何东西。语法侧仓库本来就把空 content 当失败。
+3. **语法解析不用严格反序列化**：`JsonElement` 手写宽容解析，`points` 允许字符串；解析失败不抛异常，返回 null 让 UI 展示原始 JSON。解析本身跑在 `Dispatchers.Default` 上（`TranslationModel.grammarResult`），不在主线程解 JSON。
+4. **`nodeId = null` 落库 `-1`**：`translationcacheentity.nodeId` 非空，而选区翻译没有段落；`-1` 只是元数据，不参与缓存键。
+5. **取词卡片的「AI 解释」按钮文案从 `(S8)` 改为 `(S9)`**：S8 只做段落翻译与语法分析，单词 AI 解释（设计 §1.1 第 4 条里的「AI 单词解释」）没有做。
+6. **`doubleClickTranslation` 默认改为 `true`**：设计 §0/§8 的既定决策；S5 时期双击是外部 Intent，默认关闭是那时的取舍。设置项说明同步写明单击延迟。
+7. **错误文案复用 S6 资源**（`ai_error_*` + `ai_error_with_status`），对话框没有新增一套错误字符串。
+8. **关闭对话框不主动 `trim()` 缓存**：容量清理仍由设置页触发（S7 结论不变）。
+9. **语法标签的错误态没有「用其他应用翻译」**：外部 Intent 只能翻译原文，给不了语法分析，摆在那里会承诺一个做不到的动作；语法错误只给「重试」。
+10. **语法 JSON 合法但字段全空**（例如 `{}`）：不再回显 `{}`，改提示 `translation_dialog_empty_analysis`；只有 JSON 不合法才退化成展示原始回复。
+
+**S8 Round-1 review 修复（本次，未提交）**：
+- 两个新用例钉住取消之后的行为：不响应取消的上游在 `dismiss()` 后继续发一块 → 状态仍 `Idle`、不写库；被取消的旧请求在「重新生成」之后才结束 → 盖不掉新译文。
+- `putCache` 落库前复查「还是不是当前这次 open + 协程没被取消」：仓库内部 `NonCancellable` 写库，晚到的旧结果原本可能覆盖重新生成的新结果。`flow {}` 在取消时会被 `SafeCollector` 自己截停，所以这条防线在真实上游下够不到，用例用一个自定义 `Flow` 模拟不守规矩的第三方实现。
+- 空译文用例（`flowOf("")` → `Error(UNKNOWN)`、不写库）。
+- 语法 JSON 解析移到 `Dispatchers.Default`（`parseDispatcher` 可注入，单测换成测试调度器）。
+- 文档收窄三处过度声明（键与请求「绝不会各用一份配置」→ 只有目标语言保证；选区工具栏「翻译」已覆盖跨行选区，单行的只剩 S5 的选后自动取词）。
+- 语法空结果文案 + 去掉语法错误态的外部翻译回退。
+- 复跑门禁：`:app:testDebugUnitTest` 349 绿、`:dict-engine:test` 101 绿、`:app:assembleDebug` 与 `:app:assembleRelease-debug` 均通过。
+
+**顺延到 S9（Round-1 review 提出，本轮未做）**：
+- 删掉 `ReaderEffect.OnOpenTranslator.translateWholeParagraph`（现在恒为 `false`，`ReaderEffects` 里的 `createChooser` 分支已死，留着会让这个 flag 暗示一个不存在的行为）。
+- 若要让缓存键与请求严格同源：把 model/baseUrl 也作为参数传进 `AiTranslationRepository.translate/analyzeGrammar`，而不是让它现取设置。
+- 缓存跨进程重建的仪器测试（S7 欠账）、S8 手工矩阵（见下）。
+
+**S8 手工矩阵未执行**（没有 Compose UI 测试依赖，按项目约定不加），不得当作已验证：
+
+| # | 场景 | 期望 |
+| --- | --- | --- |
+| 1 | 分页 + 双击段落正文 | 居中对话框，翻译标签自动流式输出整段译文（不是本页切片） |
+| 2 | 连续 + 双击段落正文 | 同上；双击行尾空白/左右留白仍无响应（S5 偏差 2） |
+| 3 | 双击后立刻切到「语法分析」 | 无「开始分析」按钮，直接出 loading → 结构化分节（总览/句子/词汇） |
+| 4 | 关掉对话框再次双击同一段 | 译文立刻出现并显示「来自缓存」；再点语法标签也立刻出现缓存结果 |
+| 5 | 杀进程后重新打开同一本书、双击同一段 | 仍然命中（Room 持久化 + 键只含正文/模型/语言/host） |
+| 6 | 流式过程中按返回/点外部/点关闭 | 请求取消，不追加错误文本，缓存里不留半截 |
+| 7 | 成功态点「重新生成」 | 重新请求并覆盖同一键；另一标签的结果保持不变 |
+| 8 | 401 / 429 / 断网 / 未配 Key | 只显示错误类别（+ HTTP 状态码），不泄露响应体；错误态可「重试」或「用其他应用翻译」 |
+| 9 | 语法返回带 ``` 围栏/多字段/缺字段的 JSON | 正常结构化展示；完全不是 JSON 时显示「原始回复」+ 原文 |
+| 10 | 夜间/纯黑预设、RTL、超大字号、横屏 | 对话框不闪白、不超出安全区；内容内部可滚动；文字可选中复制 |
+| 11 | 设置里关闭「语法分析」 | 对话框只有「翻译」一个标签，且不会请求语法 |
+| 12 | 设置里关闭「双击翻译」 | 双击不再打开对话框，单击立即翻页/呼菜单（无 300ms 等待） |
+| 13 | `release-debug` minified：双击翻译 → 语法 → 二次双击 | 有响应、流式不中断、二次命中（R8 下 openai/Room/序列化路径） |
 
 ---
 

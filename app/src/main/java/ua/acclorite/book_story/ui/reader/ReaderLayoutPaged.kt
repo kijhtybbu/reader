@@ -138,11 +138,12 @@ fun ReaderLayoutPaged(
     imagesColorEffects: ColorFilter?,
     doubleClickTranslation: Boolean,
     lookup: ReaderLookupActions,
+    // fork: 双击段落与选区「翻译」共用同一个 TranslationModel（S8）。
+    translation: ReaderTranslationActions,
     showMenu: Boolean,
     menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit,
     openShareApp: (ReaderEvent.OnOpenShareApp) -> Unit,
     openWebBrowser: (ReaderEvent.OnOpenWebBrowser) -> Unit,
-    openTranslator: (ReaderEvent.OnOpenTranslator) -> Unit,
     openDictionary: (ReaderEvent.OnOpenDictionary) -> Unit,
     updateProgress: (ReaderEvent.OnUpdateProgress) -> Unit,
     paginateForward: (ReaderEvent.OnPaginateForward) -> Unit,
@@ -195,7 +196,9 @@ fun ReaderLayoutPaged(
         },
         onShareRequested = { openShareApp(ReaderEvent.OnOpenShareApp(it)) },
         onWebSearchRequested = { openWebBrowser(ReaderEvent.OnOpenWebBrowser(it)) },
-        onTranslateRequested = { openTranslator(ReaderEvent.OnOpenTranslator(it, false)) },
+        // fork: 选区「翻译」走应用内对话框（S8），不再是外部翻译应用；
+        // 外部 Intent 只保留为对话框错误态的「用其他应用翻译」。
+        onTranslateRequested = { translation.onTranslate(it, null) },
         // fork: 工具栏「词典」改为查应用内词典（S4 之前是外部 Intent）。
         // 外部 Intent 退到卡片未找到时的「用其他应用查询」，不再是默认动作。
         // 多词选区只查第一个词：整串短语查不到，会把原本可用的「查词」变成「未找到」。
@@ -433,11 +436,17 @@ fun ReaderLayoutPaged(
                         .graphicsLayer { alpha = contentAlpha }
                         .then(
                             if (toolbarHidden) {
-                                Modifier.pointerInput(tapZones, showMenu, doubleClickTranslation, lookup) {
+                                Modifier.pointerInput(
+                                    tapZones,
+                                    showMenu,
+                                    doubleClickTranslation,
+                                    lookup,
+                                    translation
+                                ) {
                                     detectTapGestures(
                                         // 关键：onDoubleTap 非 null 时 detectTapGestures 会把单击
-                                        // 延后到双击超时（~300ms）再回调。默认关闭双击翻译，
-                                        // 所以这里必须传 null，否则每次翻页都慢一拍。
+                                        // 延后到双击超时（~300ms）再回调。设置里关掉双击翻译时
+                                        // 必须传 null，否则每次翻页都慢一拍。
                                         onDoubleTap = if (!doubleClickTranslation) null else { offset ->
                                             // fork: 双击翻译原来挂在段落自己的 combinedClickable 上，
                                             // 那是个「第二套点击检测器」，会把单击吞掉，导致正文上的
@@ -448,11 +457,11 @@ fun ReaderLayoutPaged(
                                                 )
                                                 val node = page?.let { readerNodeAtY(it, offset.y) }
                                                 if (node is ReaderNode.Paragraph) {
-                                                    openTranslator(
-                                                        ReaderEvent.OnOpenTranslator(
-                                                            textToTranslate = node.text.text,
-                                                            translateWholeParagraph = true
-                                                        )
+                                                    // fork: 整段正文 + 节点 id（不是分页切片），
+                                                    // 缓存优先、去重、取消都在 TranslationModel 里。
+                                                    translation.onTranslate(
+                                                        node.wholeParagraphText(),
+                                                        node.node.id.id
                                                     )
                                                 }
                                             }

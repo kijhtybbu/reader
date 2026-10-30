@@ -118,11 +118,12 @@ fun ReaderLayoutContinuous(
     horizontalAlignment: Alignment.Horizontal,
     doubleClickTranslation: Boolean,
     lookup: ReaderLookupActions,
+    // fork: 双击段落与选区「翻译」共用同一个 TranslationModel（S8）。
+    translation: ReaderTranslationActions,
     showMenu: Boolean,
     menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit,
     openShareApp: (ReaderEvent.OnOpenShareApp) -> Unit,
     openWebBrowser: (ReaderEvent.OnOpenWebBrowser) -> Unit,
-    openTranslator: (ReaderEvent.OnOpenTranslator) -> Unit,
     openDictionary: (ReaderEvent.OnOpenDictionary) -> Unit,
     updateProgress: (ReaderEvent.OnUpdateProgress) -> Unit,
     paginateForward: (ReaderEvent.OnPaginateForward) -> Unit,
@@ -320,13 +321,10 @@ fun ReaderLayoutContinuous(
                 )
             )
         },
+        // fork: 选区「翻译」走应用内对话框（S8），不再是外部翻译应用；
+        // 外部 Intent 只保留为对话框错误态的「用其他应用翻译」。
         onTranslateRequested = { textToTranslate ->
-            openTranslator(
-                ReaderEvent.OnOpenTranslator(
-                    textToTranslate = textToTranslate,
-                    translateWholeParagraph = false
-                )
-            )
+            translation.onTranslate(textToTranslate, null)
         },
         // fork: 工具栏「词典」改为查应用内词典（S4 之前是外部 Intent）。
         // 外部 Intent 退到卡片未找到时的「用其他应用查询」，不再是默认动作。
@@ -351,10 +349,10 @@ fun ReaderLayoutContinuous(
                         // 段落不再各挂一个检测器：多一套就会吞掉单击，取词与翻页/菜单只能二选一。
                         Modifier
                             .onGloballyPositioned { contentCoordinates = it }
-                            .pointerInput(lookup, showMenu, doubleClickTranslation) {
+                            .pointerInput(lookup, showMenu, doubleClickTranslation, translation) {
                                 detectTapGestures(
-                                    // 非 null 时单击会等双击超时（~300ms），默认关闭双击翻译，
-                                    // 所以必须传 null，否则每次切菜单都慢一拍。
+                                    // 非 null 时单击会等双击超时（~300ms）；设置里关掉双击翻译时
+                                    // 必须传 null，否则每次切菜单都慢一拍。
                                     onDoubleTap = if (!doubleClickTranslation) null else { offset ->
                                         val window = contentCoordinates
                                             ?.takeIf { it.isAttached }
@@ -367,11 +365,10 @@ fun ReaderLayoutContinuous(
                                                 as? ReaderNode.Paragraph
                                         }
                                         if (paragraph != null) {
-                                            openTranslator(
-                                                ReaderEvent.OnOpenTranslator(
-                                                    textToTranslate = paragraph.text.text,
-                                                    translateWholeParagraph = true
-                                                )
+                                            // fork: 整段正文 + 节点 id（不是分页切片）。
+                                            translation.onTranslate(
+                                                paragraph.wholeParagraphText(),
+                                                paragraph.node.id.id
                                             )
                                         }
                                     },

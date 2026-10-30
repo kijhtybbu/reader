@@ -331,7 +331,49 @@ cacheKey = SHA-256(
   的双击判定，设置页说明取舍，可关闭恢复即时单击。
 - 语法标签：点击即请求；不再有“开始分析”按钮；错误态提供“重试”，成功后提供“重新分析”。
 - 关闭对话框取消请求；已完成结果保留；进程被杀后再次双击从 Room 读取。
-- 外部翻译 Intent 仅保留为对话框错误态的“用其他应用”回退。
+- 外部翻译 Intent 仅保留为**翻译标签**错误态的“用其他应用”回退：它只能把原文送去翻译，
+  给不了语法分析，所以语法标签的错误态只有「重试」。
+
+### 8.1 S8 实施结论（已落地）
+
+- 落点：`presentation/reader/TranslationModel`（`@HiltViewModel`）、
+  `presentation/reader/model/{TranslationState,GrammarAnalysis}`、
+  `ui/reader/{ReaderTranslationActions,ReaderTranslationDialog}`、
+  `data/ai/AiRequestConfig`（`AiRequestConfigProvider` 配置快照）。
+  对话框挂在 `ReaderContent`（`ReaderScreen` 的渲染层，与取词卡片同级，同在
+  `LocalReaderPalette` 提供范围内），通过 `ReaderScaffold` → 两种布局传递同一个
+  `ReaderTranslationActions`。
+- 一次 `open` 固定一份 `Session`（配置快照 + 两个 cacheKey + 正文 + bookId/nodeId）：
+  切标签、重新生成都用同一份，缓存键不会因为设置中途变化而与本次 open 的键错位。
+  快照里**只有目标语言**同时进了请求（`translate(text, targetLanguage)`）：model/baseUrl 由
+  `AiTranslationRepository` 在请求开始时现取设置，所以「键与请求同一份配置」只对目标语言成立，
+  model/baseUrl 只在设置没变时一致（对话框开着时改不了设置，app 内碰不到这条缝隙）。
+- 缓存优先：`open` 先读 translation 缓存（命中直接展示、零请求）；grammar 缓存并行**预取**
+  （只读不请求），切到语法标签时才请求。`Map<cacheKey, Job>` 去重，重复点标签不会发第二个请求。
+- 只写完整结果：流式结束后 `put`（仓库内部 `NonCancellable`）；写库失败只记日志，不藏结果；
+  空译文按失败处理（不写缓存）。落库前再复查一次「还是不是当前这次 open、跑它的协程有没有被
+  取消」，被取消的旧请求不能把结果写进缓存盖掉重新生成的新结果。
+  `dismiss()` 取消全部 Job 并递增 `requestId`，迟到响应被丢弃。
+- 双击取 `NodeContent.Paragraph.text`（`ReaderNode.Paragraph.wholeParagraphText()`），
+  两种布局都传节点 id；选区工具栏「翻译」把**整段选中文字**（可以跨多行）交给对话框、
+  `nodeId = null`（落库记 `-1`，`-1` 不参与缓存键）。仍然只认单行的是 **S5 的「选后自动取词」**：
+  选区稳定后自动查词只取单行内的一个词，跨行选区不会自动弹卡片（要翻译请用工具栏）。
+- `doubleClickTranslation` 默认值从 `false` 改为 **`true`**（§0/§8 的既定决策；S5 时期
+  双击只是拉起外部 Intent，才保持关闭），设置项说明里写明单击会等约 300ms。
+- 偏差：
+  1. 语法 JSON 用 kotlinx.serialization 的 `JsonElement` 手写宽容解析（围栏/前后说明文字/
+     多字段/缺字段/`points` 写成字符串都能处理），解析失败返回 null → UI 展示原始文本。
+     解析放在 `Dispatchers.Default` 上（不在主线程解 JSON）。
+  2. 语法/译文错误只带 `AiError` + HTTP 状态码，文案复用 S6 的 `ai_error_*` 资源。
+  3. 对话框文案与取词卡片的「AI 解释」按钮：后者仍禁用，文案从 `(S8)` 改为 `(S9)` ——
+     S8 只做段落翻译与语法，单词 AI 解释留到 S9。
+  4. 关闭对话框后不主动 `trim()` 缓存：容量清理仍由设置页触发（S7 结论不变）。
+  5. 两个标签的成功态共用同一个「重新生成」文案（本节原文对语法写的是「重新分析」），
+     错误态共用「重试」；`regenerate(tab)` 只重置当前标签。
+  6. 语法标签的错误态只有「重试」，没有「用其他应用翻译」：外部 Intent 只能翻译原文，
+     给不了语法分析，放在这里会承诺一个它做不到的动作。
+  7. 语法 JSON 合法但一个字段都没有（例如 `{}`）时不再回显 `{}`，改提示
+     `translation_dialog_empty_analysis`；只有 JSON 不合法才退化成展示原始回复。
 
 ## 9. 设置与文案
 
@@ -358,10 +400,12 @@ cacheKey = SHA-256(
 | S5 | 取词手势、文本布局命中、取词卡片 | 两种布局单击/长按取词；空白区翻页/菜单不回归；RTL/夜间正常 |
 | S6 | AI 设置、Tink、openai 客户端、MockEngine 测试 | Key 加密存取；流式/错误/取消；测试连接 |
 | S7 | Room 缓存表/DAO/迁移/仓库/缓存键 | ✅ 迁移 20→21（`MigrationTestHelper` 实跑）；读写/touch/LRU/clear 通过 |
-| S8 | `TranslationModel`、双击整段、翻译/语法对话框、缓存优先、语法点击即分析 | 二次双击 0 请求；语法二次点击 0 请求；杀进程后仍命中；取消不写半截 |
+| S8 | `TranslationModel`、双击整段、翻译/语法对话框、缓存优先、语法点击即分析 | ✅ JVM：二次双击 0 请求、语法缓存命中 0 请求、取消不写半截、重新生成覆盖同键（34 个新用例）；杀进程后仍命中待真机/仪器验证 |
 | S9 | 文案/许可/文档、全量回归、release-debug、终审 | 全量测试通过；体积/内存记录；`reviewer-expert` 整体 review |
 
-> S1–S7 已完成。S3 的验收只在 JVM 上做过（真实资产解压 + `apple` 查询 + 二次安装跳过），
+> S1–S8 已完成。S8 的对话框只在 JVM 上验证过状态机与解析，UI 行为（居中对话框、
+> 标签切换、缓存标记、错误态回退）**未**在真机/模拟器上走过，见 `PROGRESS.md` §3.8。
+> S3 的验收只在 JVM 上做过（真实资产解压 + `apple` 查询 + 二次安装跳过），
 > 真机首启耗时/内存峰值与 minified 构建下的 7z 解压仍待验证；实测数据见 `PROGRESS.md` §3.3。
 > S6 的 `AiKeyStore` 只在 JVM 上用假 cipher 测过；真实 Tink/AndroidKeysetManager 仪器测试已写但**未执行**；
 > 真实服务商的测试连接/流式/401/429 也未在设备上验证，见 `PROGRESS.md` §3.6。
@@ -396,6 +440,8 @@ cacheKey = SHA-256(
 - 分页/连续、单击/长按/双击、空白翻页/菜单、长按选择复制。
 - 夜间预设、RTL、超大字号、横竖屏、进程重建。
 - 无网、401/429、流式中途关闭、超长段落。
+- 双击整段（两种布局）→ 译文流式；切语法标签即分析；再次双击/再次点标签 0 请求；
+  关掉对话框后重开命中缓存；错误态的「用其他应用翻译」。
 - `release-debug` minified：打开书 → 取词 → 双击翻译 → 语法 → 二次命中。
 - APK/安装体积、首次解压耗时、ECDICT 查询内存。
 

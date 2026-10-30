@@ -77,7 +77,7 @@
     <string name="background_color_option">背景颜色</string>
     <string name="side_padding_option">侧边填充</string>
     <string name="double_click_translation_option">双击翻译</string>
-    <string name="double_click_translation_option_desc">双击段落以翻译</string>
+    <string name="double_click_translation_option_desc">双击段落，在应用内翻译整段正文。开启时单击会等待约 300 毫秒以区分双击；关闭可恢复即时单击。</string>
     <string name="fast_color_preset_change_option">快速更改颜色预设</string>
     <string name="fast_color_preset_change_option_desc">向左或向右滑动顶栏以更改颜色预设</string>
     <string name="text_alignment_option">文本对齐</string>
@@ -442,7 +442,7 @@
     <string name="lookup_popup_not_found">已安装的词典里没有这个词。</string>
     <string name="lookup_popup_error">查询失败。</string>
     <string name="lookup_popup_import_dictionary">导入词典</string>
-    <string name="lookup_popup_ai_explain">AI 解释（S8）</string>
+    <string name="lookup_popup_ai_explain">AI 解释（S9）</string>
     <string name="lookup_popup_external">用其他应用查询</string>
     <string name="lookup_popup_source">来自 %1$s</string>
 
@@ -490,4 +490,23 @@
     <string name="ai_error_cancelled">请求已取消。</string>
     <string name="ai_error_unknown">未知错误。</string>
     <string name="ai_error_with_status">%1$s（HTTP %2$d）</string>
+
+    <!-- fork: phase 2 / S8 翻译对话框 -->
+    <string name="translation_dialog_title">翻译</string>
+    <string name="translation_dialog_close">关闭</string>
+    <string name="translation_dialog_tab_translation">翻译</string>
+    <string name="translation_dialog_tab_grammar">语法分析</string>
+    <string name="translation_dialog_translating">正在翻译…</string>
+    <string name="translation_dialog_analyzing">正在分析语法…</string>
+    <string name="translation_dialog_from_cache">来自缓存</string>
+    <string name="translation_dialog_show_original">显示原文</string>
+    <string name="translation_dialog_hide_original">隐藏原文</string>
+    <string name="translation_dialog_regenerate">重新生成</string>
+    <string name="translation_dialog_external">用其他应用翻译</string>
+    <string name="translation_dialog_meta">模型 %1$s · %2$s</string>
+    <string name="translation_dialog_summary">总览</string>
+    <string name="translation_dialog_sentences">句子</string>
+    <string name="translation_dialog_vocabulary">词汇</string>
+    <string name="translation_dialog_raw_note">模型没有返回合法 JSON，以下为原始回复。</string>
+    <string name="translation_dialog_empty_analysis">模型没有返回可展示的语法内容。</string>
 </resources>
