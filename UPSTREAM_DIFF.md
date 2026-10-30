@@ -88,13 +88,13 @@ Known fields are [... e, ... f, ... g, ... h]
 
 上游正文点击只有一个行为：切换菜单。
 
-| 分区 | 左/上 | 中 | 右/下 |
+| 分区 | 顶部 | 左侧 | 其余 |
 | --- | --- | --- | --- |
-| 左/中/右（默认） | 上一页 | 菜单 | 下一页 |
-| 上/中/下 | 菜单 | 下一页 | 上一页 |
-| 仅中间 | 不响应 | 菜单 | 不响应 |
+| Kindle 式（默认） | 12% 高度：呼出菜单 | 25% 宽度：上一页 | 75% 宽度：下一页 |
+| 上/中/下 | 菜单 | 下一页（中）/ 上一页（下） | — |
+| 仅中间 | 不响应 | 不响应 | 仅中心九宫格呼菜单 |
 
-分区是**位置性**的（与设置文案一致）；反向阅读方向翻转的是页码增量（`pageDeltaFor`），不是分区。全仓库只有**一个**点击检测器：上游给每个段落挂的 `combinedClickable` 已移除（它会把单击吞掉，导致分区翻页在文字区域失效），双击翻译改由 Pager 上的同一检测器 + `readerNodeAtY` 命中测试处理。
+分区是**位置性**的（与设置文案一致）；反向阅读方向翻转的是页码增量（`pageDeltaFor`），不是分区。全仓库只有**一个**点击检测器：上游给每个段落挂的 `combinedClickable` 已移除（它会把单击吞掉，导致分区翻页在文字区域失效），双击翻译改由 Pager 上的同一检测器 + `readerNodeAtY` 命中测试处理。阅读页把双击判定窗口从 300ms 降到 200ms，翻页动画改成 200ms tween（见 `PROGRESS.md` §3.13）。
 
 ### 3.3 章节切换提示
 
@@ -143,7 +143,7 @@ Known fields are [... e, ... f, ... g, ... h]
 
 上游没有任何词典功能。本 fork 随 APK 分发一份 ECDICT（英汉，MIT），首次启动解压到应用私有目录，供后续取词使用。
 
-- **数据**：官方 ECDICT `ecdict.csv`（SHA-256 `d1ecbdf9…43cc`，MIT）→ StarDict（`ecdict.ifo`/`.idx`/`.dict`，**770,611** 词条）→ LZMA2 7z（**21MB**）。转换与打包是构建期脚本 `tools/dict/prepare_ecdict.py`，App 里不跑
+- **数据**：官方 ECDICT `ecdict.csv`（SHA-256 `d1ecbdf9…43cc`，MIT）→ StarDict（`ecdict.ifo`/`.idx`/`.dict`，**770,611** 词条）→ LZMA2 7z（**21.7MB**）。转换与打包是构建期脚本 `tools/dict/prepare_ecdict.py`，App 里不跑。词条里带两个不可见标记：`<!--ecdict|c=柯林斯|o=牛津|t=考试标签|b=BNC|f=语料库-->` 与 `<!--def-->`（英文释义起始），供取词卡片分栏与显示牛津/考试/词频标签
 - **首次启动**：`Application.onCreate` 在 IO 线程把资产拷到 cacheDir，再用 commons-compress 解压到 `filesDir/dictionaries/builtin/`。解压出 **90MB**，引擎另写 **34MB** `.jidx` 索引缓存（目录合计约 120MiB）。启动不被阻塞，未就绪时 `openBuiltIn()` 返回 null
 - **幂等**：目录里写 `version` 标记（版本 + 词条数），命中则跳过 —— 重启不重复解压，mtime 不变；换资产时递增 `ECDICT_ASSET_VERSION`
 - **失败安全**：临时目录 + `rename` 原子换目录，失败保留旧版本；进程死在两次 rename 之间时，下次启动先把 `builtin.old` 搬回来再判标记（不重解）；解压前按「解压量 × 1.5 + 旧目录 + `.old` 孤儿」检查剩余空间；空间不足/资产损坏/解压结果打不开都报 `DictionaryInstallException`；解压条目统一落成小写 StarDict 后缀

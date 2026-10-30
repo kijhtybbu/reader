@@ -141,9 +141,11 @@ class SettingsManager @Inject constructor(
         deserialize = { name -> ReaderPagedAnimation.entries.find { it.name == name } ?: ReaderPagedAnimation.SLIDE }
     )
     val tapZones = setting<ReaderTapZones, String>(
-        key = stringPreferencesKey("tap_zones"), default = ReaderTapZones.SIDES,
+        key = stringPreferencesKey("tap_zones"), default = ReaderTapZones.KINDLE,
         serialize = { it.name },
-        deserialize = { name -> ReaderTapZones.entries.find { it.name == name } ?: ReaderTapZones.SIDES }
+        // 旧的 SIDES（左/中/右）被 Kindle 式取代；存量值按名字找不到时回落到默认 KINDLE，
+        // 正好完成迁移，其余模式（上中下 / 仅中间）不受影响。
+        deserialize = { name -> ReaderTapZones.entries.find { it.name == name } ?: ReaderTapZones.KINDLE }
     )
     val fontFamily = setting<FontWithName, String>(
         key = stringPreferencesKey("font"), default = ReaderData.fonts[0],

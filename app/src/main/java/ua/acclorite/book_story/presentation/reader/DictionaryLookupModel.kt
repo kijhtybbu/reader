@@ -80,7 +80,24 @@ class DictionaryLookupModel @Inject constructor(
     private val _state = MutableStateFlow<LookupState>(LookupState.Idle)
     val state: StateFlow<LookupState> = _state.asStateFlow()
 
+    /**
+     * 手指按下时命中的词矩形，用来**立刻**画正文高亮。
+     * 卡片本身要等双击判定（约 300ms）之后才出现；没有这个预览，用户点完会觉得「没反应」。
+     */
+    private val _previewAnchor = MutableStateFlow<Rect?>(null)
+    val previewAnchor: StateFlow<Rect?> = _previewAnchor.asStateFlow()
+
     private var job: Job? = null
+
+    /** 手指按下时先亮高亮，不查词。 */
+    fun preview(anchor: Rect) {
+        _previewAnchor.value = anchor
+    }
+
+    /** 手势被取消（拖动/翻页）或双击翻译时撤掉预览高亮。 */
+    fun clearPreview() {
+        _previewAnchor.value = null
+    }
 
     /**
      * 查一个词。
@@ -94,6 +111,8 @@ class DictionaryLookupModel @Inject constructor(
         job?.cancel()
         job = viewModelScope.launch {
             publish(LookupState.Loading(normalized, anchor))
+            // 预览矩形与 Loading 的锚点通常相同；清掉它，避免「卡片居中 + 残留旧高亮」的组合。
+            _previewAnchor.value = null
             val hits = try {
                 repository.lookup(normalized)
             } catch (e: CancellationException) {
@@ -154,6 +173,7 @@ class DictionaryLookupModel @Inject constructor(
     fun dismiss() {
         job?.cancel()
         job = null
+        _previewAnchor.value = null
         _state.value = LookupState.Idle
     }
 

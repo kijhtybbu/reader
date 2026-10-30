@@ -60,8 +60,11 @@ object DictionaryRegistry {
     /**
      * 资产版本。换 `stardict.7z` 时必须 +1，否则已装好的旧目录会被当成最新而跳过。
      * 版本标记落在词典目录的 `version` 文件里，与 [BuiltInDictionaryInstaller] 共用。
+     *
+     * 2：词条里加了 `<!--ecdict|…-->`（柯林斯星级/牛津/考试标签/词频）与
+     * `<!--def-->`（英文释义起始）两个不可见标记，取词卡片据此分栏排版。
      */
-    const val ECDICT_ASSET_VERSION = 1
+    const val ECDICT_ASSET_VERSION = 2
 
     private const val ASSET_PATH = "dictionaries/ecdict/stardict.7z"
 

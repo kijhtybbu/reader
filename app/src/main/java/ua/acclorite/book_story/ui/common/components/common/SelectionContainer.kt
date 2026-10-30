@@ -150,7 +150,7 @@ private class SelectionToolbar(
     private val onWebSearchRequest: ((String) -> Unit)?,
     private val onTranslateRequest: ((String) -> Unit)?,
     private val onDictionaryRequest: ((String) -> Unit)?,
-    private val onSelectionSettled: ((Rect) -> Unit)?
+    private val onSelectionSettled: ((Rect, () -> Unit) -> Unit)?
 ) : TextToolbar {
     private var actionMode: ActionMode? = null
     private val callback = TextActionModeCallback(context = context)
@@ -173,7 +173,9 @@ private class SelectionToolbar(
         // `onGetContentRect` 契约就是 view（= root/window）坐标。所以这里**不能**再叠加一次
         // `localToWindow`，否则窗口有 inset 时选区会被算成偏移后的位置。
         // 不在这里读剪贴板：Android 13+ 每次写剪贴板都会弹系统提示，选区每动一下弹一次不能接受。
-        onSelectionSettled?.invoke(rect)
+        // 第二个参数是「收起工具栏」：系统 ActionMode 是触摸模态窗口，卡片弹出后不收起它，
+        // 卡片外的点击会被它吞掉。工具栏实例只有这里持有，所以由这里交给回调。
+        onSelectionSettled?.invoke(rect) { hide() }
         callback.onCopyRequested = {
             onCopyRequested?.invoke()
             onCopyRequest?.invoke()
@@ -263,9 +265,10 @@ private class SelectionToolbar(
  * @param onCopyRequested Callback for when the copy option is clicked.
  * @param onTranslateRequested Callback for when the translate option is clicked.
  * @param onDictionaryRequested Callback for when the dictionary option is clicked.
- * @param onSelectionSettled fork（S5）：选区落定时回调，参数是选区在**窗口坐标**里的矩形
- *   （与交给 ActionMode `onGetContentRect` 的是同一个 rect，不再二次换算）。
- *   拖动选择手柄时会被连续调用，需要防抖的调用方自己处理（阅读页是 350ms）。
+ * @param onSelectionSettled fork（S5）：选区落定时回调。第一个参数是选区在**窗口坐标**里的
+ *   矩形（与交给 ActionMode `onGetContentRect` 的是同一个 rect，不再二次换算）；第二个参数把
+ *   选区工具栏（ActionMode）收起来，取词卡片弹出前调用 —— 否则触摸模态的工具栏会吞掉卡片外的
+ *   点击。拖动选择手柄时会被连续调用，需要防抖的调用方自己处理（阅读页是 350ms）。
  * @param content Selection container content.
  */
 @Composable
@@ -275,7 +278,7 @@ fun SelectionContainer(
     onWebSearchRequested: ((String) -> Unit),
     onTranslateRequested: ((String) -> Unit),
     onDictionaryRequested: ((String) -> Unit),
-    onSelectionSettled: ((Rect) -> Unit)? = null,
+    onSelectionSettled: ((Rect, () -> Unit) -> Unit)? = null,
     content: @Composable (toolbarHidden: Boolean) -> Unit
 ) {
     val view = LocalView.current
@@ -303,8 +306,8 @@ fun SelectionContainer(
             onDictionaryRequest = {
                 onDictionaryRequested(it)
             },
-            onSelectionSettled = { rect ->
-                currentOnSelectionSettled.value?.invoke(rect)
+            onSelectionSettled = { rect, hideToolbar ->
+                currentOnSelectionSettled.value?.invoke(rect, hideToolbar)
             }
         )
     }

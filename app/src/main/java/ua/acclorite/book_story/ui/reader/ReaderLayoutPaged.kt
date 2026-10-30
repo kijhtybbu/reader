@@ -8,6 +8,7 @@ package ua.acclorite.book_story.ui.reader
 
 import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -444,6 +445,25 @@ fun ReaderLayoutPaged(
                                     translation
                                 ) {
                                     detectTapGestures(
+                                        // fork: 手指按下就先高亮命中的词。单击要等双击判定
+                                        // （~300ms）才会回调 onTap，没有这个预览用户会觉得「点了没反应」。
+                                        onPress = press@{ offset ->
+                                            if (!lookup.singleTapEnabled || showMenu) return@press
+                                            val word = wordAtPageOffset(
+                                                page = pages.getOrNull(pagerState.currentPage - leadingPages),
+                                                tapInPager = offset,
+                                                pagerOrigin = pagerCoordinates
+                                                    ?.takeIf { it.isAttached }
+                                                    ?.localToWindow(Offset.Zero),
+                                                textLayouts = textLayouts
+                                            )
+                                            if (word != null) {
+                                                lookup.onPreview(word.rect)
+                                                // 手指抬起 = 这次按下会走 onTap/onDoubleTap，高亮保持；
+                                                // 被取消（拖动翻页）则撤掉预览。
+                                                if (!tryAwaitRelease()) lookup.onPreviewDismiss()
+                                            }
+                                        },
                                         // 关键：onDoubleTap 非 null 时 detectTapGestures 会把单击
                                         // 延后到双击超时（~300ms）再回调。设置里关掉双击翻译时
                                         // 必须传 null，否则每次翻页都慢一拍。
@@ -452,6 +472,8 @@ fun ReaderLayoutPaged(
                                             // 那是个「第二套点击检测器」，会把单击吞掉，导致正文上的
                                             // 分区点击失效。现在统一在这里处理。
                                             if (doubleClickTranslation) {
+                                                // 双击 = 翻译：把第一下按下时的取词预览/卡片撤掉。
+                                                lookup.onDismiss()
                                                 val page = pages.getOrNull(
                                                     pagerState.currentPage - leadingPages
                                                 )
@@ -514,7 +536,15 @@ fun ReaderLayoutPaged(
                                                     .coerceIn(0, (pagerState.pageCount - 1).coerceAtLeast(0))
                                                 pendingTapTarget = target
                                                 tapScope.launch {
-                                                    pagerState.animateScrollToPage(target)
+                                                    // fork: 默认 spring 要 ~400ms 才落定，点击翻页显得拖沓；
+                                                    // 用 200ms tween，配合双击判定窗口缩短，整体更跟手。
+                                                    pagerState.animateScrollToPage(
+                                                        page = target,
+                                                        animationSpec = tween(
+                                                            durationMillis = Motion.Base,
+                                                            easing = Motion.Standard
+                                                        )
+                                                    )
                                                 }
                                             }
                                         }

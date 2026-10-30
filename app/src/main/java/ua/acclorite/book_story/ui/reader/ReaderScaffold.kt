@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -30,6 +31,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -55,6 +58,15 @@ import ua.acclorite.book_story.ui.common.components.common.AnimatedVisibility
 import ua.acclorite.book_story.ui.theme.LocalReaderPalette
 import ua.acclorite.book_story.ui.theme.Spacing
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
+
+/**
+ * 双击翻译的判定窗口。
+ *
+ * Compose 默认 300ms：开着双击翻译时，每次单击翻页/呼菜单都要先等 0.3s 才回调 `onTap`，
+ * 真机上手感就是「点了没反应」。降到 200ms（Android 允许 40..300）仍然能正常双击，
+ * 翻页跟手很多；关掉双击翻译时根本不走这段等待。
+ */
+private const val ReaderDoubleTapTimeoutMillis = 200L
 
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -144,6 +156,15 @@ fun ReaderScaffold(
 ) {
     val palette = LocalReaderPalette.current
     var scaffoldOrigin by remember { mutableStateOf(Offset.Zero) }
+
+    // 只改双击判定窗口，长按/滑动阈值等全部沿用平台值。
+    val baseViewConfiguration = LocalViewConfiguration.current
+    val readerViewConfiguration = remember(baseViewConfiguration) {
+        object : ViewConfiguration by baseViewConfiguration {
+            override val doubleTapTimeoutMillis: Long = ReaderDoubleTapTimeoutMillis
+        }
+    }
+    CompositionLocalProvider(LocalViewConfiguration provides readerViewConfiguration) {
     Scaffold(
         Modifier
             .fillMaxSize()
@@ -153,17 +174,17 @@ fun ReaderScaffold(
                 lookupAnchor?.takeIf { it.width > 0f && it.height > 0f }?.let { anchor ->
                     // anchor 来自窗口坐标系；Scaffold 根的绘制原点可能因 insets/父布局偏移，
                     // 所以先减去根在窗口中的位置，否则高亮会整体错位。
-                    // getBoundingBox 返回的是行盒（含 ascent/descent），不是紧贴字形的紧包围盒；
-                    // 直接铺满会显得高亮整体偏上/偏大。上下各收一点，视觉上落在小写字母带上。
-                    val topInset = anchor.height * 0.16f
-                    val bottomInset = anchor.height * 0.06f
+                    // 矩形本身已经是「基线与字号」算出的字形带（见 ReaderTextLayoutRegistry），
+                    // 这里不再做比例内缩 —— 行高设置一变，内缩量就会让高亮偏上/偏大。
+                    // 用户反馈高亮贴字太紧：四周各放宽一点（卡片定位仍用未放宽的矩形）。
+                    val highlightPadding = 1.5.dp.toPx()
                     val topLeft = Offset(
-                        anchor.left - scaffoldOrigin.x,
-                        anchor.top - scaffoldOrigin.y + topInset
+                        anchor.left - scaffoldOrigin.x - highlightPadding,
+                        anchor.top - scaffoldOrigin.y - highlightPadding
                     )
                     val highlightSize = Size(
-                        anchor.width,
-                        (anchor.height - topInset - bottomInset).coerceAtLeast(1f)
+                        width = anchor.width + highlightPadding * 2,
+                        height = anchor.height.coerceAtLeast(1f) + highlightPadding * 2
                     )
                     drawRoundRect(
                         color = palette.accent.copy(alpha = 0.26f),
@@ -364,5 +385,6 @@ fun ReaderScaffold(
             perceptionExpanderThickness = perceptionExpanderThickness,
             perceptionExpanderColor = fontColor
         )
+    }
     }
 }

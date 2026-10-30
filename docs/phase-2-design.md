@@ -112,7 +112,7 @@ ReaderLayout (Paged/Continuous)
 
 ### 4.2 内置 ECDICT
 
-- 仓库提交 `app/src/main/assets/dictionaries/ecdict/stardict.7z`（约 21MB，LZMA2）。
+- 仓库提交 `app/src/main/assets/dictionaries/ecdict/stardict.7z`（约 21.7MB，LZMA2）。
   内容是从官方 ECDICT `ecdict.csv`（MIT）转出的 StarDict 三件套（`ecdict.ifo` / `.idx` /
   `.dict`，77 万词条），转换与打包脚本是构建期工具 `tools/dict/prepare_ecdict.py`；
   §0 里「仓库提交官方 stardict.7z（约 51MB）」落地时改成自建 7z：官方 7z 里是同一份 CSV
@@ -121,6 +121,9 @@ ReaderLayout (Paged/Continuous)
   再转 7z（7z 还会存 atime/ctime，而 ctime 无法从用户态固定），所以同一份 CSV 重建出的字节恒定，
   SHA-256 与大小写在同目录 `NOTICE.txt` 并由 `BuiltInDictionaryAssetTest` 钉住。
   中间产物（66MB CSV + 90MB StarDict）只落在 `build/ecdict/`，只有 `stardict.7z` 进 assets。
+  资产版本 2 起，词条里还带两个**不可见**标记（卡片据此分栏）：
+  `<!--ecdict|c=柯林斯星级|o=牛津|t=考试标签|b=BNC 词频|f=当代语料库词频-->`
+  与 `<!--def-->`（英文释义起始）。换资产必须递增 `ECDICT_ASSET_VERSION`，否则旧目录会被跳过。
   数据来源与许可见同目录 `NOTICE.txt` / `ECDICT-LICENSE.txt`。
 - `DictionaryRegistry.ensureBuiltIn()`：
   1. 首次启动/版本变化时，在 IO 线程用 `SevenZFile` 解压 `.ifo` / `.idx` / `.dict`（或 dictzip 的
@@ -166,24 +169,77 @@ ReaderLayout (Paged/Continuous)
   用 item 内坐标 `TextLayoutResult.getOffsetForPosition` + `getWordBoundary` 取词。
 - 连续布局：取词模式下用一个手势处理器做同样命中；不新增第二套翻页检测器。
 - 长按：保留 `SelectionContainer` 选区与工具栏；自定义 `SelectionToolbar` 增加
-  `onSelectionSettled(rect)`，防抖 350ms：用文本布局注册表按矩形反查单词 → 取词卡片；
-  跨行选区本期忽略（S8 接翻译对话框）。`showMenu` 交来的 rect 本身就是窗口坐标（同一个
-  rect 原样交给 ActionMode 的 `onGetContentRect`），**不再叠加 `localToWindow` 二次换算**。
-  **不取选中文本本身**：`showMenu` 只给矩形，拿文本只能读剪贴板，而 Android 13+ 每次写
-  剪贴板都会弹系统提示 —— 拖动选择手柄时等于连续弹窗（S5 实施时的结论）。
+  `onSelectionSettled(rect, hideToolbar)`，防抖 350ms：用文本布局注册表按选区**首行**反查单词
+  → 取词卡片；跨行选区本期忽略（S8 接翻译对话框）。
+  - 反查点用「选区顶边 + 4px」而不是几何中心：Compose 的 `getContentRect()` 在底部加了
+    `4 × HandleHeight`（给系统工具栏留位），几何中心会落到下一行，长按「apple」查出隔壁的词。
+  - 弹出卡片前调用 `hideToolbar()`：系统 ActionMode 悬浮工具栏是触摸模态窗口，不收起它，
+    卡片外的点击全被它吞掉。
+  - 同一选区矩形 1.5s 内只取一次词（`showMenu` 会被重复调用）。
+  - `showMenu` 交来的 rect 本身就是窗口坐标（同一个 rect 原样交给 ActionMode 的
+    `onGetContentRect`），**不再叠加 `localToWindow` 二次换算**。
+  - **不取选中文本本身**：`showMenu` 只给矩形，拿文本只能读剪贴板，而 Android 13+ 每次写
+    剪贴板都会弹系统提示 —— 拖动选择手柄时等于连续弹窗（S5 实施时的结论）。
+  - 已知缺口：Compose 1.9 默认启用**新上下文菜单**，它会绕过项目自定义的 `LocalTextToolbar`，
+    所以当前构建里「长按选后自动取词」实际不会触发（工具栏也只剩系统默认项）。代码路径、
+    锚点与防重逻辑都已经就位，等迁移到新上下文菜单 API 或显式关掉该 flag 后再启用。
 - 工具栏「词典」：改为应用内取词。多词选区只查选区里的**第一个词**（整串短语 `lookupExact`
   必然 miss），真 miss 时卡片上的「用其他应用查询」回退到外部词典应用。
 - 命中的文本块由 `ui/reader/ReaderTextLayoutRegistry` 按「节点 id + 页项起点」登记
   `TextLayoutResult` 与窗口矩形；两种布局共用这张表算锚点，卡片才能贴住词。
+  矩形用 `positionInWindow()` + 节点尺寸拼出，**不用** `boundsInWindow()`：后者会被祖先裁剪
+  （LazyColumn 视口）并夹到根节点范围内，段落有一半滚出屏幕时原点会被钉在视口边上，
+  取词与高亮就会随段落位置偏移。
+- 长按取词的锚点用注册表给出的**精确词矩形**，不是 `showMenu` 的选区矩形：后者是选区包围盒，
+  底部还额外加了 `4 × HandleHeight`（给系统工具栏留位）并被裁剪到可见区，带标点的词、
+  靠近屏幕边缘的词会明显偏移。选区矩形只用于「是否跨行」的判断。
 
 ### 5.2 取词卡片
 
-- `Popup` 贴词，自动判断上/下与左右边界；最大宽 360dp、最大高 45% **安全区高度**
-  （窗口扣掉系统栏、刘海/挖孔），定位与夹紧都在安全区内，内容滚动。
+- `Popup` 贴词，自动判断上/下与左右边界；最大宽 360dp、最小宽 248dp、最大高 45%
+  **安全区高度**（窗口扣掉系统栏、刘海/挖孔），定位与夹紧都在安全区内。
+- 弹窗窗口本身是**全屏**的：卡片用 `Modifier.offset` 摆在算好的位置，不需要
+  `PopupPositionProvider` 的 `popupContentSize`（自己 `onSizeChanged` 量）。原因：原先的
+  wrap-content 窗口靠 `ACTION_OUTSIDE` 接收外部点击，而选区手柄/系统工具栏都是带
+  `WATCH_OUTSIDE_TOUCH` 的独立窗口且叠在上面，会把外部点击截走（真机复现：长按取词后
+  卡片关不掉）。全屏窗口把「外部点击」变成窗口内事件：一张透明遮罩接点击关闭。
+  弹窗刻意**非 focusable**：focusable 弹窗开/关会抢/还焦点，SelectionManager 每次拿回焦点
+  都会把选区工具栏重报一遍，造成「关掉 → 自己弹回来」；返回键交给弹窗内的 `BackHandler`。
+- 卡片分三层，**只有正文滚动**：
+  1. 固定头部：词头、音标、来源词典、词典元信息标签、多词典 chip；
+  2. 可滚动正文（`weight(1f, fill = false)`，内容短时卡片跟着收缩）；
+  3. 固定按钮区（未找到、错误两种状态）—— 以前按钮和正文在同一个滚动容器里，
+     词条一长按钮就被滚出可见区。
+- **按下即高亮**：单击取词要等双击判定（`detectTapGestures` 的 `onDoubleTap` 非 null 时
+  `onTap` 延迟 ~300ms），没有反馈用户会以为没点中。`onPress` 里先命词并把矩形写进
+  `DictionaryLookupModel.previewAnchor`（只画高亮、不查词），`onTap` 落地后才查；
+  手势取消（拖动翻页/滚动）或双击翻译时撤掉预览。
+- 正文高亮量的是**词的墨迹范围**：注册表在布局时用同字号、同字体的 `Paint.getTextBounds`
+  取该词的 tight bbox，再按 `getLineBaseline` 贴到词上。为什么不用 `getBoundingBox` 的行框：
+  行框高度 = 字号 × 用户行高设置，行距调大时高亮会跟着变高；为什么不用「基线 ± 固定 em 比例」：
+  无下伸字母的词（`crack`）底部会留一条空白、上伸字母也可能被切。拿不到 Paint/字号时依次
+  退回「基线 ± 0.72/0.22em」与「行框 + 对称内缩」。
+- **两端对齐的横向校正**：Android 的 `getPrimaryHorizontal`/`getBoundingBox` 返回的是**未拉伸**
+  坐标，而绘制时词间空格被拉宽到行宽（真机实测：20pt、行宽 1804px 时行尾的 `through` 布局
+  坐标比实际绘制偏左 ~35px，表现为「选到上一个词的末尾、漏掉最后一个字母」）。校正量 =
+  词前空格数 × 每间隔拉伸量（拉伸总量 = 行右边界 − 最后一个非空白字符的布局右边界）；
+  命中点也先按同量往回挪再取词。非两端对齐的行/段落最后一行该差值为 0，天然不校正。
+- 多词条候选 chip **换行**（`FlowRow` + 紧凑胶囊 ~24dp），不做横向滚动；Material3
+  `FilterChip` 固定 32dp 高，5 个前缀候选换行会把固定头部撑掉半个卡片。候选组与上方的
+  词典元信息胶囊之间加 10dp + 发丝分隔线 + 10dp：两者都是胶囊，挤在一起会混成一片。
 - 使用 `LocalReaderPalette` 配色，夜间不闪白。
 - 外部点击、返回、翻页、滚动关闭。
-- 显示词头、来源词典、释义；多词典结果用来源标签区分（来源标签做成可切换的 chip）。
-  **不单独显示音标**：`DictionaryHit` 没有音标字段，只有词条正文 HTML 里自带的音标会随释义渲染。
+- 词条正文由 `ui/reader/ReaderLookupArticle` 解析后分栏渲染：
+  - 词头行 `<b>词</b>` 与卡片标题重复，丢弃；音标从正文提到头部；
+  - 中文义项按「词性/领域标签 + 释义」两列排（`n.` / `vt.` / `[医]` 左对齐）；
+  - 英文 WordNet 释义放在分隔线下的次要小节（小字号、次要色）；每行开头的词性
+    （`n.` / `v.` / `a.` / `s.` / `r.`）单独解析成**浅灰底 + 粗体**的小徽标，避免被当成释义正文；
+  - `<small>exchange</small>` 转成的词形说明作为文末附注。
+- 内置 ECDICT 词条带两个不可见标记（见 `tools/dict/prepare_ecdict.py`）：
+  `<!--ecdict|c=…|o=…|t=…|b=…|f=…-->` 提供柯林斯星级/牛津/考试标签/词频，
+  `<!--def-->` 标出英文释义起始。没有标记的导入词典按启发式拆（整行 `<small>`/`<i>`、
+  `n. …` 这类纯英文行）；带块级标签的词条整段交给 `fromHtml`，不拆。
+- 多词典结果用来源标签区分（来源标签做成可切换的 chip）。
 - 支持 `juice://lookup/` 链接点击继续查询。
 
 ## 6. AI 配置与调用
@@ -330,11 +386,18 @@ cacheKey = SHA-256(
 
 - 双击段落：取 `NodeContent.Paragraph.text` 的整段文本（不是分页切片），
   打开翻译对话框；翻译标签自动开始（缓存命中则直接显示）。
-- `doubleClickTranslation` 保留，默认 `true`；开启时单击翻页/菜单会等待约 300ms
-  的双击判定，设置页说明取舍，可关闭恢复即时单击。
+- `doubleClickTranslation` 保留，默认 `true`；开启时单击翻页/菜单会等待双击判定。
+  阅读页把 `LocalViewConfiguration.doubleTapTimeoutMillis` 从平台默认 300ms 降到 **200ms**
+  （`ReaderScaffold`），配合翻页动画从默认 spring（实测 ~416ms 落定）改成 200ms tween：
+  真机实测「按下 → onTap」300→208ms、「onTap → 落定」416→约 250ms。设置页说明取舍，
+  可关闭双击翻译恢复完全即时。
 - 语法标签：逐句分析（§8.2）。整段只有一句时切到标签自动分析；多句时先列出句子，
   点哪句分析哪句、再点一次收起；结果用 Markdown 渲染。没有「开始分析」按钮；
   错误态提供「重试」，成功后提供「重新分析」。
+- 对话框尺寸随状态变化：翻译标签 Idle/Loading（或单句语法还在请求）时是一张 360dp 宽的
+  紧凑卡片，只显示标题/标签/居中的加载行；内容（首段流式文字或结果）到达后
+  `animateContentSize` 平滑展开到最大 600dp 宽、80% 高，超过后正文滚动。模型与目标语言
+  从滚动正文挪到标题下的固定副标题，标题/标签与正文之间加分隔线。
 - 关闭对话框取消请求；已完成结果保留；进程被杀后再次双击从 Room 读取。
 - 外部翻译 Intent 仅保留为**翻译标签**错误态的“用其他应用”回退：它只能把原文送去翻译，
   给不了语法分析，所以语法标签的错误态只有「重试」。
@@ -509,5 +572,77 @@ cacheKey = SHA-256(
 - 最终校验：`:app:testDebugUnitTest` 379 / 55 类、`:dict-engine:test` 102、`:app:connectedDebugAndroidTest` 22（模拟器 API 34）、`:app:assembleRelease-debug` 通过；APK debug 155,192,122 B / release-debug 56,025,366 B。
 - 首次安装模拟器实测约 24.8s，词典目录约 122,800 KB（`.dict`/`.idx`/`.jidx`/`version`）。
 - 语法逐句分析（§8.2）只做过 JVM 状态机与渲染测试：句子列表的点击/收起、长列表滚动、Markdown 排版在设备上仍未走过；切句依赖平台 `BreakIterator`，缩写（`Dr.`）会多切一刀。
-- 已知限制：单词级 AI 解释未实现；`.mdd` 不导入/不渲染；需要密码的 MDX 不支持；长按自动取词只处理单行（工具栏翻译可翻多行选区）；缓存跨进程重建没有仪器测试；release-debug 上真实 AI/Tink/Room 路径只做构建级验证；默认双击翻译带来约 300ms 单击延迟；S5/S8 手工 UI 矩阵未执行（项目无 Compose UI 测试依赖）。
+- 已知限制：单词级 AI 解释未实现；`.mdd` 不导入/不渲染；需要密码的 MDX 不支持；长按自动取词只处理单行（工具栏翻译可翻多行选区）；缓存跨进程重建没有仪器测试；release-debug 上真实 AI/Tink/Room 路径只做构建级验证；默认双击翻译带来约 200ms 单击延迟（见附录 A.6）；S5/S8 手工 UI 矩阵未执行（项目无 Compose UI 测试依赖）。
 - 最终整体 review 按用户要求取消；S1–S9 每阶段均完成两轮 `reviewer`。
+
+## 附录 A. 设备反馈迭代（S5/S8 后续，已落地）
+
+> 记录 S1–S9 完成后，按真机使用反馈追加的改动。实现细节与文件见括号内路径；
+> 每项都在 Lenovo TB322FC（Android 16 / 1904×3040 / 440dpi）上验证。
+
+### A.1 内置 ECDICT 资产 v2（`tools/dict/prepare_ecdict.py`）
+
+- `ECDICT_ASSET_VERSION` 1 → **2**；新资产 21,691,246 B，SHA-256 `c93fec78…7ad3`
+  （`NOTICE.txt` 与 `BuiltInDictionaryAssetTest` 同步）。
+- 词条里新增两个不可见标记：
+  - `<!--ecdict|c=柯林斯星级|o=牛津|t=考试标签|b=BNC 词频|f=当代语料库词频-->`
+  - `<!--def-->`：英文 WordNet 释义的起始位置
+- 卡片据此显示「牛津 3000 / 中考 / 高考 / 四级 / 六级 / 考研 / 托福 / 雅思 / GRE / 词频 / ★」，
+  并把英文释义单独成段。老用户升级后会自动重新解压一次（约 90MB，几十秒）。
+
+### A.2 取词卡片排版（`ui/reader/ReaderLookupPopup.kt`、`ReaderLookupArticle.kt`）
+
+- 卡片分三层，**只有正文滚动**：固定头部（词头/音标/来源/元信息/多词条 chip）、
+  可滚动正文（`weight(1f, fill = false)`）、固定按钮区（未找到/错误）。
+- 正文结构化：丢弃与标题重复的 `<b>词</b>`、音标提到头部、中文义项按「词性/领域标签 + 释义」
+  两列排、英文释义降为次要小节并把行首词性渲染成浅灰底粗体徽标、词形说明放文末。
+  只拆「仅含行内标签」的词条，块级标签/未知标签退回 `fromHtml`。
+- 多词条候选 **换行**（`FlowRow` + ~24dp 紧凑胶囊），不做横向滚动；与上方元信息之间
+  用 10dp + 发丝线 + 10dp 分组。
+- 按下即高亮：`onPress` 先命词并写 `DictionaryLookupModel.previewAnchor`（只画高亮、不查词），
+  `onTap` 落地后才查词；手势取消/双击翻译时撤掉预览。
+
+### A.3 高亮锚点修复（`ui/reader/ReaderTextLayoutRegistry.kt`、`ReaderScaffold.kt`）
+
+三轮真机反馈分别暴露了三个独立原因，现全部修复：
+
+1. **窗口矩形被裁剪/夹紧**：原先用 `boundsInWindow()`，会被 LazyColumn 视口裁剪并夹到根节点内，
+   段落滚出屏幕一半时原点被钉在视口边。改为 `positionInWindow()` + 节点尺寸，注册表存未裁剪矩形。
+2. **长按用选区矩形当锚点**：`getContentRect()` 是「选区包围盒 + 底部 `4 × HandleHeight` + 裁剪到
+   可见区」，带标点/靠边的词必偏。改为用注册表命中的精确词矩形；探测点取选区顶边而非几何中心；
+   跨行判定改用「选区宽度≈行宽」。
+3. **两端对齐的横向偏移**：Android 的 `getPrimaryHorizontal` 返回未拉伸坐标，绘制时词间空格被拉宽
+   （实测 20pt/行宽 1804px 时行尾词偏左 ~35px）。按「词前空格数 × 每间隔拉伸量」校正词矩形，
+   命中点先按同量左移再取词。
+- 高亮竖向用同字号、同字体的 `Paint.getTextBounds` 量词本身墨迹（不再用行框/固定 em 比例），
+  四周再留 1.5dp；实测 `crack` 上 3/下 4px、`through` 左 3/右 6px。
+
+### A.4 翻译对话框（`ui/reader/ReaderTranslationDialog.kt`）
+
+- 刚打开/等待首个 token 时是一张 **360dp 宽紧凑卡片**（标题 + 固定副标题 + 标签 + 居中加载行），
+  `AsyncText.Idle` 也按 loading 画；内容到达后 `animateContentSize` 平滑展开到最大 600dp 宽、
+  80% 高，超出后正文滚动。
+- 模型与目标语言从滚动正文挪到标题下的固定副标题；标题/标签与正文之间加分隔线。
+
+### A.5 点击分区：Kindle 式（`presentation/reader/model/ReaderTapZones.kt`）
+
+- 默认 `KINDLE`：顶部 **12%**（正文区内）呼出菜单、左侧 **25%** 上一页、其余 **75%** 下一页。
+- 旧的「左/中/右」被替换，存量 `SIDES` 值按名字找不到时回落默认（完成迁移）；
+  「上/中/下」「仅中间」保留。分区仍是位置性的，反向阅读方向只翻转 `pageDeltaFor`。
+
+### A.6 翻页延迟（`ReaderScaffold.kt`、`ReaderLayoutPaged.kt`）
+
+- 调查结论：与文件大小无关。延迟 = 双击翻译判定 300ms + Pager 默认 spring 动画实测 416ms。
+- 修复：阅读页 `LocalViewConfiguration.doubleTapTimeoutMillis` 300 → **200ms**；
+  `animateScrollToPage` 改用 **200ms tween**（`Motion.Base` + `Motion.Standard`）。
+- 真机日志实测：按下 → onTap 300→**207ms**；onTap → 落定 416→**234ms**；合计 ~716→**441ms**。
+  剩余 200ms 是双击窗口本身，设置里关掉双击翻译可完全即时（文案同步为 200ms）。
+
+### A.7 遗留与未验证
+
+- Compose 1.9 默认启用新上下文菜单，绕过项目自定义的 `LocalTextToolbar`：长按选后自动取词
+  当前不会触发，选区工具栏只剩系统默认项。锚点/防抖/防重逻辑已就位，等迁移到新上下文菜单 API
+  或上游提供关闭开关后再启用。
+- 翻译对话框的最终视觉复测曾因设备锁屏中断，恢复后已补测紧凑加载 → 展开；句子列表的点击/收起、
+  长列表滚动仍未在设备上走过（项目无 Compose UI 测试依赖）。
+- 测试基线更新：`:app:testDebugUnitTest` **395 个用例 / 57 类 / 0 失败**；三重构建门禁通过。

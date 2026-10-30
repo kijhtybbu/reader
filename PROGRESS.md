@@ -561,7 +561,40 @@ S9 的测试增量：
 
 **MDX 1.2 支持（设备反馈后续）**：用户导入的牛津高阶第 9 版是 `GeneratedByEngineVersion="1.2"`，引擎原先只按 2.0 的 40 字节前导/8 字节字段解析，误报“文件已损坏”。现已按版本切换 1.2 的 16 字节前导、4 字节字段、未压缩 key-block-info；`MdxV12FixtureTest` 覆盖小样本，真实 OALD 1.2 验证 246,787 词条可打开、`apple` 可查。`.mdd` 资源仍不导入。
 
+### 3.12 取词卡片排版重构 + ECDICT 元信息 + 高亮锚点修复（设备反馈）
+
+| 项 | 内容 |
+| --- | --- |
+| 卡片结构 | `ReaderLookupPopup` 改成三层，**只有正文滚动**：固定头部（词头/音标/来源/元信息矩阵/多词典 chip）、可滚动正文（`weight(1f, fill = false)`，内容短时卡片跟着收缩）、固定按钮区（未找到/错误）。以前按钮和正文在同一个 `verticalScroll` 里，词条一长按钮就被滚走 |
+| 词条排版 | 新增 `ui/reader/ReaderLookupArticle`（纯 JVM 可测）：丢弃与标题重复的 `<b>词</b>`、音标提到头部、义项按「词性/领域标签 + 释义」两列排、英文 WordNet 释义放分隔线下的次要小节、词形说明放文末。只拆「仅含行内标签」的词条；块级标签/未知标签退回 `fromHtml` |
+| ECDICT 资产 | `prepare_ecdict.py` 在词条里埋两个不可见标记：`<!--ecdict|c=柯林斯|o=牛津|t=考试标签|b=BNC|f=当代语料库-->` 与 `<!--def-->`（英文释义起始）；`ECDICT_ASSET_VERSION` 1 → **2**。新资产 **21,691,246 字节**（+579 KB），SHA-256 `c93fec78…7ad3`，`NOTICE.txt` 与 `BuiltInDictionaryAssetTest` 同步 |
+| 高亮错位（真因两条） | ① `ReaderTextLayoutRegistry` 原先用 `boundsInWindow()`：它会被祖先（LazyColumn 视口）裁剪并夹到根节点尺寸内，段落滚出屏幕一半时原点被钉在视口边上，局部→窗口换算与锚点整体偏移。改为 `positionInWindow()` + 节点尺寸，注册表存**未裁剪**矩形。② 长按取词把 `showMenu` 的选区矩形当锚点：它是「选区包围盒 + 底部 `4 × HandleHeight` + 裁剪到可见区」，带标点/靠边的词必偏。改为用注册表命中的**精确词矩形**；探测点用选区顶边而不是几何中心（中心会被手柄内边距推到下一行） |
+| 弹窗窗口 | 改为**全屏 Popup + 透明遮罩**：卡片内部用 `offset` 摆放（自己 `onSizeChanged` 量尺寸），外部点击吃到遮罩里关闭；窗口刻意**非 focusable**，返回键用 `BackHandler`。原因：wrap-content 窗口靠 ACTION_OUTSIDE 接外部点击，而选区手柄/系统 ActionMode 都是带 `WATCH_OUTSIDE_TOUCH` 且叠在卡片之上的独立窗口，会把外部点击截走（真机复现：长按取词后卡片关不掉） |
+| 已知缺口 | Compose 1.9 默认启用新上下文菜单，绕过项目自定义的 `LocalTextToolbar`：长按选中后的自动取词（`onSelectionSettled`）在当前构建里**不会触发**，选区工具栏也只剩系统默认项。锚点/防抖/防重逻辑已就位并做了真机验证（临时关闭该 flag 跑通），等待迁移到新上下文菜单 API 或上游提供关闭开关 |
+| 测试 | 新增 `ReaderLookupArticleTest`（12 个用例：新旧 ECDICT 拆分、块级回退、链接保留、元信息容错、词性标签、释义词性拆分、标记不泄漏）与 `ReaderLookupSelectionTest`（4 个用例：跨行判定/裁剪/行宽未知）；`BuiltInDictionaryAssetTest` 改为新 SHA/大小 |
+| 验证 | 三重门禁通过（`assembleDebug` / `testDebugUnitTest` / `assembleRelease-debug`，**395 个用例 / 57 类 / 0 失败**）；真机（同一台 TB322FC）用 `dev.jia.reader.debug` 验证：资产 v2 自动解压（`version=2`）、`perceive`/`completely`/`upstairs` 卡片排版与高亮对齐、NotFound 卡片三个按钮一页可见、外部点击/返回键关闭卡片 |
+
+**第二轮设备反馈（同一轮工作内）**
+
+| 项 | 内容 |
+| --- | --- |
+| 高亮仍偏 | 最终方案：注册表在布局时用**同字号、同字体**的 `Paint.getTextBounds` 量词本身的墨迹 bbox（`FontFamily.Resolver.resolveAsTypeface` 取 Typeface），再按 `getLineBaseline` 贴到词上。行框方案随行高变胖；「基线 ± 0.72/0.22em」对无下伸字母的词（`crack`）底部留白、上伸字母被切。真机像素复测：`crack` 上 3 / 下 4px，`suddenly` 上 4 / 下 4px，`perceived`（有下伸字母）同样贴合 |
+| 点击无反馈 | 单击取词被双击判定延迟 ~300ms。`detectTapGestures(onPress = ...)` 里先命词并写入 `DictionaryLookupModel.previewAnchor`，只画高亮；`onTap` 落地后才查词，卡片稍后出现；手势取消/双击翻译时撤掉预览。两种布局都接 |
+| 高亮横向错位（两端对齐） | 用户复现 `through`：高亮选到上一个词的末尾 `e`、漏掉最后的 `h`。真因：Android 的 `getPrimaryHorizontal` 返回**未拉伸**坐标，而绘制时两端对齐会把词间空格拉宽（实测 20pt/行宽 1804px 时，行尾词偏左 ~35px，越靠行尾越大）。修复：按「词前空格数 × 每间隔拉伸量」把词矩形右移，命中点先按同量左移再取词；非 Justify/段落末行差值为 0 不校正。真机复测 `through` 高亮左 3px/右 6px 贴合，点行尾词的右半也能命中正确单词 |
+| 候选 chip 滚动 | 多词条候选从横向滚动改成 `FlowRow` 换行；同时把 Material3 `FilterChip`（固定 32dp 高）换成 ~24dp 的紧凑胶囊，否则 5 个前缀候选取代后会把固定头部撑掉半个卡片。候选组与上方元信息胶囊之间补 10dp + 发丝分隔线 + 10dp（两者都是胶囊，原来挤在一起） |
+| 英文释义词性 | `LookupDefinition(pos, html)`：每行开头的 `n./v./a./s./r.` 解析成独立词性，渲染为浅灰底 + 粗体小徽标（与中文义项的彩色词性标签区分主次） |
+
 ---
+
+### 3.13 第四轮设备反馈：高亮留白、翻译对话框、Kindle 分区、翻页延迟
+
+| 项 | 内容 |
+| --- | --- |
+| 高亮留白 | `ReaderScaffold` 画高亮时四周各放宽 1.5dp（卡片定位仍用未放宽的矩形）。上一轮修的是横向对齐，这轮只改观感 |
+| 翻译对话框 | 刚打开/等待首个 token 时是一张 **360dp 宽紧凑卡片**（标题 + 标签 + 居中加载行）；首段流式文字/结果到达后 `animateContentSize` 平滑展开到最大 600dp 宽、80% 高，超出后正文滚动。模型与目标语言从滚动正文挪到标题下的固定副标题，标题/标签与正文之间加分隔线。`AsyncText.Idle` 不再渲染空白，按 loading 画 |
+| 点击分区 | 默认改成 **Kindle 式**：顶部 12% 呼出菜单、左侧 25% 上一页、其余 75% 下一页；旧的「左/中/右」被替换（存量 `SIDES` 按名字找不到自动回落默认，完成迁移），「上/中/下」「仅中间」保留 |
+| 翻页延迟 | 调查结论：与文件大小无关，是「双击翻译判定 300ms」+「默认 spring 翻页动画 ~416ms」叠加。修复：阅读页 `LocalViewConfiguration.doubleTapTimeoutMillis` 300→200ms；`animateScrollToPage` 改用 200ms tween。真机实测「按下→onTap」300→**208ms**、「onTap→落定」416→约 **250ms**。剩余等待是双击窗口本身，关掉双击翻译可完全即时 |
+| 设备验证 | 高亮留白、Kindle 分区、翻页时序均在 Lenovo TB322FC 上实测；翻译对话框的最终视觉复测被设备锁屏/熄屏中断（截屏全黑），代码与门禁已通过，待设备解锁后补一次目视确认 |
 
 ## 4. 真机验证结果
 

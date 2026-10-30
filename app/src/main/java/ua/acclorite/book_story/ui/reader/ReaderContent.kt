@@ -181,6 +181,8 @@ fun ReaderContent(
     // fork: 取词卡片。状态与回调都在这里收口，两种布局只负责「点到哪个词」。
     val lookupModel: DictionaryLookupModel = hiltViewModel()
     val lookupState by lookupModel.state.collectAsStateWithLifecycle()
+    // 手指按下就亮高亮：卡片要等双击判定，这段等待里必须给用户「点到了」的反馈。
+    val lookupPreviewAnchor by lookupModel.previewAnchor.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var ttsUnavailable by remember { mutableStateOf(false) }
     val navigator = LocalNavigator.current
@@ -188,6 +190,8 @@ fun ReaderContent(
         ReaderLookupActions(
             gesture = lookupGesture,
             onWord = { word, anchor -> lookupModel.lookup(word, anchor) },
+            onPreview = { anchor -> lookupModel.preview(anchor) },
+            onPreviewDismiss = { lookupModel.clearPreview() },
             onDismiss = { lookupModel.dismiss() }
         )
     }
@@ -335,7 +339,7 @@ fun ReaderContent(
                     imagesOriginalSize = imagesOriginalSize,
                     horizontalAlignment = horizontalAlignment,
                     doubleClickTranslation = doubleClickTranslation,
-                    lookupAnchor = lookupState.anchor,
+                    lookupAnchor = lookupPreviewAnchor ?: lookupState.anchor,
                     lookup = lookup,
                     translation = translation,
                     switchColorPreset = switchColorPreset,

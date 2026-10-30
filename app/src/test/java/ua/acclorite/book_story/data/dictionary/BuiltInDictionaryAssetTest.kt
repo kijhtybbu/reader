@@ -25,8 +25,8 @@ class BuiltInDictionaryAssetTest {
     private val notice = File(assetDir, "NOTICE.txt")
 
     /** 与 `NOTICE.txt` 里 `stardict.7z SHA-256` 那一行一致；换资产时两处一起改。 */
-    private val expectedSha256 = "91c1367ce0b65562bd3a1a98ba1d84f351b067287bb40513eb6cd35bd4c46aec"
-    private val expectedSize = 21_112_502L
+    private val expectedSha256 = "c93fec78f1ad68f55c3a054c83be2fedf19e3afb5085e4566d5774abc4fd7ad3"
+    private val expectedSize = 21_691_246L
 
     @Test
     fun shippedAssetMatchesNotice() {

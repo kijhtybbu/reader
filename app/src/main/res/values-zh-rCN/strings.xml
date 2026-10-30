@@ -77,7 +77,7 @@
     <string name="background_color_option">背景颜色</string>
     <string name="side_padding_option">侧边填充</string>
     <string name="double_click_translation_option">双击翻译</string>
-    <string name="double_click_translation_option_desc">双击段落，在应用内翻译整段正文。开启时单击会等待约 300 毫秒以区分双击；关闭可恢复即时单击。</string>
+    <string name="double_click_translation_option_desc">双击段落，在应用内翻译整段正文。开启时单击会等待约 200 毫秒以区分双击；关闭可恢复即时单击。</string>
     <string name="fast_color_preset_change_option">快速更改颜色预设</string>
     <string name="fast_color_preset_change_option_desc">向左或向右滑动顶栏以更改颜色预设</string>
     <string name="text_alignment_option">文本对齐</string>
@@ -385,7 +385,7 @@
     <string name="paged_animation_slide">平移</string>
     <string name="paged_animation_fade">淡入淡出</string>
     <string name="tap_zones_option">点击分区</string>
-    <string name="tap_zones_sides">左 / 中 / 右</string>
+    <string name="tap_zones_kindle">Kindle 式</string>
     <string name="tap_zones_top_bottom">上 / 中 / 下</string>
     <string name="tap_zones_center_only">仅中间</string>
     <string name="bookmarks_option">书签</string>
@@ -449,6 +449,17 @@
     <string name="lookup_popup_tts_unavailable_title">无法朗读这个单词</string>
     <string name="lookup_popup_tts_install_data">安装英语语音数据</string>
     <string name="lookup_popup_source">来自 %1$s</string>
+    <string name="lookup_popup_definitions">英文释义</string>
+    <string name="lookup_badge_oxford">牛津 3000</string>
+    <string name="lookup_badge_frequency">词频 %1$s</string>
+    <string name="lookup_tag_zk">中考</string>
+    <string name="lookup_tag_gk">高考</string>
+    <string name="lookup_tag_cet4">四级</string>
+    <string name="lookup_tag_cet6">六级</string>
+    <string name="lookup_tag_ky">考研</string>
+    <string name="lookup_tag_toefl">托福</string>
+    <string name="lookup_tag_ielts">雅思</string>
+    <string name="lookup_tag_gre">GRE</string>
 
     <!-- fork: phase 2 / S6 AI 设置 -->
     <string name="ai_settings">AI 翻译设置</string>

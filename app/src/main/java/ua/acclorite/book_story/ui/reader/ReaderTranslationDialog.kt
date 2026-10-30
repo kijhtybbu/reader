@@ -23,15 +23,16 @@ package ua.acclorite.book_story.ui.reader
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +44,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +66,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -81,8 +84,23 @@ import ua.acclorite.book_story.ui.theme.LocalReaderPalette
 
 private val DialogMaxWidth = 600.dp
 
-/** 设计 §0：对话框占屏幕高度的 80%。 */
+/** 加载中/刚打开时先用一张小卡片，内容到了再展开（宽度也跟着变）。 */
+private val DialogCompactWidth = 360.dp
+
+/** 设计 §0：对话框最多占屏幕高度的 80%；内容少时按内容高度收缩。 */
 private const val DialogHeightFraction = 0.8f
+
+/**
+ * 「还没有任何内容」的状态：翻译标签的 Idle/Loading，或单句语法分析还在请求。
+ * 这时卡片用紧凑尺寸，避免一打开就是一块 80% 高的空白。
+ */
+private fun TranslationState.isCompactLoading(): Boolean = when (activeTab) {
+    TranslationTab.TRANSLATION ->
+        translation is AsyncText.Idle || translation is AsyncText.Loading
+
+    TranslationTab.GRAMMAR ->
+        sentences.size <= 1 && (grammar is AsyncGrammar.Idle || grammar is AsyncGrammar.Loading)
+}
 
 /**
  * @param onSelectTab 切标签；翻译标签会立即请求，语法标签多句时等用户选句。
@@ -127,60 +145,63 @@ fun ReaderTranslationDialog(
         // 与项目里其它 Dialog 一致：对话框自己的窗口不跟随主题，调暗一点才有浮层感。
         (LocalView.current.parent as? DialogWindowProvider)?.window?.setDimAmount(0.6f)
 
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
+            val compact = state.isCompactLoading()
+            val maxHeight = maxHeight * DialogHeightFraction
             Surface(
                 modifier = Modifier
-                    .widthIn(max = DialogMaxWidth)
+                    .widthIn(max = if (compact) DialogCompactWidth else DialogMaxWidth)
                     .fillMaxWidth()
-                    .fillMaxHeight(DialogHeightFraction),
+                    .heightIn(max = maxHeight)
+                    // 加载完成/流式增长时卡片平滑长高，不会「啪」一下跳成大块。
+                    .animateContentSize(),
                 shape = RoundedCornerShape(24.dp),
                 color = palette.bar,
                 contentColor = palette.onBar,
                 shadowElevation = 8.dp
             ) {
-                Column(Modifier.fillMaxSize()) {
-                    DialogHeader(onDismiss)
+                Column(Modifier.fillMaxWidth()) {
+                    DialogHeader(
+                        model = state.model,
+                        targetLanguage = state.targetLanguageName,
+                        onDismiss = onDismiss
+                    )
 
                     if (state.grammarAvailable) {
                         DialogTabs(activeTab = state.activeTab, onSelectTab = onSelectTab)
                     }
 
-                    Box(
+                    HorizontalDivider(color = palette.onBar.copy(alpha = 0.10f))
+
+                    // 内容短时卡片跟着收缩（fill = false）；超过 80% 高度后只有正文滚动。
+                    Column(
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState())
-                                .padding(horizontal = 24.dp, vertical = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            MetaLine(model = state.model, targetLanguage = state.targetLanguageName)
+                        when (state.activeTab) {
+                            TranslationTab.TRANSLATION -> TranslationTabContent(
+                                state = state,
+                                onCopy = copy,
+                                onShare = onShare,
+                                onRetry = { onRegenerate(TranslationTab.TRANSLATION) },
+                                onExternalTranslate = onExternalTranslate
+                            )
 
-                            when (state.activeTab) {
-                                TranslationTab.TRANSLATION -> TranslationTabContent(
-                                    state = state,
-                                    onCopy = copy,
-                                    onShare = onShare,
-                                    onRetry = { onRegenerate(TranslationTab.TRANSLATION) },
-                                    onExternalTranslate = onExternalTranslate
-                                )
-
-                                TranslationTab.GRAMMAR -> GrammarTabContent(
-                                    state = state,
-                                    onCopy = copy,
-                                    onShare = onShare,
-                                    onSelectSentence = onSelectSentence,
-                                    onReanalyze = { onRegenerate(TranslationTab.GRAMMAR) }
-                                )
-                            }
+                            TranslationTab.GRAMMAR -> GrammarTabContent(
+                                state = state,
+                                onCopy = copy,
+                                onShare = onShare,
+                                onSelectSentence = onSelectSentence,
+                                onReanalyze = { onRegenerate(TranslationTab.GRAMMAR) }
+                            )
                         }
                     }
                 }
@@ -190,22 +211,36 @@ fun ReaderTranslationDialog(
 }
 
 @Composable
-private fun DialogHeader(onDismiss: () -> Unit) {
+private fun DialogHeader(model: String, targetLanguage: String, onDismiss: () -> Unit) {
     val palette = LocalReaderPalette.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 12.dp, top = 12.dp),
+            .padding(start = 24.dp, end = 12.dp, top = 14.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        StyledText(
-            text = stringResource(id = R.string.translation_dialog_title),
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleLarge.copy(
-                color = palette.onBar,
-                fontWeight = FontWeight.SemiBold
+        Column(Modifier.weight(1f)) {
+            StyledText(
+                text = stringResource(id = R.string.translation_dialog_title),
+                style = MaterialTheme.typography.titleLarge.copy(
+                    color = palette.onBar,
+                    fontWeight = FontWeight.SemiBold
+                )
             )
-        )
+            // 模型与目标语言从滚动正文挪到标题下面：固定在顶部，不跟着译文滚走。
+            if (model.isNotBlank() || targetLanguage.isNotBlank()) {
+                StyledText(
+                    text = stringResource(
+                        id = R.string.translation_dialog_meta,
+                        model.ifBlank { "-" },
+                        targetLanguage
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall.copy(color = palette.onBarMuted)
+                )
+            }
+        }
         IconButton(onClick = onDismiss) {
             Icon(
                 imageVector = Icons.Outlined.Close,
@@ -264,15 +299,6 @@ private fun DialogTabs(
 }
 
 @Composable
-private fun MetaLine(model: String, targetLanguage: String) {
-    val palette = LocalReaderPalette.current
-    StyledText(
-        text = stringResource(id = R.string.translation_dialog_meta, model, targetLanguage),
-        style = MaterialTheme.typography.labelMedium.copy(color = palette.onBarMuted)
-    )
-}
-
-@Composable
 private fun TranslationTabContent(
     state: TranslationState,
     onCopy: (String) -> Unit,
@@ -283,9 +309,8 @@ private fun TranslationTabContent(
     OriginalSection(text = state.originalText, requestId = state.requestId)
 
     when (val translation = state.translation) {
-        AsyncText.Idle -> Unit
-
-        AsyncText.Loading -> LoadingRow(
+        // 刚打开/请求发出前也按 loading 画：以前这里是空白，用户只看到一块空卡片。
+        AsyncText.Idle, AsyncText.Loading -> LoadingPanel(
             text = stringResource(id = R.string.translation_dialog_translating)
         )
 
@@ -523,6 +548,30 @@ private fun LoadingRow(text: String) {
         StyledText(
             text = text,
             modifier = Modifier.padding(start = 8.dp),
+            style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
+        )
+    }
+}
+
+/** 紧凑加载态：居中、留一点上下空间，配小卡片看起来不空。 */
+@Composable
+private fun LoadingPanel(text: String) {
+    val palette = LocalReaderPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 18.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(18.dp),
+            color = palette.accent,
+            strokeWidth = 2.dp
+        )
+        StyledText(
+            text = text,
+            modifier = Modifier.padding(start = 10.dp),
             style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
         )
     }

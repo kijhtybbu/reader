@@ -351,9 +351,26 @@ fun ReaderLayoutContinuous(
                             .onGloballyPositioned { contentCoordinates = it }
                             .pointerInput(lookup, showMenu, doubleClickTranslation, translation) {
                                 detectTapGestures(
+                                    // fork: 手指按下就先高亮命中的词。单击要等双击判定
+                                    // （~300ms）才会回调 onTap，没有这个预览用户会觉得「点了没反应」。
+                                    onPress = press@{ offset ->
+                                        if (!lookup.singleTapEnabled || showMenu) return@press
+                                        val window = contentCoordinates
+                                            ?.takeIf { it.isAttached }
+                                            ?.localToWindow(offset)
+                                        val word = window?.let(textLayouts::hitTest)
+                                        if (word != null) {
+                                            lookup.onPreview(word.rect)
+                                            // 手指抬起 = 这次按下会走 onTap/onDoubleTap，高亮保持；
+                                            // 被取消（拖动滚动）则撤掉预览。
+                                            if (!tryAwaitRelease()) lookup.onPreviewDismiss()
+                                        }
+                                    },
                                     // 非 null 时单击会等双击超时（~300ms）；设置里关掉双击翻译时
                                     // 必须传 null，否则每次切菜单都慢一拍。
                                     onDoubleTap = if (!doubleClickTranslation) null else { offset ->
+                                        // 双击 = 翻译：把第一下按下时的取词预览/卡片撤掉。
+                                        lookup.onDismiss()
                                         val window = contentCoordinates
                                             ?.takeIf { it.isAttached }
                                             ?.localToWindow(offset)

@@ -241,7 +241,7 @@
     <string name="side_padding_option">Side margins</string>
     <string name="vertical_padding_option">Vertical margins</string>
     <string name="double_click_translation_option">Double click translation</string>
-    <string name="double_click_translation_option_desc">Double click a paragraph to translate the whole paragraph in the app. While this is on, a single tap waits about 300 ms so it can tell a double click apart; turn it off for instant single taps.</string>
+    <string name="double_click_translation_option_desc">Double click a paragraph to translate the whole paragraph in the app. While this is on, a single tap waits about 200 ms so it can tell a double click apart; turn it off for instant single taps.</string>
     <string name="fast_color_preset_change_option">Fast color preset change</string>
     <string name="fast_color_preset_change_option_desc">Swipe top bar left or right to change color preset</string>
     <string name="text_alignment_option">Text alignment</string>
@@ -556,7 +556,7 @@
     <string name="paged_animation_slide">Slide</string>
     <string name="paged_animation_fade">Fade</string>
     <string name="tap_zones_option">Tap zones</string>
-    <string name="tap_zones_sides">Left / centre / right</string>
+    <string name="tap_zones_kindle">Kindle</string>
     <string name="tap_zones_top_bottom">Top / centre / bottom</string>
     <string name="tap_zones_center_only">Centre only</string>
     <string name="bookmarks_option">Bookmarks</string>
@@ -620,6 +620,17 @@
     <string name="lookup_popup_tts_unavailable_title">Cannot pronounce this word</string>
     <string name="lookup_popup_tts_install_data">Install voice data</string>
     <string name="lookup_popup_source">From %1$s</string>
+    <string name="lookup_popup_definitions">English definitions</string>
+    <string name="lookup_badge_oxford">Oxford 3000</string>
+    <string name="lookup_badge_frequency">Rank %1$s</string>
+    <string name="lookup_tag_zk">Zhongkao</string>
+    <string name="lookup_tag_gk">Gaokao</string>
+    <string name="lookup_tag_cet4">CET-4</string>
+    <string name="lookup_tag_cet6">CET-6</string>
+    <string name="lookup_tag_ky">Postgraduate exam</string>
+    <string name="lookup_tag_toefl">TOEFL</string>
+    <string name="lookup_tag_ielts">IELTS</string>
+    <string name="lookup_tag_gre">GRE</string>
 
     <!-- fork: phase 2 / S6 AI settings -->
     <string name="ai_settings">AI translation settings</string>

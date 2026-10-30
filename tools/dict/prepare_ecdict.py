@@ -16,6 +16,15 @@ The archive is reproducible: the three inputs get a fixed mtime before packing
 (SOURCE_DATE_EPOCH when set, otherwise FIXED_MTIME below) and are packed through a
 ustar tar, so the same CSV always produces the same stardict.7z SHA-256 that
 NOTICE.txt pins. See pack_seven_zip for why the tar step is needed.
+
+Entry markup (the app's lookup card parses it):
+
+    <!--ecdict|…--><b>word</b><br><span style="color:#888">/phonetic/</span>
+    <br>translations<!--def-->definitions<br><i>pos</i><br><small>exchange</small>
+
+The `<!--ecdict|…-->` comment carries Collins stars / Oxford flag / exam tags /
+frequency ranks, and `<!--def-->` marks the start of the English (WordNet) glosses.
+Both are invisible; the card uses them to split senses, glosses and badges.
 """
 
 from __future__ import annotations
@@ -33,6 +42,11 @@ import urllib.request
 
 ECDICT_CSV_URL = "https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv"
 ECDICT_CSV_SHA256 = "d1ecbdf9ee2b920afb6f430ca6b6bb9f559588cf0dff86e04bd255f9390843cc"
+
+# Invisible markers consumed by the lookup card (see module docstring). Keep the
+# literal strings in sync with LOOKUP_DEFINITION_MARKER / META_COMMENT_REGEX in
+# app/src/main/java/ua/acclorite/book_story/ui/reader/ReaderLookupArticle.kt.
+LOOKUP_DEFINITION_MARKER = "<!--def-->"
 # Intermediates (66MB CSV + 90MB StarDict) stay in build/, which is gitignored;
 # only stardict.7z is copied into the assets directory.
 DEFAULT_WORK_DIR = os.path.join("build", "ecdict")
@@ -61,6 +75,28 @@ def download(url: str, target: str) -> None:
             out.write(chunk)
 
 
+def meta_comment(row: dict[str, str]) -> str:
+    """Invisible dictionary metadata consumed by the lookup card.
+
+    Format: `<!--ecdict|c=<collins>|o=1|t=<tag1,tag2>|b=<bnc>|f=<frq>-->`.
+    Only non-empty fields are written; an entry with no metadata gets no comment.
+    """
+    parts: list[str] = []
+    collins = (row.get("collins") or "").strip()
+    if collins:
+        parts.append(f"c={collins}")
+    if (row.get("oxford") or "").strip() == "1":
+        parts.append("o=1")
+    tag = " ".join((row.get("tag") or "").split())
+    if tag:
+        parts.append("t=" + ",".join(tag.split()))
+    for key, column in (("b", "bnc"), ("f", "frq")):
+        value = (row.get(column) or "").strip()
+        if value and value != "0":
+            parts.append(f"{key}={value}")
+    return f"<!--ecdict|{'|'.join(parts)}-->" if parts else ""
+
+
 def read_entries(csv_path: str) -> dict[str, str]:
     words: dict[str, str] = {}
     with open(csv_path, encoding="utf-8", newline="") as handle:
@@ -75,12 +111,13 @@ def read_entries(csv_path: str) -> dict[str, str]:
             pos = (row.get("pos") or "").strip()
             exchange = (row.get("exchange") or "").strip()
 
-            body = f"<b>{html.escape(word)}</b>"
+            body = meta_comment(row) + f"<b>{html.escape(word)}</b>"
             if phonetic:
                 body += f'<br><span style="color:#888">/{html.escape(phonetic)}/</span>'
-            for value in (translation, definition):
-                if value:
-                    body += "<br>" + html.escape(value).replace("\n", "<br>")
+            if translation:
+                body += "<br>" + html.escape(translation).replace("\n", "<br>")
+            if definition:
+                body += "<br>" + LOOKUP_DEFINITION_MARKER + html.escape(definition).replace("\n", "<br>")
             if pos:
                 body += f"<br><i>{html.escape(pos)}</i>"
             if exchange:

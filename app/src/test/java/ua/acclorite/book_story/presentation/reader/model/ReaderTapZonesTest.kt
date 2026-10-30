@@ -18,18 +18,21 @@ class ReaderTapZonesTest {
     private fun action(zones: ReaderTapZones, x: Float, y: Float) = tapActionFor(zones, x, y)
 
     @Test
-    fun `sides layout splits horizontally`() {
-        assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.SIDES, 0.1f, 0.5f))
-        assertEquals(ReaderTapAction.MENU, action(ReaderTapZones.SIDES, 0.5f, 0.5f))
-        assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.SIDES, 0.9f, 0.5f))
+    fun `kindle layout uses a narrow left zone and a wide right zone`() {
+        assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.KINDLE, 0.1f, 0.5f))
+        assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.KINDLE, 0.5f, 0.5f))
+        assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.KINDLE, 0.9f, 0.5f))
     }
 
     @Test
-    fun `sides layout ignores the vertical position`() {
-        // 同一个横向位置，上中下都应得到相同结果
-        listOf(0.05f, 0.5f, 0.95f).forEach { y ->
-            assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.SIDES, 0.1f, y))
-            assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.SIDES, 0.9f, y))
+    fun `kindle layout opens the menu from the top band`() {
+        listOf(0.05f, 0.5f, 0.95f).forEach { x ->
+            assertEquals(ReaderTapAction.MENU, action(ReaderTapZones.KINDLE, x, 0.05f))
+        }
+        // 顶部带以下是翻页区，纵向位置不再影响结果
+        listOf(0.2f, 0.5f, 0.95f).forEach { y ->
+            assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.KINDLE, 0.1f, y))
+            assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.KINDLE, 0.9f, y))
         }
     }
 
@@ -59,35 +62,36 @@ class ReaderTapZonesTest {
     }
 
     @Test
-    fun `zone boundaries are exclusive at the edges`() {
-        val third = 1f / 3f
-        // 恰好在分界线上应落到「中间」区
-        assertEquals(ReaderTapAction.MENU, action(ReaderTapZones.SIDES, third, 0.5f))
-        assertEquals(ReaderTapAction.MENU, action(ReaderTapZones.SIDES, 1f - third, 0.5f))
+    fun `kindle boundaries are exclusive at the edges`() {
+        // 恰好 25% 归入右侧「下一页」
+        assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.KINDLE, 0.24f, 0.5f))
+        assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.KINDLE, 0.25f, 0.5f))
+        // 恰好 12% 归入翻页区
+        assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.KINDLE, 0.9f, 0.12f))
         // 极端坐标（手指划出边界时会被 coerce 到 0/1）
-        assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.SIDES, 0f, 0.5f))
-        assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.SIDES, 1f, 0.5f))
+        assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.KINDLE, 0f, 0.5f))
+        assertEquals(ReaderTapAction.NEXT, action(ReaderTapZones.KINDLE, 1f, 0.5f))
     }
 
     @Test
     fun `normal direction maps next to +1 and previous to -1`() {
         assertEquals(1, pageDeltaFor(ReaderTapAction.NEXT, reversed = false))
         assertEquals(-1, pageDeltaFor(ReaderTapAction.PREVIOUS, reversed = false))
-        // 右按右侧三分之一应是下一页（页码 +1）
-        val right = action(ReaderTapZones.SIDES, 0.9f, 0.5f)
+        // 点右侧宽区应是下一页（页码 +1）
+        val right = action(ReaderTapZones.KINDLE, 0.9f, 0.5f)
         assertEquals(1, pageDeltaFor(right, reversed = false))
     }
 
     @Test
     fun `reversed direction flips the delta, not the zone`() {
-        // RIGHT_TO_LEFT：页码向左递增，所以左边那三分之一才是「下一页」
+        // RIGHT_TO_LEFT：页码向左递增，所以左侧窄区才是「下一页」
         assertEquals(-1, pageDeltaFor(ReaderTapAction.NEXT, reversed = true))
         assertEquals(1, pageDeltaFor(ReaderTapAction.PREVIOUS, reversed = true))
 
-        // 分区本身不变：左边仍然是 PREVIOUS（位置性），只是它对应的页码增量是 +1
-        assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.SIDES, 0.1f, 0.5f))
-        assertEquals(1, pageDeltaFor(action(ReaderTapZones.SIDES, 0.1f, 0.5f), reversed = true))
-        assertEquals(-1, pageDeltaFor(action(ReaderTapZones.SIDES, 0.9f, 0.5f), reversed = true))
+        // 分区本身不变：左侧仍然是 PREVIOUS（位置性），只是它对应的页码增量是 +1
+        assertEquals(ReaderTapAction.PREVIOUS, action(ReaderTapZones.KINDLE, 0.1f, 0.5f))
+        assertEquals(1, pageDeltaFor(action(ReaderTapZones.KINDLE, 0.1f, 0.5f), reversed = true))
+        assertEquals(-1, pageDeltaFor(action(ReaderTapZones.KINDLE, 0.9f, 0.5f), reversed = true))
     }
 
     @Test
