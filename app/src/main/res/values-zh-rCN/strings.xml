@@ -445,7 +445,9 @@
     <string name="lookup_popup_ai_explain">AI 解释（S9）</string>
     <string name="lookup_popup_external">用其他应用查询</string>
     <string name="lookup_popup_pronounce">朗读单词</string>
-    <string name="lookup_popup_tts_unavailable">系统没有安装英语语音包。</string>
+    <string name="lookup_popup_tts_unavailable">系统没有安装英语语音包，请先在系统“文字转语音”设置中安装英语语音。</string>
+    <string name="lookup_popup_tts_unavailable_title">无法朗读这个单词</string>
+    <string name="lookup_popup_tts_open_settings">打开语音设置</string>
     <string name="lookup_popup_source">来自 %1$s</string>
 
     <!-- fork: phase 2 / S6 AI 设置 -->

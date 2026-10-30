@@ -20,12 +20,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import ua.acclorite.book_story.domain.model.book.Book
 import ua.acclorite.book_story.domain.model.book.Chapter
@@ -107,6 +114,8 @@ fun ReaderScaffold(
     imagesOriginalSize: Boolean,
     horizontalAlignment: Alignment.Horizontal,
     doubleClickTranslation: Boolean,
+    /** 取词命中词的窗口矩形；非 null 时在阅读层上画一层强调色高亮。 */
+    lookupAnchor: Rect?,
     lookup: ReaderLookupActions,
     // fork: 双击段落/选区翻译共用同一个 TranslationModel（S8）。
     translation: ReaderTranslationActions,
@@ -128,9 +137,28 @@ fun ReaderScaffold(
     navigateBack: (ReaderEvent.OnNavigateBack) -> Unit,
     loadNodesBefore: suspend (NodeId, Int) -> List<Node>
 ) {
+    val palette = LocalReaderPalette.current
     Scaffold(
         Modifier
             .fillMaxSize()
+            .drawWithContent {
+                drawContent()
+                lookupAnchor?.takeIf { it.width > 0f && it.height > 0f }?.let { anchor ->
+                    drawRoundRect(
+                        color = palette.accent.copy(alpha = 0.26f),
+                        topLeft = Offset(anchor.left, anchor.top),
+                        size = Size(anchor.width, anchor.height),
+                        cornerRadius = CornerRadius(4.dp.toPx())
+                    )
+                    drawRoundRect(
+                        color = palette.accent.copy(alpha = 0.65f),
+                        topLeft = Offset(anchor.left, anchor.top),
+                        size = Size(anchor.width, anchor.height),
+                        cornerRadius = CornerRadius(4.dp.toPx()),
+                        style = Stroke(width = 1.5.dp.toPx())
+                    )
+                }
+            }
             .then(
                 if (layout == ReaderLayout.CONTINUOUS) Modifier.nestedScroll(nestedScrollConnection)
                 else Modifier

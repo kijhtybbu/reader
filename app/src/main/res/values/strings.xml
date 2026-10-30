@@ -616,7 +616,9 @@
     <string name="lookup_popup_ai_explain">Explain with AI (S9)</string>
     <string name="lookup_popup_external">Look up in another app</string>
     <string name="lookup_popup_pronounce">Pronounce word</string>
-    <string name="lookup_popup_tts_unavailable">No English text-to-speech voice is installed.</string>
+    <string name="lookup_popup_tts_unavailable">Android has no English text-to-speech voice installed. Install one in the system text-to-speech settings.</string>
+    <string name="lookup_popup_tts_unavailable_title">Cannot pronounce this word</string>
+    <string name="lookup_popup_tts_open_settings">Open TTS settings</string>
     <string name="lookup_popup_source">From %1$s</string>
 
     <!-- fork: phase 2 / S6 AI settings -->

@@ -332,6 +332,7 @@ fun ReaderContent(
                     imagesOriginalSize = imagesOriginalSize,
                     horizontalAlignment = horizontalAlignment,
                     doubleClickTranslation = doubleClickTranslation,
+                    lookupAnchor = lookupState.anchor,
                     lookup = lookup,
                     translation = translation,
                     switchColorPreset = switchColorPreset,
