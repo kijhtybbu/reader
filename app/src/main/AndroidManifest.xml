@@ -26,6 +26,13 @@
         tools:node="remove"
         tools:ignore="ScopedStorage" />
 
+    <!-- fork: Android 11+ package visibility: TextToSpeech engine discovery needs this. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".Application"
         android:allowBackup="false"
