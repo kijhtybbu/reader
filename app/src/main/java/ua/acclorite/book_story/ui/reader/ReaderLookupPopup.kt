@@ -215,9 +215,13 @@ private fun SuccessBody(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             state.entries.forEachIndexed { index, entry ->
+                // 同一词典的前缀候选词头不同，必须显示词头；只有同一个词来自多部词典时
+                // 才补词典名，避免一排完全一样的按钮。
+                val duplicateWord = state.entries.count { it.word == entry.word } > 1
+                val label = if (duplicateWord) "${entry.word} · ${entry.dictName}" else entry.word
                 FilterChip(
                     selected = index == state.selectedIndex,
-                    label = { StyledText(text = entry.dictName, maxLines = 1) },
+                    label = { StyledText(text = label, maxLines = 1) },
                     onClick = { onSelect(index) }
                 )
             }

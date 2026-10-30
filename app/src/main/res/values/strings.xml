@@ -621,6 +621,7 @@
     <string name="ai_settings">AI translation settings</string>
     <string name="ai_settings_desc">Base URL, model, API key and target language</string>
     <string name="ai_connection_title">OpenAI-compatible endpoint</string>
+    <string name="ai_provider_presets">Provider presets</string>
     <string name="ai_base_url">Base URL</string>
     <string name="ai_base_url_desc">For example https://api.openai.com/v1/ or a local Ollama endpoint. https:// is assumed when omitted; a trailing slash is added automatically.</string>
     <string name="ai_model">Model</string>

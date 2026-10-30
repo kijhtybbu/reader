@@ -56,6 +56,7 @@ import ua.acclorite.book_story.ui.theme.model.PureDark
 import ua.acclorite.book_story.ui.theme.model.Theme
 import ua.acclorite.book_story.ui.theme.model.ThemeContrast
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -211,6 +212,17 @@ class SettingsManager @Inject constructor(
         key = stringPreferencesKey("ai_model"), default = DEFAULT_AI_MODEL,
         serialize = { it.trim().ifBlank { DEFAULT_AI_MODEL } },
         deserialize = { it.trim().ifBlank { DEFAULT_AI_MODEL } }
+    )
+    /**
+     * 稳定的请求会话 ID。OpenCode Go 等网关要求 `x-opencode-session`，否则直接 400
+     * (`MissingSessionID`)；对普通 OpenAI 兼容服务是未知头，会被忽略。
+     * 每个安装生成一次，不包含用户/设备标识。
+     */
+    val aiSessionId = setting<String, String>(
+        key = stringPreferencesKey("ai_session_id"),
+        default = UUID.randomUUID().toString(),
+        serialize = { it.ifBlank { UUID.randomUUID().toString() } },
+        deserialize = { it.ifBlank { UUID.randomUUID().toString() } }
     )
     val aiTargetLanguage = setting<AiTargetLanguage, String>(
         key = stringPreferencesKey("ai_target_language"), default = AiTargetLanguage.FOLLOW_UI,

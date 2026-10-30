@@ -47,9 +47,10 @@ class AiTranslationRepositoryTest {
         engine: MockEngine,
         baseUrl: String = "https://example.test/v1/",
         model: String = "test-model",
-        locale: Locale = Locale.US
+        locale: Locale = Locale.US,
+        sessionId: String = ""
     ) = AiTranslationRepository(
-        config = { AiClientConfig(baseUrl = baseUrl, model = model) },
+        config = { AiClientConfig(baseUrl = baseUrl, model = model, sessionId = sessionId) },
         keyStore = keyStore,
         engine = engine,
         uiLocale = { locale }
@@ -63,6 +64,7 @@ class AiTranslationRepositoryTest {
         var host: String? = null
         var authorization: String? = null
         var title: String? = null
+        var session: String? = null
         var requestBody: String? = null
 
         val engine = MockEngine { request ->
@@ -70,6 +72,7 @@ class AiTranslationRepositoryTest {
             host = request.url.host
             authorization = request.headers[HttpHeaders.Authorization]
             title = request.headers["X-Title"]
+            session = request.headers["x-opencode-session"]
             requestBody = (request.body as? TextContent)?.text
             respond(
                 content = ByteReadChannel(sse("Hello", " world")),
@@ -78,7 +81,11 @@ class AiTranslationRepositoryTest {
             )
         }
 
-        val deltas = repository(engine, baseUrl = " https://example.test/v1 ").translate(
+        val deltas = repository(
+            engine,
+            baseUrl = " https://example.test/v1 ",
+            sessionId = "session-1"
+        ).translate(
             text = "Hello world.",
             targetLanguage = AiTargetLanguage.ENGLISH
         ).toList()
@@ -88,6 +95,7 @@ class AiTranslationRepositoryTest {
         assertEquals("example.test", host)
         assertEquals("Bearer sk-test-key", authorization)
         assertEquals("Book's Story", title)
+        assertEquals("session-1", session)
         assertTrue("stream flag missing: $requestBody", requestBody?.contains("\"stream\":true") == true)
         assertTrue("target language missing: $requestBody", requestBody?.contains("English (en)") == true)
         assertTrue("user text missing: $requestBody", requestBody?.contains("Hello world.") == true)
@@ -160,6 +168,37 @@ class AiTranslationRepositoryTest {
         assertEquals(AiError.INVALID_KEY, error.error)
         assertEquals(401, error.statusCode)
         assertFalse(error.message.orEmpty().contains("Incorrect API key provided"))
+    }
+
+    @Test
+    fun testConnectionFallsBackToChatWhenModelsReturns400() = runTest {
+        keyStore.set("sk-test-key")
+        val paths = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            paths += request.url.encodedPath
+            if (request.url.encodedPath.endsWith("/models")) {
+                respond(
+                    content = ByteReadChannel("""{"error":{"message":"models disabled"}}"""),
+                    status = HttpStatusCode.BadRequest,
+                    headers = jsonHeaders()
+                )
+            } else {
+                respond(
+                    content = ByteReadChannel(
+                        """{"id":"chat-1","object":"chat.completion","created":1,""" +
+                            """"model":"test-model","choices":[{"index":0,"message":""" +
+                            """{"role":"assistant","content":"pong"},"finish_reason":"stop"}]}"""
+                    ),
+                    status = HttpStatusCode.OK,
+                    headers = jsonHeaders()
+                )
+            }
+        }
+
+        val result = repository(engine).testConnection()
+
+        assertTrue(result.isSuccess)
+        assertEquals(listOf("/v1/models", "/v1/chat/completions"), paths)
     }
 
     @Test

@@ -76,6 +76,51 @@ private val MODEL_PRESETS = listOf(
     "llama3.1"
 )
 
+/**
+ * Base URL 与 model 必须成对匹配：只换 model 不换 Base URL 是最常见的 404/400 来源。
+ * 这里给常用服务一次性写入两者；自定义服务仍可在下方分别填写。
+ */
+private data class ProviderPreset(
+    val label: String,
+    val baseUrl: String,
+    val model: String
+)
+
+private val PROVIDER_PRESETS = listOf(
+    ProviderPreset("OpenAI", "https://api.openai.com/v1/", "gpt-4o-mini"),
+    ProviderPreset("DeepSeek", "https://api.deepseek.com/v1/", "deepseek-chat"),
+    ProviderPreset(
+        "Gemini",
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "gemini-2.0-flash"
+    ),
+    ProviderPreset("OpenRouter", "https://openrouter.ai/api/v1/", "openai/gpt-4o-mini"),
+    ProviderPreset("OpenCode Go", "https://opencode.ai/zen/go/v1/", "deepseek-v4.1-flash"),
+    ProviderPreset("Ollama", "http://127.0.0.1:11434/v1/", "llama3.1")
+)
+
+@Composable
+fun AiProviderPresetOption() {
+    val settings = LocalSettings.current
+    val currentBase = settings.aiBaseUrl.value
+    val currentModel = settings.aiModel.value
+
+    ChipsWithTitle(
+        title = stringResource(id = R.string.ai_provider_presets),
+        chips = PROVIDER_PRESETS.map { preset ->
+            ListItem(
+                item = preset,
+                title = preset.label,
+                selected = preset.baseUrl == currentBase && preset.model == currentModel
+            )
+        },
+        onClick = { preset ->
+            settings.aiBaseUrl.update(preset.baseUrl)
+            settings.aiModel.update(preset.model)
+        }
+    )
+}
+
 @Composable
 fun AiBaseUrlOption() {
     val settings = LocalSettings.current

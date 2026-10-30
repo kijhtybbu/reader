@@ -450,6 +450,7 @@
     <string name="ai_settings">AI 翻译设置</string>
     <string name="ai_settings_desc">Base URL、模型、API Key 与目标语言</string>
     <string name="ai_connection_title">OpenAI 兼容接口</string>
+    <string name="ai_provider_presets">服务预设</string>
     <string name="ai_base_url">Base URL</string>
     <string name="ai_base_url_desc">例如 https://api.openai.com/v1/ 或本机 Ollama 地址；没写协议时按 https:// 处理，缺少的尾部斜杠会自动补上。</string>
     <string name="ai_model">模型</string>

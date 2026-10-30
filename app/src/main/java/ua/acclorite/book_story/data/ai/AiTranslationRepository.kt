@@ -84,7 +84,25 @@ class AiTranslationRepository(
     suspend fun testConnection(): Result<Unit> {
         return try {
             val (clientConfig, key) = resolve()
-            open(clientConfig, key).use { it.models() }
+            open(clientConfig, key).use { client ->
+                try {
+                    client.models()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 不少 OpenAI 兼容服务不实现 /models（Gemini 兼容端点、部分代理），
+                    // 会返回 400/404。用最小 chat 请求再探一次；只在这种「端点上没有
+                    // /models」的情况下回退，401/403 仍然直接报 Key 错误。
+                    val mapped = mapAiException(e)
+                    if (mapped.statusCode !in listOf(400, 404, 405)) throw e
+                    client.chatCompletion(
+                        ChatCompletionRequest(
+                            model = ModelId(clientConfig.model),
+                            messages = listOf(ChatMessage(role = ChatRole.User, content = "ping"))
+                        )
+                    )
+                }
+            }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -149,11 +167,20 @@ class AiTranslationRepository(
                     ),
                     ChatMessage(role = ChatRole.User, content = text)
                 ),
-                temperature = 0.0,
                 responseFormat = ChatResponseFormat.JsonObject
             )
             val content = open(clientConfig, key).use { client ->
-                client.chatCompletion(request).choices.firstOrNull()?.message?.content
+                try {
+                    client.chatCompletion(request).choices.firstOrNull()?.message?.content
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 部分兼容端点不支持 response_format=json_object；去掉它再试一次，
+                    // 提示词本身已经要求 JSON。400 是这类端点的典型回复。
+                    if (mapAiException(e).statusCode != 400) throw e
+                    client.chatCompletion(request.copy(responseFormat = null))
+                        .choices.firstOrNull()?.message?.content
+                }
             }
             if (content.isNullOrBlank()) throw AiException(AiError.EMPTY_RESPONSE)
             Result.success(content)
@@ -173,7 +200,8 @@ class AiTranslationRepository(
         val model = configured.model.trim().ifBlank { DEFAULT_AI_MODEL }
         val clientConfig = AiClientConfig(
             baseUrl = normalizeAiBaseUrl(configured.baseUrl),
-            model = model
+            model = model,
+            sessionId = configured.sessionId
         )
 
         val key = keyStore.get().orEmpty()
@@ -193,7 +221,8 @@ class AiTranslationRepository(
             ChatMessage(role = ChatRole.System, content = systemPrompt),
             ChatMessage(role = ChatRole.User, content = chunk)
         ),
-        temperature = 0.2
+        // 不显式传 temperature：o1/o3/gpt-5 等推理模型会以 400 拒绝这个参数。
+        // 翻译不需要固定随机性，交给 provider 默认值即可。
     )
 
     /**
@@ -207,7 +236,14 @@ class AiTranslationRepository(
                 token = key,
                 host = OpenAIHost(config.baseUrl),
                 timeout = timeout,
-                headers = mapOf("X-Title" to AI_TITLE_HEADER),
+                headers = buildMap {
+                    put("X-Title", AI_TITLE_HEADER)
+                    // OpenCode Go 等网关缺少这个头会返回 400 MissingSessionID；
+                    // 普通 OpenAI 兼容服务会忽略未知头。
+                    if (config.sessionId.isNotBlank()) {
+                        put("x-opencode-session", config.sessionId)
+                    }
+                },
                 logging = LoggingConfig(logLevel = LogLevel.None),
                 retry = RetryStrategy(maxRetries = 0),
                 engine = engine

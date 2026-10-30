@@ -531,6 +531,18 @@ S9 的测试增量：
 - 词典查询/翻译缓存没有按书清理入口；缓存清理只有设置页全量清除。
 - 默认 `doubleClickTranslation = true` 会让分页单击翻页多等约 300ms；可在设置关闭。
 
+### 3.10 第二阶段后续修复（设备反馈）
+
+| 问题 | 修复 |
+| --- | --- |
+| 取词卡片多个按钮文字完全相同 | 卡片原本用 `dictName` 当 chip 文案，ECDICT/导入词典的前缀候选全显示成同一个词库名。改为显示 `entry.word`；同一个词来自多部词典时才追加 `· dictName`。 |
+| OpenCode Go / 部分网关返回 HTTP 400 | 服务端要求 `x-opencode-session`，否则返回 `MissingSessionID`。新增每安装稳定的 `ai_session_id`（UUID，存 DataStore），所有 AI 请求带 `x-opencode-session`；普通 OpenAI 兼容服务忽略该头。用 `curl` + 占位 Key 验证：无头 400 `MissingSessionID`，有头 401 `Invalid credential`（说明已进入鉴权阶段）。 |
+| 推理模型 400 / 兼容端点无 `/models` | 翻译/语法请求不再显式传 `temperature`（o1/o3/gpt-5 会拒绝）；`testConnection()` 在 `/models` 返回 400/404/405 时回退到最小 chat 请求；语法 `response_format=json_object` 遇 400 时去掉该字段重试一次。 |
+| 选模型但 Base URL 不匹配 | AI 设置页新增“服务预设”（OpenAI/DeepSeek/Gemini/OpenRouter/OpenCode Go/Ollama），一次写入 Base URL + model。 |
+| 空响应文案 | 新增 `AiError.EMPTY_RESPONSE`，不再显示“未知错误”。 |
+
+新增测试：`x-opencode-session` 头断言、`/models` 400 → chat 回退。当前 `:app:testDebugUnitTest` **358 个用例**；release-debug 重新构建后安装到 TB322FC。
+
 ---
 
 ## 4. 真机验证结果

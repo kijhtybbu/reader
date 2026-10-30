@@ -27,7 +27,9 @@ private val LOOPBACK_AI_HOSTS = setOf("localhost", "127.0.0.1", "10.0.2.2")
 /** [baseUrl] 已规范化、[model] 已 trim；API Key 不在这里（它在 [AiKeyStore] 里）。 */
 data class AiClientConfig(
     val baseUrl: String,
-    val model: String
+    val model: String,
+    /** 稳定会话 ID，作为 `x-opencode-session` 发送；普通 OpenAI 兼容服务会忽略。 */
+    val sessionId: String = ""
 )
 
 fun normalizeAiBaseUrl(value: String): String {
