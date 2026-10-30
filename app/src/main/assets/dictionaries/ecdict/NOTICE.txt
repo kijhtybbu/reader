@@ -1,0 +1,13 @@
+ECDICT — Free English to Chinese Dictionary Database
+Source: https://github.com/skywind3000/ECDICT
+License: MIT (see ECDICT-LICENSE.txt)
+Data file used: ecdict.csv
+  SHA-256: d1ecbdf9ee2b920afb6f430ca6b6bb9f559588cf0dff86e04bd255f9390843cc
+  Size: 66009548 bytes
+Converted for this app to StarDict (.ifo/.idx/.dict) by tools/dict/prepare_ecdict.py,
+then packed as stardict.7z (LZMA2). Archive entries carry a fixed mtime (2024-01-01T00:00:00Z,
+or SOURCE_DATE_EPOCH), so rebuilding from the pinned CSV reproduces these exact bytes.
+  stardict.7z SHA-256: 91c1367ce0b65562bd3a1a98ba1d84f351b067287bb40513eb6cd35bd4c46aec
+  Size: 21112502 bytes
+The MIT license text in ECDICT-LICENSE.txt is copied verbatim from the upstream
+repository; the copyright line is reproduced exactly as published there.

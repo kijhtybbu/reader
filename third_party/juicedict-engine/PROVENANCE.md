@@ -77,18 +77,23 @@ mdict/MdxKeyOrderTest.kt  mdict/MdxLinkRewriteTest.kt  mdict/Ripemd128Test.kt
    - `src/test/kotlin/com/qiuminal/juicedict/engine/DictionaryEnginesTest.kt`：适配层回归。
      StarDict 侧用临时目录现写 `.ifo` / `.idx` / `.idx.gz` / `.syn` / `.dict` 并断言
      `lookupSmart` 与 `article().toHtml()`；另覆盖 `.jidx` 缓存重开、`mddFilesFor` 配对、
-     `logSink` 上报与「坏文件返回 `null`」。`.dict.dz` 分支留给 S3（真实 ECDICT 资产）。
+     `logSink` 上报与「坏文件返回 `null`」。`.dict.dz` 分支留给 S4 导入真实词典（S3 的
+     内置 ECDICT 资产是明文 `.dict`）。
+     S3 追加：`.jidx` 缓存重开前先断言缓存文件存在、再删掉 `.idx.gz` 与 `.syn`，
+     缓存路径一旦坏掉重开会返回 `null`，不会静默回退到重新解析原始索引。
    - `src/test/kotlin/com/qiuminal/juicedict/engine/MdxFixtureTest.kt`：测试运行时用
      `java.util.zip.Deflater` 合成一个合法 MDX 2.0（单 key block + 单 record block，
      含一条 `@@@LINK=` 重定向），跑通 `probeMdx` → `openMdx` → `lookupSmart` →
      `article().toHtml()`。上游唯一打开真实 `.mdx` 的测试依赖本机
      `E:\dictionary\MDict`，没有该目录时直接 `return`，所以容器布局必须由合成 fixture 钉住。
+     S3 追加：同一条 fixture 也断言 `probeMdxHead` 的 `entryCount`，因为 S4 导入时
+     只读头部（不拷整个文件）就要拿到条目数。
 
 ## 未复制的上游测试及原因
 
 | 测试 | 原因 |
 | --- | --- |
-| `StarDictEngineTest` | 依赖 `app/src/main/assets/dict` 里打包的 CC-CEDICT（52 万词条、`.idx` + `.dict` 数十 MB），仓库不 vendoring 大词典数据；构造 `dictDir` 时直接 `error()`，在无资产的环境必然失败。S3 引入 ECDICT 资产后在 app 侧补等价覆盖。 |
+| `StarDictEngineTest` | 依赖 `app/src/main/assets/dict` 里打包的 CC-CEDICT（52 万词条、`.idx` + `.dict` 数十 MB），仓库不 vendoring 大词典数据；构造 `dictDir` 时直接 `error()`，在无资产的环境必然失败。S3 的 app 侧测试 `BuiltInDictionaryInstallerTest` 用真实 ECDICT 资产覆盖了等价路径（解压 → `openStarDict` → `lookupSmart` → `toHtml`）。 |
 | `BigEcdictTest` | 真实 340 万词条 ECDICT 的容量/性能回归，靠环境变量 `ECDICT_DIR` 提供外部目录，且断言写死了该词典的 `wordCount = 3_402_564`。 |
 | `FuzzyPerfTest` | 纯 benchmark（只 `println` 耗时），依赖本机 `internal-dicts/` 的 CC-CEDICT 与 chibigenc，无断言。 |
 | `mdict/MdxSmoke.kt`、`mdict/MdxVerify.kt` | 不是 JUnit 测试，而是 `object` + `main()` 的开发期命令行工具，默认路径是本机 Windows 词典库 `E:\dictionary\MDict`，靠 Gradle JavaExec 手动运行。 |

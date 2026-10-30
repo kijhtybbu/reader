@@ -68,6 +68,8 @@ class MdxFixtureTest {
         assertEquals("fixture", info!!.title)
         assertEquals("synthetic single-block MDX", info.description)
         assertEquals(2L, info.entryCount)
+        // 导入路径先只看头部（不拷整个文件）就要拿到条目数，与 probeMdx 必须一致
+        assertEquals(2L, DictionaryEngines.probeMdxHead(file.readBytes())!!.entryCount)
 
         val engine = DictionaryEngines.openMdx("fixture", file, emptyList(), "fixture", "d")
         try {

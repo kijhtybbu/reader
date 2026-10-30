@@ -17,6 +17,17 @@ object FileData {
      * URI 的授权可能过期，而 Typeface 重建会发生在任意一次主题/字重变化时。
      */
     fun getFontsDirectory(context: Context) = context.filesDir.resolve("fonts")
+
+    /**
+     * fork: 词典落盘目录。内置词库解压到这里，S4 导入的词典也放在这里 ——
+     * 应用私有目录不需要 SAF 授权，进程重启后路径仍然有效。
+     */
+    fun getDictionariesDirectory(context: Context) = context.filesDir.resolve("dictionaries")
+
+    /** 内置 ECDICT 的解压目标。与导入词典分开，避免清空/重装内置词库时波及用户词典。 */
+    fun getBuiltInDictionaryDirectory(context: Context) =
+        getDictionariesDirectory(context).resolve("builtin")
+
     fun getTempDirectory() = "temp_${System.currentTimeMillis()}"
     fun getBookContentDirectory(
         bookUUID: String,

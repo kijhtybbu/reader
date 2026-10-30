@@ -139,6 +139,17 @@ Known fields are [... e, ... f, ... g, ... h]
 - **持久化**：索引是 `filesDir/fonts/index.json`，在 `Application.onCreate` 里**同步**加载——`SettingsManager.fontFamily` 的反序列化是同步的，索引若异步加载会在重启后静默回落默认字体
 - **UI**：列表显示体积 + `Chinese glyphs` / `No Chinese glyphs` + `Variable` 徽标，配三行预览（中文 / 拉丁+数字 / 全角标点），让用户能自己判断而不是盲信徽标；删除当前字体时先回落默认字体再删文件
 
+### 3.8 内置 ECDICT 词典（离线取词的数据基础）
+
+上游没有任何词典功能。本 fork 随 APK 分发一份 ECDICT（英汉，MIT），首次启动解压到应用私有目录，供后续取词使用。
+
+- **数据**：官方 ECDICT `ecdict.csv`（SHA-256 `d1ecbdf9…43cc`，MIT）→ StarDict（`ecdict.ifo`/`.idx`/`.dict`，**770,611** 词条）→ LZMA2 7z（**21MB**）。转换与打包是构建期脚本 `tools/dict/prepare_ecdict.py`，App 里不跑
+- **首次启动**：`Application.onCreate` 在 IO 线程把资产拷到 cacheDir，再用 commons-compress 解压到 `filesDir/dictionaries/builtin/`。解压出 **90MB**，引擎另写 **34MB** `.jidx` 索引缓存（目录合计约 120MiB）。启动不被阻塞，未就绪时 `openBuiltIn()` 返回 null
+- **幂等**：目录里写 `version` 标记（版本 + 词条数），命中则跳过 —— 重启不重复解压，mtime 不变；换资产时递增 `ECDICT_ASSET_VERSION`
+- **失败安全**：临时目录 + `rename` 原子换目录，失败保留旧版本；进程死在两次 rename 之间时，下次启动先把 `builtin.old` 搬回来再判标记（不重解）；解压前按「解压量 × 1.5 + 旧目录 + `.old` 孤儿」检查剩余空间；空间不足/资产损坏/解压结果打不开都报 `DictionaryInstallException`；解压条目统一落成小写 StarDict 后缀
+- **许可与归属**：ECDICT 为 MIT，`assets/dictionaries/ecdict/ECDICT-LICENSE.txt` + `NOTICE.txt`（数据来源、CSV 与 7z 的 SHA-256）随包分发；引擎（juicedict）是 GPL-3.0，本 fork 整体也是 GPL-3.0-only
+- **实测**（JVM，非真机）：解压 1.3s，冷启动打开 77 万词条 190ms；单测用真实资产跑「解压 → `openStarDict` → `lookupSmart("apple")` → `toHtml()` 含中文」与「二次安装跳过」
+
 ---
 
 ## 4. 设计系统（上游没有这一层）
@@ -195,6 +206,7 @@ Known fields are [... e, ... f, ... g, ... h]
 | 单位标签 | 三个滑块都写 pt | 改为真实单位 |
 | 大字号标题 | M3 默认字距 | 收紧字距 + 加重 |
 | 动画时长 | 散落字面量 | 收敛为 8 档 token（观感不变） |
+| 内置词典 | 无 | 随包 ECDICT（77 万词条，首次启动解压约 120MiB 到私有目录，APK +21MB） |
 | minified 构建 | **无法打开任何书** | 已修复 |
 
 ---

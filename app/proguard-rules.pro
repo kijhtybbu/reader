@@ -56,3 +56,13 @@
 -keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
     <fields>;
 }
+
+# fork: commons-compress 的 7z 解压当前是「直接 new 解码器」：`Coders` 里是静态构造的
+# 解码器表（已用 release-debug 的 classes.dex/mapping 确认 LZMA/LZMA2/BCJ 等都在包里）。
+# 这里仍然整包 keep，属于**防御性**规则：commons-compress 自身不带 consumer proguard 规则，
+# 若后续版本改成按类名解析解码器，`-keepnames class **` 只保名字不保构造器，会在 minified
+# 包里抛 InstantiationException/NoSuchMethodException。代价约 +164KB（PROGRESS.md §3.3）；
+# 真正的验证仍是 S9 在 release-debug 设备上跑一次首次解压。
+-keep class org.apache.commons.compress.archivers.sevenz.** { *; }
+-keep class org.tukaani.xz.** { *; }
+-dontwarn org.tukaani.xz.**

@@ -46,7 +46,7 @@
 | 能力 | 组件 | 版本/来源 | 许可 | 说明 |
 | --- | --- | --- | --- | --- |
 | MDX/MDD、StarDict、dictzip、LZO、RIPEMD128 | juicedict 纯 Kotlin 引擎 | `qiuminal/juicedict` commit `7bbcb87404183c24cb102eede0aa9551eeb8241f` | GPL-3.0 | 上游未发 Maven；作为 `:dict-engine` 源码模块引入，只加 public 工厂 |
-| 内置词库 | ECDICT 官方 StarDict | `skywind3000/ECDICT` `stardict.7z` | MIT | 不生成 MDX，不转换数据格式 |
+| 内置词库 | ECDICT 官方 CSV → 自建 StarDict/7z | `skywind3000/ECDICT` `ecdict.csv` | MIT | 由 `tools/dict/prepare_ecdict.py` 转换，不生成 MDX |
 | OpenAI 兼容调用 | `com.aallam.openai:openai-client` | `4.1.0` | MIT | 自定义 `OpenAIHost(baseUrl)`、headers、流式 Chat Completions |
 | HTTP 引擎 | `io.ktor:ktor-client-okhttp` | Ktor 3.x（与 openai-client 对齐） | Apache-2.0 | Android 上使用 OkHttp |
 | API Key 加密 | `com.google.crypto.tink:tink-android` | `1.18.0` | Apache-2.0 | `AndroidKeysetManager` + DataStore |
@@ -112,13 +112,26 @@ ReaderLayout (Paged/Continuous)
 
 ### 4.2 内置 ECDICT
 
-- 仓库提交 `app/src/main/assets/dictionaries/ecdict/stardict.7z`（官方数据，约 51MB）。
+- 仓库提交 `app/src/main/assets/dictionaries/ecdict/stardict.7z`（约 21MB，LZMA2）。
+  内容是从官方 ECDICT `ecdict.csv`（MIT）转出的 StarDict 三件套（`ecdict.ifo` / `.idx` /
+  `.dict`，77 万词条），转换与打包脚本是构建期工具 `tools/dict/prepare_ecdict.py`；
+  §0 里「仓库提交官方 stardict.7z（约 51MB）」落地时改成自建 7z：官方 7z 里是同一份 CSV
+  派生的数据，而自己的转换能固定词条渲染格式（`<b>词头</b>` + 音标 + 释义）与可复现的 SHA-256：
+  脚本给三个输入设固定 mtime（`SOURCE_DATE_EPOCH`，默认 2024-01-01T00:00:00Z）并先打成 ustar
+  再转 7z（7z 还会存 atime/ctime，而 ctime 无法从用户态固定），所以同一份 CSV 重建出的字节恒定，
+  SHA-256 与大小写在同目录 `NOTICE.txt` 并由 `BuiltInDictionaryAssetTest` 钉住。
+  中间产物（66MB CSV + 90MB StarDict）只落在 `build/ecdict/`，只有 `stardict.7z` 进 assets。
+  数据来源与许可见同目录 `NOTICE.txt` / `ECDICT-LICENSE.txt`。
 - `DictionaryRegistry.ensureBuiltIn()`：
-  1. 首次启动/版本变化时，在 IO 线程用 `SevenZFile` 解压 `.ifo` / `.idx` / `.dict.dz`（可选 `.syn`）。
-  2. 解压到 `filesDir/dictionaries/builtin/`，临时目录 + 原子 rename，写入 `version`（SHA-256/大小）。
+  1. 首次启动/版本变化时，在 IO 线程用 `SevenZFile` 解压 `.ifo` / `.idx` / `.dict`（或 dictzip 的
+     `.dict.dz`，可选 `.syn`）；随包资产是明文 `.dict`。
+  2. 解压到 `filesDir/dictionaries/builtin/`，临时目录 + 原子 rename，写入 `version`（版本 + 词条数）。
+     暂存目录是同级的 `builtin.tmp` / `builtin.old`；进程死在两次 rename 之间时，下次启动先把
+     `builtin.old` 搬回来再判断标记（不重解），`.old` 的体积也计入空间检查。
   3. 失败保留旧版本；设置页显示进度与错误。
 - 启动不阻塞；查询时若未就绪，卡片显示“词典准备中”，并保留 AI 解释入口。
 - 内存：ECDICT 约 76 万词条，StarDict 索引常驻内存；项目已启用 `largeHeap`，实测后记录峰值。
+  S3 实测：解压出 90MB，引擎另写 34MB `.jidx`，目录合计约 120MiB（见 `PROGRESS.md` §3.3）。
 
 ### 4.3 导入与查询
 
@@ -280,6 +293,9 @@ cacheKey = SHA-256(
 | S7 | Room 缓存表/DAO/迁移/仓库 | 迁移 20→21；读写/touch/LRU/clear 通过 |
 | S8 | `TranslationModel`、双击整段、翻译/语法对话框、缓存优先、语法点击即分析 | 二次双击 0 请求；语法二次点击 0 请求；杀进程后仍命中；取消不写半截 |
 | S9 | 文案/许可/文档、全量回归、release-debug、终审 | 全量测试通过；体积/内存记录；`reviewer-expert` 整体 review |
+
+> S1–S3 已完成。S3 的验收只在 JVM 上做过（真实资产解压 + `apple` 查询 + 二次安装跳过），
+> 真机首启耗时/内存峰值与 minified 构建下的 7z 解压仍待验证；实测数据见 `PROGRESS.md` §3.3。
 
 ## 11. 测试矩阵
 

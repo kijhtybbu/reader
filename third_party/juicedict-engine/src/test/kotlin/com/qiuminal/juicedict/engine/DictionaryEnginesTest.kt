@@ -142,7 +142,14 @@ class DictionaryEnginesTest {
             opened.close()
         }
 
-        // 第二次打开走 .jidx 缓存（含 .syn 别名），结果必须一致
+        // 第二次打开走 .jidx 缓存（含 .syn 别名），结果必须一致。
+        // 先把 .idx.gz 与 .syn 删掉：缓存路径一旦坏掉，重开会直接返回 null，
+        // 而不是悄悄回退到「重新解析原始索引」把问题藏起来。
+        val cache = File(dir, "gz.jidx")
+        assertTrue("expected a .jidx cache", cache.isFile)
+        File(dir, "gz.idx.gz").delete()
+        File(dir, "gz.syn").delete()
+
         val cached = DictionaryEngines.openStarDict("gz", dir, "gz")
         assertNotNull("adapter must reopen from the .jidx cache", cached)
         val reopened = cached ?: error("openStarDict returned null")

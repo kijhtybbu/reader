@@ -106,11 +106,95 @@ S2 的 fixture 覆盖（**都不依赖外部语料**，测试运行时现场生�
 
 有意留到后续阶段的：
 
-- `.dict.dz`（dictzip）在适配层里的装配分支 → S3，用真实 ECDICT 资产覆盖。
+- `.dict.dz`（dictzip）在适配层里的装配分支：S3 的内置资产用的是明文 `.dict`（见 §3.3），
+  所以这条分支仍只有上游 `DictZipLastChunkTest` 覆盖，适配层本身没走到 → 留给 S4 导入真实 `.dict.dz` 词典。
 - 引擎实例的线程安全：适配层 KDoc 已声明「非线程安全，调用方按引擎加锁」，
   真正的 LRU + 每引擎锁 → S4（上游 `DictionaryRepository` 的做法）。
 - `openMdx` 在构造失败时的 fd 泄漏是上游既有问题（`MdxFileReader` 先打开后 `error`），
   未在 vendored 副本里改；S4 按「先 `probeMdx` 预检再构造」规避，真修回上游。
+
+### 3.3 第二阶段（翻译与词典）/ S3
+
+| 项 | 内容 |
+| --- | --- |
+| 资产 | `app/src/main/assets/dictionaries/ecdict/stardict.7z`：**21,112,502 字节**（LZMA2，SHA-256 `91c1367c…6aec`），含 `ecdict.ifo` / `.idx` / `.dict` 三个条目；`ECDICT-LICENSE.txt`（MIT）+ `NOTICE.txt` 同目录 |
+| 数据来源 | 官方 ECDICT `ecdict.csv`（SHA-256 `d1ecbdf9…43cc`，MIT），由 `tools/dict/prepare_ecdict.py` 转成 StarDict 再打包；脚本是构建期工具，App 里不跑。**可复现**：输入固定 mtime（`SOURCE_DATE_EPOCH`，默认 2024-01-01T00:00:00Z）+ 先打 ustar 再转 7z（7z 会存 atime/ctime，ctime 无法从用户态固定），同一份 CSV 重建两次 SHA 完全相同；中间产物只写 `build/ecdict/`，只有 7z 进 assets |
+| 解压结果 | **90,090,039 字节**（`.dict` 73,054,537 + `.idx` 17,035,288 + `.ifo` 214），引擎另写 `.jidx` 索引缓存 **35,611,830 字节**，目录合计 **125,701,869 字节（约 120 MiB）** |
+| 词条数 | **770,611**（`.ifo` 的 `wordcount`，与引擎 `wordCount` 一致） |
+| 安装器 | `data/dictionary/BuiltInDictionaryInstaller`（纯 JVM，无 `android.*`）：只读归档头拿条目名/大小 → 空间检查（解压量 × 1.5 + 旧目录 + `.old` 孤儿）→ 解压到 `<target>.tmp` → 打开词典校验 → 写 `version` 标记 → `rename` 原子换目录。条目名统一落成小写 StarDict 后缀（`tiny.IFO` → `tiny.ifo`）；失败（含 `Error`）都先删临时目录；进程死在换目录中间时，下次启动先把 `<target>.old` 搬回来再判标记（直接跳过安装） |
+| 注册表 | `data/dictionary/DictionaryRegistry`：`StateFlow<BuiltInState>`、`ensureBuiltIn`（Mutex 串行）、`openBuiltIn`、`close`；`ECDICT_ASSET_VERSION = 1` |
+| 启动接入 | `Application.onCreate` 在 `Dispatchers.IO` 上 `launch { ensureBuiltIn(...) }`，不阻塞启动 |
+| 状态 | ✅ `:dict-engine:test --rerun-tasks` 101 个用例全绿；`:app:testDebugUnitTest` **178 个用例全绿**（新增 7 个）；`:app:assembleDebug` / `:app:assembleRelease-debug` 通过 |
+
+S3 的测试（前四个**用真实资产**，中间两个用 `SevenZOutputFile` 合成几 KB 的最小 StarDict，最后一个校验资产字节）：
+
+| 测试 | 钉住什么 |
+| --- | --- |
+| `BuiltInDictionaryInstallerTest.installsRealEcdictAndServesLookups` | 解压出 `.ifo`/`.idx`/`.dict` + `version` 标记（含版本与词条数）；`wordCount > 700_000`；`openStarDict` 后 `lookupSmart("apple", 5)` 命中、`toHtml()` 非空且含中文；进度以 1.0 结束 |
+| `BuiltInDictionaryInstallerTest.secondInstallWithSameVersionIsSkippedAndKeepsFiles` | 同版本第二次安装 `skipped = true` 且四个文件 mtime 不变；版本号变化必须重装（顺带覆盖「旧目录存在时换目录」） |
+| `BuiltInDictionaryInstallerTest.corruptArchiveThrowsAndLeavesNothingBehind` | 随机字节的 7z 抛 `DictionaryInstallException`，且不留 `builtin` / `builtin.tmp` / `builtin.old` |
+| `BuiltInDictionaryInstallerTest.failedInstallKeepsThePreviousDictionary` | 已装好 v1 后用损坏资产装 v2：抛异常、旧文件 mtime 不变、标记仍是 v1、不留 `.tmp`（原子换目录的失败路径） |
+| `BuiltInDictionaryInstallerTest.mixedCaseArchiveSuffixesAreNormalizedToLowercase` | 合成 `tiny.IFO` / `tiny.Idx` / `tiny.DICT`：计划阶段按 `ignoreCase` 匹配，落盘必须是 `tiny.ifo` / `.idx` / `.dict` 且能被 `openStarDict` 打开（否则会通过计划再报「不完整」） |
+| `BuiltInDictionaryInstallerTest.interruptedSwapIsRecoveredFromOldDirectory` | 模拟进程死在两次 rename 之间（把 `builtin` rename 成 `builtin.old`）：下次安装把它搬回来、`skipped = true`、mtime 不变、`.old` 消失 |
+| `BuiltInDictionaryAssetTest.shippedAssetMatchesNotice` | 随包 7z 的大小与 SHA-256 等于 `NOTICE.txt` 公布的值（21,112,502 / `91c1367c…6aec`），且 `NOTICE.txt` 里确实写了这两个值 |
+
+实测数据（**JVM，非真机**）：
+
+| 项 | 数值 |
+| --- | --- |
+| 解压 90MB（commons-compress + xz，256KB 缓冲） | 约 **1.3s**（同一份资产用 `bsdtar` 是 0.7s；测试里整个首次安装含校验打开约 1.6–1.7s） |
+| 冷启动打开 77 万词条（`.idx` 全解析 + 写 `.jidx`） | 约 **190ms** |
+| 单元测试堆 | **未改**：`app` 单测默认堆就够（`maxHeapSize` 仍是 Gradle 默认值），没有 OOM |
+| Debug APK | **154,756,852 字节**（其中资产 21,118,922） |
+| Release-debug APK | **54,789,964 字节**（其中资产 21,118,947；R8 keep 规则把 7z/xz 解码器整包留下，比加规则前大 164KB） |
+
+两个值得记下来的发现：
+
+1. **资产在 APK 里是 deflate 的**：`.7z` 不在 aapt 的 `noCompress` 默认列表里，21,112,502 →
+   21,118,922 字节（反而大 6KB）。所以 `AssetManager.openFd` 拿不到长度，拷贝阶段报不了中间进度；
+   这次没有改 `noCompress`（属于打包决策，留给 S9 按体积/启动耗时评估）。
+2. **解压目录比资产大 6 倍**：120 MiB 里 34 MiB 是引擎的 `.jidx` 索引缓存。安装器的空间检查
+   按「解压量 × 1.5 + 旧目录大小」算，正好覆盖这份缓存。
+
+未验证（**不要当成已验证**）：
+
+- 真机首次启动的解压耗时与内存峰值（只有 JVM 数据）。
+- 仪器测试：S3 **没有**新增 `androidTest`，`DictionaryRegistry` 的资产拷贝与启动接入只经过编译验证。
+- minified 构建下**真解**一份 7z：`:app:assembleRelease-debug` 能过（54,789,964 字节，含 21,118,947 资产），
+  `app/proguard-rules.pro` 已加 `-keep class org.apache.commons.compress.archivers.sevenz.** { *; }` /
+  `-keep class org.tukaani.xz.** { *; }` / `-dontwarn org.tukaani.xz.**`（commons-compress 的 7z
+  coder 表按类名反射实例化，`-keepnames` 只保名字不保构造器），并在 `classes.dex` 里确认
+  `SevenZFile` / `LZMADecoder` / `Coders` / `LZMAInputStream` / `LZMA2InputStream` / `XZInputStream`
+  都在；但**没在设备上跑过** minified 包的首次解压（S9 首启验证）。
+- 空间不足分支没有测试（`File.usableSpace` 不可注入）。
+- 仪器测试与真机上的 `.old` 中断恢复：只有 JVM 上用合成归档模拟过。
+
+Review Round-1 已关的项（S3 内）：
+
+- **P1** 7z 反射路径的 R8 keep 规则（见上）。
+- 资产 SHA-256/大小有测试钉住（`BuiltInDictionaryAssetTest`），`NOTICE.txt` 同步更新。
+- 资产按新脚本重打：`.ifo` / `.idx` / `.dict` 与旧资产**逐字节相同**（只改了 7z 头里的时间戳），
+  SHA-256 从 `857eea24…4453` 变为 `91c1367c…6aec`，大小 21,112,524 → 21,112,502。
+  另外发现工作区里的脚本被改过（音标前的 `<br>` 变成了空格），直接重建会改变正文渲染；
+  已把脚本改回与已审资产一致的 `<br>`。
+- `tools/dict/prepare_ecdict.py`：中间产物默认只写 `build/ecdict/`（`--keep-intermediates` 才留
+  `.ifo/.idx/.dict`），只把 `stardict.7z` 拷进 assets；固定 mtime + ustar 中转后重建 SHA 恒定；
+  `.gitignore` 兜底 assets 下的 `ecdict.*` / `stardict.tar`。
+- 安装器：`Throwable` 也清临时目录（`Error` 原样重抛）、`.old` 孤儿恢复并计入空间检查、
+  条目名统一小写后缀；`DictionaryRegistry` 仍接住 `Throwable`（放行 `CancellationException`），
+  保持 `ensureBuiltIn` 「启动路径不抛异常」的约定。
+- `DictionaryRegistry` 的 `context.cacheDir` 注释说明为何不用 `FileData.getCacheDirectory()`。
+
+有意留到后续阶段的（review Round-1 的 P2，**不是**遗漏）：
+
+- `openBuiltIn()` 仍返回裸引擎、锁由调用方负责：S4/S5 改成 `withBuiltIn { }`（或每引擎 `Mutex`），
+  并在换实例时等旧引擎的使用者退出后再 `close()`。S3 没有调用方，现在改等于凭空设计接口。
+- 暂存目录仍是 `dictionaries/builtin.tmp` / `.old`：S4 枚举 `dictionaries/*` 时要过滤这两个名字
+  （或那时把暂存目录挪到 `dictionaries/.staging/`）。
+- 错误文案仍是硬编码英文：S4 接设置页时改成 `BuiltInState.Error` 带稳定 code + 字符串资源。
+- 安装器的其余边角用例（无 `.ifo`、两个 StarDict、缺 `.idx`、`.dict.dz` 变体、坏 `version` 标记、
+  空间不足）：S4 导入路径会复用同一批校验，到时用合成归档一并补。
+- 四个真实资产测试每次跑要解 4 次 90MB（整套约 6s，`/tmp` 峰值约 360MB）：S9 若 CI 磁盘吃紧再改成共享解压目录。
 
 ---
 
