@@ -162,27 +162,28 @@ ReaderLayout (Paged/Continuous)
 ### 5.1 手势
 
 - 设置项 `lookupGesture`：
-  - `SINGLE_TAP`（默认）：命中单词即取词；空白区仍走原翻页/菜单。
-  - `LONG_PRESS`：保留单击翻页；长按选中后自动取词。
-  - `OFF`：关闭取词。
+  - `SINGLE_TAP`（默认）：命中单词即取词；空白区仍走原翻页/菜单；长按仍是普通的选区
+    （复制/翻译/词典工具栏都在）。
+  - `LONG_PRESS`：单击保持翻页，按住不动直接取词；长按被取词占用，所以该模式**不能**再选文本
+    （切回「单击」或「关闭」才能选）。
+  - `OFF`：关闭取词，选区照旧。
 - 分页布局：沿用 Pager 上**唯一**的 `detectTapGestures`；`readerPageItemAtY` 找到页项后，
   用 item 内坐标 `TextLayoutResult.getOffsetForPosition` + `getWordBoundary` 取词。
 - 连续布局：取词模式下用一个手势处理器做同样命中；不新增第二套翻页检测器。
-- 长按：保留 `SelectionContainer` 选区与工具栏；自定义 `SelectionToolbar` 增加
-  `onSelectionSettled(rect, hideToolbar)`，防抖 350ms：用文本布局注册表按选区**首行**反查单词
-  → 取词卡片；跨行选区本期忽略（S8 接翻译对话框）。
-  - 反查点用「选区顶边 + 4px」而不是几何中心：Compose 的 `getContentRect()` 在底部加了
-    `4 × HandleHeight`（给系统工具栏留位），几何中心会落到下一行，长按「apple」查出隔壁的词。
-  - 弹出卡片前调用 `hideToolbar()`：系统 ActionMode 悬浮工具栏是触摸模态窗口，不收起它，
-    卡片外的点击全被它吞掉。
-  - 同一选区矩形 1.5s 内只取一次词（`showMenu` 会被重复调用）。
-  - `showMenu` 交来的 rect 本身就是窗口坐标（同一个 rect 原样交给 ActionMode 的
-    `onGetContentRect`），**不再叠加 `localToWindow` 二次换算**。
-  - **不取选中文本本身**：`showMenu` 只给矩形，拿文本只能读剪贴板，而 Android 13+ 每次写
-    剪贴板都会弹系统提示 —— 拖动选择手柄时等于连续弹窗（S5 实施时的结论）。
-  - 已知缺口：Compose 1.9 默认启用**新上下文菜单**，它会绕过项目自定义的 `LocalTextToolbar`，
-    所以当前构建里「长按选后自动取词」实际不会触发（工具栏也只剩系统默认项）。代码路径、
-    锚点与防重逻辑都已经就位，等迁移到新上下文菜单 API 或显式关掉该 flag 后再启用。
+- 长按：由两种布局里**唯一**的 `detectTapGestures(onLongPress = …)` 处理，与单击共用正文注册表
+  命中（`wordAtPageOffset` / `hitTest`），锚点就是卡片用的那个精确词矩形。
+  - 早期实现走的是 `SelectionContainer` 的选区（自定义 `SelectionToolbar` 上报
+    `onSelectionSettled`，防抖 350ms 后按选区首行反查）。真机反馈暴露了两个硬伤，现已**删除**该
+    路径（详见附录 A.9）：① Compose 的 `SelectionAdjustment.Word` 与注册表的词边界不是一个坐标系
+    （两端对齐的行还会偏一个词），屏幕上同时出现「选区高亮 + 卡片高亮」两块不同区间；
+    ② 选择手柄一拖、ActionMode 一重报（焦点变化/工具栏被裁）都会再走一次 `showMenu`，
+    卡片刚关掉又自己弹回来，拖动选择框也会取词。
+  - 因此 `LONG_PRESS` 模式下正文不再可选中：阅读页的 `SelectionContainer` 按
+    `ReaderLookupActions.selectionEnabled` 用 `DisableSelection` 把文本挡在选区之外
+    （没有选区、没有手柄、没有 ActionMode，也就没有上面那两类问题）。
+    **注意 `DisableSelection` 必须套在 `SelectionContainer` 内部**：它自己会 provide 一层新的
+    `LocalSelectionRegistrar`，在外面置空会被立刻覆盖 —— 第一次修复就是这么失效的（A.11）。
+  - `SINGLE_TAP` / `OFF` 下长按仍然只做选区，自定义工具栏的复制/分享/搜索/翻译/词典照旧。
 - 工具栏「词典」：改为应用内取词。多词选区只查选区里的**第一个词**（整串短语 `lookupExact`
   必然 miss），真 miss 时卡片上的「用其他应用查询」回退到外部词典应用。
 - 命中的文本块由 `ui/reader/ReaderTextLayoutRegistry` 按「节点 id + 页项起点」登记
@@ -190,9 +191,8 @@ ReaderLayout (Paged/Continuous)
   矩形用 `positionInWindow()` + 节点尺寸拼出，**不用** `boundsInWindow()`：后者会被祖先裁剪
   （LazyColumn 视口）并夹到根节点范围内，段落有一半滚出屏幕时原点会被钉在视口边上，
   取词与高亮就会随段落位置偏移。
-- 长按取词的锚点用注册表给出的**精确词矩形**，不是 `showMenu` 的选区矩形：后者是选区包围盒，
-  底部还额外加了 `4 × HandleHeight`（给系统工具栏留位）并被裁剪到可见区，带标点的词、
-  靠近屏幕边缘的词会明显偏移。选区矩形只用于「是否跨行」的判断。
+- 取词的锚点一律用注册表给出的**精确词矩形**（单击与长按同一条路）：带标点的词、靠近屏幕边缘
+  的词都贴得住，卡片高亮与正文高亮是同一个矩形。
 
 ### 5.2 取词卡片
 
@@ -268,11 +268,17 @@ ReaderLayout (Paged/Continuous)
   引擎显式传 OkHttp（`ktor-client-okhttp`），**不**依赖 Ktor 的 ServiceLoader 运行时发现——
   那条路 R8 之后编译期看不见、单测也盖不到。
 - 翻译：`ChatCompletionRequest(stream = true)`，`chatCompletions()` 收集流。
-- 语法：`responseFormat = ChatResponseFormat.JsonObject`，非流式或流式聚合均可。
+- 思考强度：`reasoning_effort`（设置项 `ai_reasoning_effort`，默认 **关闭** = 发 `"none"`，可选
+  关闭/默认（不发送）/低/中/高）。推理模型先写 `delta.reasoning_content` 再写正文，实测
+  （OpenCode Zen + deepseek-v4.1-flash）默认档第一段正文要 35–42s、期间 8–10k 字思考；
+  `"none"` 能把思考真正关掉（reasoning 0 字符、首段正文 0.8–3.4s）。注意 `"minimal"` 在该网关
+  被**静默忽略**（不报错，思考量回到默认档）—— A.10。
+- 语法：与翻译同一套 `chatCompletions()` **流式**请求，delta 由状态机聚合；不发
+  `response_format`（Markdown 不是 JSON 能表达的东西，见 §8.2、附录 A.8）。
 - 错误映射：401 Key 无效、403、404 模型/路径不存在、429 限流、5xx、超时、断网。
   5xx 的状态码不在 `OpenAIServerException` 上，要从它的 cause（Ktor 的 `ResponseException`）
   捞回来，UI 才能显示「(HTTP 503)」。
-- 超时：非流式请求（`/models`、语法）整次调用 60s；**流式**请求用 per-request
+- 超时：非流式请求（`/models`、连接测试）整次调用 60s；**流式**请求用 per-request
   `RequestOptions(timeout = Timeout(request = INFINITE))` 覆盖掉整次调用上限，否则一个慢但正常的
   长 SSE 会在第 60 秒被掐成 TIMEOUT；卡死由 socket 超时（60s 无数据）兜住。
 - 长段落按句子边界切块（≤3000 字符）顺序输出；关闭对话框取消 Job。
@@ -452,6 +458,7 @@ cacheKey = SHA-256(
 - 状态：`TranslationState` 新增 `sentences` 与 `selectedSentenceIndex`；`grammar` 只描述
   **当前展开那一句**。`AsyncGrammar.Success(text: String, fromCache: Boolean)` 直接就是 Markdown
   原文，JSON 解析器（`GrammarAnalysis`、`parseGrammarAnalysis`）与 `response_format` 全部删除。
+  中间态 `AsyncGrammar.Streaming(text)`：语法请求本身是流式的，按 32 字符攒块推送（附录 A.8）。
 - 模型：`open` 只切句不请求；`selectTab(GRAMMAR)` 多句时**不**自动请求，单句自动选第 0 句并分析；
   `selectSentence(index)` 同句 = 收起（不清缓存），异句 = 展开并分析（已有结果直接显示）。
   结果按 `translationCacheKey(sentence, GRAMMAR, …)` 逐句缓存，本次打开期间另有一份内存 map，
@@ -461,8 +468,9 @@ cacheKey = SHA-256(
   `regenerate(GRAMMAR)` 取消当前句的在途请求后重发，`put` 覆盖同一键。
 - UI：`ui/reader/MarkdownText`（commonmark AST → `AnnotatedString`：标题加粗放大、
   列表前缀与缩进、粗体/斜体、行内代码、围栏代码块、引用竖线、块间空行；颜色来自
-  `LocalReaderPalette`，纯 JVM 可测）。语法标签 = 句子卡片列表（编号、最多两行、选中高亮，
-  点句子行展开/收起）；结果区不在点击范围内，复制/分享用 Markdown 原文。
+  `LocalReaderPalette`，纯 JVM 可测）。语法标签 = 句子卡片列表（编号、**完整显示不截断**、选中高亮，点句子行展开/收起）；
+  分析结果在句子卡片**之外**单独一张卡（标题「分析」+ 发丝分隔线，见 A.11），
+  结果区不在点击范围内，复制/分享用 Markdown 原文。
 - 文案：`translation_dialog_sentence_pick`、`translation_dialog_reanalyze`（en/zh）；
   删除 JSON 时代的 `translation_dialog_summary/sentences/vocabulary/raw_note/empty_analysis`。
 
@@ -629,6 +637,10 @@ cacheKey = SHA-256(
 - 默认 `KINDLE`：顶部 **12%**（正文区内）呼出菜单、左侧 **25%** 上一页、其余 **75%** 下一页。
 - 旧的「左/中/右」被替换，存量 `SIDES` 值按名字找不到时回落默认（完成迁移）；
   「上/中/下」「仅中间」保留。分区仍是位置性的，反向阅读方向只翻转 `pageDeltaFor`。
+- **边缘快速翻页**（A.12）：正文区左右各 10% 的点击跳过双击判定直接翻页，但按取词模式分流：
+  `SINGLE_TAP` 下命中单词仍然取词、只有空白处翻页；`LONG_PRESS`/`OFF` 下单击一律立刻翻页
+  （down 不消费，长按仍交给外层取词/选文本）。带内不识别双击。
+  菜单带、`CENTER_ONLY` 的空白区、中间区域仍然走原来那条「等双击」的路。
 
 ### A.6 翻页延迟（`ReaderScaffold.kt`、`ReaderLayoutPaged.kt`）
 
@@ -640,9 +652,167 @@ cacheKey = SHA-256(
 
 ### A.7 遗留与未验证
 
-- Compose 1.9 默认启用新上下文菜单，绕过项目自定义的 `LocalTextToolbar`：长按选后自动取词
-  当前不会触发，选区工具栏只剩系统默认项。锚点/防抖/防重逻辑已就位，等迁移到新上下文菜单 API
-  或上游提供关闭开关后再启用。
 - 翻译对话框的最终视觉复测曾因设备锁屏中断，恢复后已补测紧凑加载 → 展开；句子列表的点击/收起、
   长列表滚动仍未在设备上走过（项目无 Compose UI 测试依赖）。
-- 测试基线更新：`:app:testDebugUnitTest` **395 个用例 / 57 类 / 0 失败**；三重构建门禁通过。
+- 长按自动取词（A.8/A.9）与语法流式的**交互效果**没有 Compose UI 测试：JVM 侧只钉住了 flag
+  赋值与状态机，长按命中的真机复测待做。
+- 测试基线更新：`:app:testDebugUnitTest` **399 个用例 / 58 类 / 0 失败**；三重构建门禁通过。
+
+### A.8 长按取词恢复 + 语法分析流式
+
+1. **长按取词恢复**（§5.1 的已知缺口，`Application.kt`）
+   - 根因：Compose 1.9 的 `SelectionManager.updateSelectionToolbar()` 在
+     `ComposeFoundationFlags.isNewContextMenuEnabled = true`（默认）时走 `toolbarRequester.show()`
+     即新上下文菜单，**完全不读** `LocalTextToolbar` —— 阅读页自定义的 `SelectionToolbar.showMenu`
+     收不到回调，`onSelectionSettled` 于是永远不触发；选区的「翻译/词典/分享/搜索」也一并消失。
+   - 修复：`Application.onCreate()` 第一行调用 `applyComposeCompatibilityFlags()`，把该 flag 置
+     false（早于任何 Compose 代码加载，符合官方 flag 文档）。此后 `updateSelectionTextToolbar()`
+     重新调用 `textToolbar.showMenu(rect, …)`，链路回到 1.8 及以前（选区的翻译/词典/复制等
+     自定义项因此恢复）。长按取词本身在真机反馈后改成了自己检测长按，见 **A.9**。
+   - 语义不变：只有手势设置为 `LONG_PRESS` 时长按才自动取词（`SINGLE_TAP` 只接管单击，`OFF` 不取词）。
+   - 代价：应用内所有文本输入/选区回落到旧上下文菜单（平台 ActionMode），也就是升级 1.9 之前的行为。
+     flag 是官方的临时回退开关；迁移到 `text.contextmenu.provider`（`TextContextMenuDataProvider`）
+     后再删掉这个函数。`ComposeCompatibilityFlagsTest` 钉住这条不变量。
+2. **语法分析改为流式**（`data/ai/AiTranslationRepository.kt`、`presentation/reader/TranslationModel.kt`、
+   `presentation/reader/model/TranslationState.kt`、`ui/reader/ReaderTranslationDialog.kt`）
+   - 仓库：`analyzeGrammar()` 返回 `Flow<String>`，与 `translate()` 共用
+     `chatCompletions()` + `STREAMING_REQUEST_OPTIONS`（整次调用不限时、socket 60s 无数据兜底）；
+     delta 原样发出，不发 `response_format`。判空从仓库移到状态机：空结果 =
+     `AiError.EMPTY_RESPONSE`，不写缓存（与译文同一条路径）。
+   - 状态机：新中间态 `AsyncGrammar.Streaming(text)`。按 `GRAMMAR_STREAM_PUBLISH_STEP`（32 字符）
+     攒块推送 —— 语法结果是 Markdown，每变一次都要重新解析 + 重排版，逐 token 推送在低端机上能
+     明显拖慢对话框；写完才 `put` 缓存并推 `Success`。片段另存一份 `grammarStreaming`（键同上）：
+     写到一半收起再展开能接着看，且不会重发请求（`inFlight` 去重仍然生效）。
+   - UI：`AsyncGrammar.Streaming` 用 `MarkdownText` 渲染已到达的部分，不显示复制/分享/重新分析
+     （内容还不完整）；没写完的 Markdown（半截加粗/列表标记）自然退化成纯文本。
+   - 测试：`AiTranslationRepositoryTest` 增加 SSE 语法请求（断言 `Accept: text/event-stream` 与
+     `"stream":true`、不发 `response_format`）与「空流不发 delta」；`TranslationModelTest` 增加
+     「长答案先出片段」「空结果 = `EMPTY_RESPONSE` 且不落库」「收起再展开续显片段」三条；
+     `TranslationModelCacheKeyTest` 与既有语法用例的桩从 `Result.success(...)` 换成 `flowOf(...)`。
+
+### A.9 长按取词的第二次修复（真机反馈）
+
+真机反馈（Lenovo TB322FC / Android 16）：
+
+1. 长按会先选中一个**错的**单词区间、再叠上卡片高亮的**正确**区间，屏幕上两块高亮混在一起；
+2. 点卡片旁边把它关掉，约 1 秒后卡片又自己弹出；
+3. 拖动选择手柄也会触发取词。
+
+- 根因：长按取词当时**借用了 `SelectionContainer` 的选区**。Compose 长按选区的单词边界来自
+  它自己的 `SelectionAdjustment.Word`，与正文注册表用的 `getOffsetForPosition` +
+  `justificationShift` 不是一个坐标系（两端对齐的行会偏出约一个词）—— 所以系统选区选中的是
+  隔壁词，卡片高亮的是正确的词，两块区间并排出现就是「显示混乱」。
+  卡片关掉后再弹出，是 `showMenu` 被重报（焦点回来、ActionMode 被 `hide()` 之后
+  `SelectionManager` 再次 `showToolbar`、选区变动）触发了又一次 `onSelectionSettled`；
+  拖动选择手柄同理 —— 每次选区变动都算一次「新选区」。
+- 修复（`ui/reader/{ReaderLookupActions,ReaderLayoutPaged,ReaderLayoutContinuous}.kt`、
+  `ui/common/components/common/SelectionContainer.kt`）：
+  - 两种布局的**唯一**手势检测器加 `onLongPress`：`LONG_PRESS` 模式下按住不动直接按注册表命中
+    取词，锚点就是卡片用的精确词矩形；`SINGLE_TAP`/`OFF` 时传 `null`，不改变单击时延。
+  - 阅读页的 `SelectionContainer` 新增 `selectionEnabled`：`LONG_PRESS` 模式下用
+    `DisableSelection` 把正文挡在选区之外 —— 没有选区就不会有第二块高亮、没有手柄、没有
+    ActionMode 重报，卡片只由用户的手势打开。
+  - 删除 `onSelectionSettled` / `rememberLookupSelectionHandler` / `spansMultipleLines` /
+    `WordHit.lineWidth` 及 `ReaderLookupSelectionTest`（这条链路不再存在，跨行判定也随之消失）。
+  - `SINGLE_TAP`/`OFF` 下长按仍是普通选区，自定义工具栏（复制/分享/搜索/翻译/词典）照旧工作；
+    `OFF` 时不接管任何手势。
+  - 按下预览（`onPress`）改为「取词开启就亮」：`LONG_PRESS` 模式下短按抬起即撤掉预览
+    （那时只是翻页/切菜单，没有卡片）。
+- 语法流式的「分析中停很久」：先让**第一块 delta 立刻渲染**（不再攒到 32 字符），
+  并在仓库层给 `translate` / `grammar` 两条流各加一条时间线日志（logcat tag `AiRepository`）：
+  `first chunk Xms, chunks=N, total=Yms`。这样能直接区分「服务器/模型首块慢」与「客户端渲染慢」，
+  不再靠猜。实测结论见 PROGRESS.md。
+
+### A.10 推理模型的「思考阶段」：思考强度 + 等待提示
+
+真机实测（`https://opencode.ai/zen/go/v1/` + `deepseek-v4.1-flash`，logcat tag `AiRepository`）：
+
+| 请求 | 第一个 SSE 事件 | 第一段**正文** | 事件数 | reasoning 字符 | 正文 |
+| --- | --- | --- | --- | --- | --- |
+| 翻译（一段） | 2146ms | 5805ms | 43 | 1509 | 98 |
+| 语法（一句） | 1206ms | 35010ms | 545 | 8608 | 1429 |
+
+结论：**不是客户端渲染慢，也不是网关攒整段** —— 流是通的（语法 40s 里 545 个事件），
+时间全花在模型的思考上，而思考写在 `delta.reasoning_content` 里、正文 `content` 一直为空。
+之前我们只过滤 `content`，所以界面在「分析中」停 5–35 秒，看起来像卡死。
+
+调成 `reasoning_effort: "low"` 后复测（网关接受、无 400）：首段正文 11.6s（另一轮 23.0s）、
+reasoning 4.6k（另一轮 4.9k）；翻译 reasoning 1509 → 758 字符、首段正文 7.5s。
+
+但 `"minimal"` 被网关**静默忽略**：不报 400，思考量却回到 7.9k、首段正文 42.0s。
+最后改成 `"none"`，实测真的关掉了思考（首发 5 次请求全部 `reasoning=0`）：
+
+| 请求 | 第一个 SSE 事件 | 第一段正文 | reasoning | 总耗时 |
+| --- | --- | --- | --- | --- |
+| 语法 #1 | 768ms | **770ms** | 0 | 4.4s |
+| 语法 #2 | 1020ms | **1022ms** | 0 | （截断） |
+| 语法 #3 | 3365ms | **3367ms** | 0 | 8.4s |
+| 语法 #4 | — | — | 0 | 22.6s（流中途卡顿，思考仍为 0） |
+| 翻译 | 5368ms | 5397ms | 0 | 5.4s |
+
+即：`reasoning_effort` 的档位是 默认（不发送，35–42s）＞ low（11.6–23s）＞ **none（0.8–3.4s）**，
+`minimal` 无效。剩下的延迟是网关排队/首包，客户端已无可省。
+
+改动：
+
+1. **思考强度可配**（`data/ai/AiReasoningEffort`、`SettingsManager.aiReasoningEffort`、
+   AI 设置页「思考强度」）：默认 **关闭**（发 `reasoning_effort: "none"`，实测 reasoning 0 字符、
+   首段正文 0.8–3.4s）；`DEFAULT` 不发送该字段，给不认这个值的兼容端点留退路。
+   缓存键不含它：换个档位仍能命中之前算过的结果（更好的答案不必重算）。
+2. **思考进度可见**：仓库把 `reasoning_content` 的累计字数通过 `onThinking` 回调交给状态机 →
+   `TranslationState.thinkingChars`；对话框在 loading 态显示「模型思考中… N 字」，正文一到就清零
+   换成流式正文。超过 3 秒仍没有思考/正文时显示「等待模型响应… N 秒」。
+3. **第一块 delta 立即渲染**：语法流式不再攒够 32 字符才画（之后仍按 32 字符攒块，
+   避免每个 token 重解析一遍 Markdown）。
+4. 诊断日志（logcat tag `AiRepository`，只记延迟/字符数，不记正文）：
+   `first SSE event ...ms (content=…, reasoning=…)`、`first content ...ms`、
+   `events=…, reasoning=… chars, content=… chars, total=…ms`。
+
+### A.11 语法标签排版 + 选择手柄残留
+
+1. **长按取词仍能拖出选择手柄**（用户反馈「关闭卡片后不再自弹了，但拖动柄还在」）
+   - 原因是 `DisableSelection` 的**位置**：它只把 `LocalSelectionRegistrar` 置为 null，而
+     `SelectionContainer` 自己会在内部再 provide 一层新的 registrar。第一版把
+     `DisableSelection` 套在 `SelectionContainer` 外面，等于先置空、随后被覆盖，正文照样可选中。
+   - 修复（`ui/common/components/common/SelectionContainer.kt`）：把 `DisableSelection` 挪到
+     `SelectionContainer` 的 content 内层。`LONG_PRESS` 模式下正文彻底不可选中 ——
+     没有选区高亮、没有手柄、没有 ActionMode。
+2. **语法标签：句子截断 + 与分析糊在一起**
+   - 句子卡片去掉 `maxLines = 2`，长句完整显示（以前省略号吃掉后半句，看不出在分析哪一句）。
+   - 分析结果从句子卡片里搬出来，单独一张卡：标题「分析」（`translation_dialog_analysis`，
+     强调色 + SemiBold）+ 发丝分隔线 + 与句子卡片不同的底色；句子卡片负责「选哪一句」，
+     分析卡片负责「答案」，两层不再共用一块底色。
+   - 句子列表保持「整行可点、再点收起」，点选范围只有句子，分析里的文字可以正常选中复制。
+
+### A.12 边缘快速翻页（分页布局）
+
+- 需求：点屏幕左右两侧约 10% 时不要等双击判定，直接翻页（单击翻页默认要等双击窗口 ~200ms）。
+- 实现（`ui/reader/ReaderLayoutPaged.kt`）：在**同一个 Pager 节点**上，`detectTapGestures` 之后
+  再挂一个 `pointerInput`。修改器链里靠后的更「内层」，Main pass 先执行，所以它能先处理事件：
+  1. `awaitFirstDown(requireUnconsumed = false)` → 若 `x` 不在左右各 `EDGE_FAST_PAGE_FRACTION`（10%）
+     的带内直接返回，什么都不消费（中间区域的单击/双击/取词完全不变）。
+  2. 带内再用 `tapActionFor(zones, x, y)` 判一次：只有解析成 `NEXT`/`PREVIOUS` 才继续 ——
+     Kindle 的顶部 12% 菜单带、`TOP_BOTTOM` 的中带、`CENTER_ONLY` 的空白区仍然等双击。
+  3. **必须再查一次词**（`wordAtPageOffset`）：命中单词时与取词模式有关 ——
+     - `SINGLE_TAP`：直接放手，这次点击属于取词（单击取词不能被打断）；
+     - `LONG_PRESS` / `OFF`：单击既不取词也不选文本，所以**也立刻翻页**，但 down
+       **不消费**：用 `withTimeoutOrNull(longPressTimeoutMillis)` 等抬手，超时（= 长按）就放手，
+       让外层 `onLongPress` 去取词/选文本；在超时内抬手则立刻翻页。
+  4. 外层 `onTap` 在快速带内的翻页分支**必须跳过**（`inFastPageBand`）：边缘带的翻页已由这里
+     完成，否则就是「点一下翻两页」；菜单分支不受影响。
+  5. 外层 `onDoubleTap` 在快速带内忽略：那里第一下就翻页了，再弹翻译只会让人以为点错了
+     （用户确认：「双击翻译不在 10% 范围内生效」）。
+  6. 接管空白时先 `down.consume()`：外层 `detectTapGestures` 的 `awaitFirstDown()` 要求未消费的
+     down，不消费的话它会在双击窗口后再翻一次（等于一次点击翻两页）。
+  7. `waitForUpOrCancellation()` 返回 null（拖动/出界）就不翻页，交给 Pager 自己滑动 ——
+     从边缘起手的滑动不会先翻一页再滑一页。
+- 翻页动作抽成局部的 `turnPage(action)`，点击分区的 `onTap` 与边缘快速路径共用（含「连点排队」
+  `pendingTapTarget` 与 200ms tween）。
+- 连续布局没有分页，行为不变。
+- 行为边界（均为实测/用户确认后的定案）：
+  - `SINGLE_TAP`：边缘带内命中单词 → **取词**（不翻页）；空白 → 立刻翻页。
+  - `LONG_PRESS` / `OFF`：边缘带内单击（单词或空白）→ **立刻翻页**；长按单词 → 取词 / 选文本。
+  - 边缘带内不识别双击（「双击翻译不在 10% 范围内生效」），也不会翻两页。
+  - 中间区域的行为一点未变（单击/双击/长按全走原来那条路，含 200ms 双击窗口）。
+- 第一版只对空白翻页、命中单词就放手，导致「边缘单击单词不翻页」且长按同样无法区分；
+  现改为按模式 + 长按超时分流（见上面第 3 条）。
