@@ -20,9 +20,11 @@
 
 package ua.acclorite.book_story.data.ai
 
+import com.aallam.openai.api.chat.ChatCompletionChunk
 import com.aallam.openai.api.chat.ChatCompletionRequest
 import com.aallam.openai.api.chat.ChatMessage
 import com.aallam.openai.api.chat.ChatRole
+import com.aallam.openai.api.chat.Effort
 import com.aallam.openai.api.core.RequestOptions
 import com.aallam.openai.api.exception.AuthenticationException
 import com.aallam.openai.api.exception.InvalidRequestException
@@ -44,6 +46,7 @@ import com.aallam.openai.client.OpenAIHost
 import com.aallam.openai.client.RetryStrategy
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.ResponseException
+import ua.acclorite.book_story.core.log.logD
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
@@ -56,6 +59,8 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 private const val AI_TITLE_HEADER = "Book's Story"
+
+private const val TAG = "AiRepository"
 
 /**
  * 流式请求自己覆盖 request 超时：`chatCompletions` 的 SSE 可能持续几分钟，
@@ -117,7 +122,16 @@ class AiTranslationRepository(
      * 错误只在请求侧映射：[Flow.catch] 只包住上游，下游收集者自己抛的异常原样冒泡，
      * 不会被包成一条「AI 请求失败」。
      */
-    fun translate(text: String, targetLanguage: AiTargetLanguage): Flow<String> = flow {
+    fun translate(
+        text: String,
+        targetLanguage: AiTargetLanguage,
+        /**
+         * 推理阶段（`delta.reasoning_content`）的进度：已收到的思考字数。
+         * 推理模型会先思考十几秒才写正文（实测 1.5k 字思考 / 98 字译文），
+         * 界面靠它显示「模型思考中」，否则这段时间看起来像卡死。
+         */
+        onThinking: (Int) -> Unit = {}
+    ): Flow<String> = flow {
         if (text.isBlank()) return@flow
 
         var client: OpenAI? = null
@@ -133,7 +147,11 @@ class AiTranslationRepository(
                     openAi.chatCompletions(
                         translationRequest(clientConfig, systemPrompt, chunk),
                         STREAMING_REQUEST_OPTIONS
-                    ).mapNotNull { completion ->
+                    ).logStreamTimeline(
+                        kind = "translate[${clientConfig.reasoningEffort.name.lowercase()}]",
+                        onThinking = onThinking
+                    )
+                        .mapNotNull { completion ->
                         completion.choices.firstOrNull()?.delta?.content
                             ?.takeIf { it.isNotEmpty() }
                     }
@@ -146,39 +164,43 @@ class AiTranslationRepository(
     }
 
     /**
-     * 语法分析。返回模型写的 Markdown 原文（语法标签直接渲染，不再解析 JSON），
-     * 空 content 按 [AiError.EMPTY_RESPONSE] 处理。
+     * 流式语法分析。delta 原样发出（与 [translate] 同一套：块内顺序、空内容由调用方判定）。
      *
      * 不传 `response_format`：Markdown 回答不是 JSON 模式能表达的东西，而且部分兼容端点
      * 收到 `json_object` 会直接 400。
+     *
+     * 空结果不在这里报错：流式聚合在状态机里做，`EMPTY_RESPONSE` 与译文共用同一条路径。
      */
-    suspend fun analyzeGrammar(
+    fun analyzeGrammar(
         text: String,
-        targetLanguage: AiTargetLanguage
-    ): Result<String> {
-        return try {
-            if (text.isBlank()) throw AiException(AiError.UNKNOWN)
+        targetLanguage: AiTargetLanguage,
+        /** 同 [translate]：思考阶段的已收到字数。 */
+        onThinking: (Int) -> Unit = {}
+    ): Flow<String> = flow {
+        if (text.isBlank()) throw AiException(AiError.UNKNOWN)
 
+        var client: OpenAI? = null
+        try {
             val (clientConfig, key) = resolve()
-            val request = ChatCompletionRequest(
-                model = ModelId(clientConfig.model),
-                messages = listOf(
-                    ChatMessage(
-                        role = ChatRole.System,
-                        content = grammarSystemPrompt(targetLanguage.promptName(uiLocale()))
-                    ),
-                    ChatMessage(role = ChatRole.User, content = text)
-                )
+            val systemPrompt = grammarSystemPrompt(targetLanguage.promptName(uiLocale()))
+            val openAi = open(clientConfig, key)
+            client = openAi
+
+            openAi.chatCompletions(
+                grammarRequest(config = clientConfig, systemPrompt = systemPrompt, text = text),
+                STREAMING_REQUEST_OPTIONS
+            ).logStreamTimeline(
+                kind = "grammar[${clientConfig.reasoningEffort.name.lowercase()}]",
+                onThinking = onThinking
             )
-            val content = open(clientConfig, key).use { client ->
-                client.chatCompletion(request).choices.firstOrNull()?.message?.content
+                .mapNotNull { completion ->
+                completion.choices.firstOrNull()?.delta?.content
+                    ?.takeIf { it.isNotEmpty() }
             }
-            if (content.isNullOrBlank()) throw AiException(AiError.EMPTY_RESPONSE)
-            Result.success(content)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(mapAiException(e))
+                .catch { throw mapAiException(it) }
+                .collect { emit(it) }
+        } finally {
+            client?.close()
         }
     }
 
@@ -192,7 +214,8 @@ class AiTranslationRepository(
         val clientConfig = AiClientConfig(
             baseUrl = normalizeAiBaseUrl(configured.baseUrl),
             model = model,
-            sessionId = configured.sessionId
+            sessionId = configured.sessionId,
+            reasoningEffort = configured.reasoningEffort
         )
 
         val key = keyStore.get().orEmpty()
@@ -214,6 +237,22 @@ class AiTranslationRepository(
         ),
         // 不显式传 temperature：o1/o3/gpt-5 等推理模型会以 400 拒绝这个参数。
         // 翻译不需要固定随机性，交给 provider 默认值即可。
+        // 思考强度：DEFAULT（null）= 不发送，其余发 `reasoning_effort`。
+        reasoningEffort = config.reasoningEffort.apiValue?.let { Effort(it) }
+    )
+
+    /** 语法请求：只要 system 提示 + 那一句原文；不传 temperature/response_format。 */
+    private fun grammarRequest(
+        config: AiClientConfig,
+        systemPrompt: String,
+        text: String
+    ) = ChatCompletionRequest(
+        model = ModelId(config.model),
+        messages = listOf(
+            ChatMessage(role = ChatRole.System, content = systemPrompt),
+            ChatMessage(role = ChatRole.User, content = text)
+        ),
+        reasoningEffort = config.reasoningEffort.apiValue?.let { Effort(it) }
     )
 
     /**
@@ -239,6 +278,67 @@ class AiTranslationRepository(
                 retry = RetryStrategy(maxRetries = 0),
                 engine = engine
             )
+        )
+    }
+}
+
+/**
+ * 流式请求的时间线（logcat，tag [TAG]）：第一个 SSE 事件、第一段**正文** delta、
+ * 推理（reasoning）与正文的字符数、总耗时。
+ *
+ * 为什么要在过滤之前量：推理模型（DeepSeek / o 系列 等兼容端点）会先把思考写进
+ * `delta.reasoning_content`，`content` 一直是空 —— 界面就会在「分析中」停十几秒。
+ * 有了这两行就能区分三种情况：
+ *  - 第一个事件就很晚 → 服务端/网关在攒整段（不做真流式）；
+ *  - 事件来得早、但只有 reasoning → 模型在思考，`content` 还没开始写；
+ *  - 事件早、content 也早 → 客户端渲染才是瓶颈（看 `first content` 与界面出现文字的时间差）。
+ *
+ * 只记延迟与字符数，不记正文内容、不碰状态、不改 delta 顺序。
+ */
+private fun Flow<ChatCompletionChunk>.logStreamTimeline(
+    kind: String,
+    onThinking: (Int) -> Unit = {}
+): Flow<ChatCompletionChunk> = flow {
+    val startedAt = System.nanoTime()
+    fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000
+
+    var firstEventAt: Long? = null
+    var firstContentAt: Long? = null
+    var events = 0
+    var reasoningChars = 0
+    var contentChars = 0
+    try {
+        this@logStreamTimeline.collect { chunk ->
+            val delta = chunk.choices.firstOrNull()?.delta
+            val reasoning = delta?.reasoningContent?.length ?: 0
+            val content = delta?.content?.length ?: 0
+
+            if (firstEventAt == null) {
+                firstEventAt = elapsedMs()
+                logD(
+                    TAG,
+                    "$kind: first SSE event ${firstEventAt}ms " +
+                        "(content=${content > 0}, reasoning=${reasoning > 0})"
+                )
+            }
+            if (firstContentAt == null && content > 0) {
+                firstContentAt = elapsedMs()
+                logD(TAG, "$kind: first content ${firstContentAt}ms")
+            }
+
+            events++
+            contentChars += content
+            if (reasoning > 0) {
+                reasoningChars += reasoning
+                onThinking(reasoningChars)
+            }
+            emit(chunk)
+        }
+    } finally {
+        logD(
+            TAG,
+            "$kind: events=$events, reasoning=$reasoningChars chars, " +
+                "content=$contentChars chars, total=${elapsedMs()}ms"
         )
     }
 }

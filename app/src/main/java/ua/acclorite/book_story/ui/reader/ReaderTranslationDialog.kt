@@ -55,10 +55,13 @@ import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -311,7 +314,8 @@ private fun TranslationTabContent(
     when (val translation = state.translation) {
         // 刚打开/请求发出前也按 loading 画：以前这里是空白，用户只看到一块空卡片。
         AsyncText.Idle, AsyncText.Loading -> LoadingPanel(
-            text = stringResource(id = R.string.translation_dialog_translating)
+            text = stringResource(id = R.string.translation_dialog_translating),
+            thinkingChars = state.thinkingChars
         )
 
         is AsyncText.Streaming -> SelectableBody(text = translation.text)
@@ -362,6 +366,7 @@ private fun GrammarTabContent(
     if (state.sentences.size <= 1) {
         GrammarResult(
             grammar = state.grammar,
+            thinkingChars = state.thinkingChars,
             onCopy = onCopy,
             onShare = onShare,
             onReanalyze = onReanalyze
@@ -377,14 +382,20 @@ private fun GrammarTabContent(
     }
 
     state.sentences.forEachIndexed { index, sentence ->
+        val expanded = state.selectedSentenceIndex == index
         SentenceCard(
             index = index,
             sentence = sentence,
-            expanded = state.selectedSentenceIndex == index,
+            expanded = expanded,
             onClick = { onSelectSentence(index) }
-        ) {
-            GrammarResult(
+        )
+        // 分析结果放在句子卡片**外面**：以前它挂在同一张卡里，句子和分析共用一层底色、
+        // 只靠内边距分隔，长句子加长分析就糊成一片（用户反馈「分不清哪个是句子哪个是分析」）。
+        // 现在：句子 = 一张卡（完整显示、选中态染色），分析 = 另一张带标题和分隔线的卡。
+        if (expanded) {
+            GrammarAnalysis(
                 grammar = state.grammar,
+                thinkingChars = state.thinkingChars,
                 onCopy = onCopy,
                 onShare = onShare,
                 onReanalyze = onReanalyze
@@ -394,17 +405,18 @@ private fun GrammarTabContent(
 }
 
 /**
- * 句子卡片：整行可点（再点一次收起），展开时结果挂在句子下面。
+ * 句子卡片：整行可点（再点一次收起）。
  *
- * 只让句子这一行可点，结果区不在点击范围内 —— 否则选中、复制结果里的文字会顺手把卡片收起。
+ * 句子**不截断**：以前 `maxLines = 2`，长句直接被省略号吃掉，用户看不出要分析的是哪半句。
+ * 分析结果不在这张卡里（见 [GrammarAnalysis]），点选范围只有句子本身 ——
+ * 否则选中、复制分析里的文字会顺手把卡片收起。
  */
 @Composable
 private fun SentenceCard(
     index: Int,
     sentence: String,
     expanded: Boolean,
-    onClick: () -> Unit,
-    content: @Composable () -> Unit
+    onClick: () -> Unit
 ) {
     val palette = LocalReaderPalette.current
 
@@ -413,46 +425,79 @@ private fun SentenceCard(
         color = if (expanded) palette.accent.copy(alpha = 0.12f) else palette.onBar.copy(alpha = 0.04f),
         contentColor = palette.onBar
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onClick)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                StyledText(
-                    text = "${index + 1}.",
-                    modifier = Modifier.width(24.dp),
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        color = palette.accent,
-                        fontWeight = FontWeight.SemiBold
-                    )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            StyledText(
+                text = "${index + 1}.",
+                modifier = Modifier.width(24.dp),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = palette.accent,
+                    fontWeight = FontWeight.SemiBold
                 )
-                StyledText(
-                    text = sentence,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
-                )
-            }
-
-            if (expanded) {
-                Column(
-                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    content()
-                }
-            }
+            )
+            StyledText(
+                text = sentence,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
+            )
         }
     }
 }
 
-/** 选中句子的语法状态：loading、Markdown 结果（可复制/分享/重新分析）、错误 + 重试。 */
+/**
+ * 一句的分析结果。
+ *
+ * 与句子卡片刻意长得不一样：独立卡片 + 标题行（「分析」）+ 发丝分隔线，
+ * 一眼能分出「原文那一句」和「模型给出的分析」。
+ */
+@Composable
+private fun GrammarAnalysis(
+    grammar: AsyncGrammar,
+    thinkingChars: Int,
+    onCopy: (String) -> Unit,
+    onShare: (String) -> Unit,
+    onReanalyze: () -> Unit
+) {
+    val palette = LocalReaderPalette.current
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = palette.onBar.copy(alpha = 0.02f),
+        contentColor = palette.onBar
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StyledText(
+                text = stringResource(id = R.string.translation_dialog_analysis),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = palette.accent,
+                    fontWeight = FontWeight.SemiBold
+                )
+            )
+            HorizontalDivider(color = palette.onBar.copy(alpha = 0.10f))
+            GrammarResult(
+                grammar = grammar,
+                thinkingChars = thinkingChars,
+                onCopy = onCopy,
+                onShare = onShare,
+                onReanalyze = onReanalyze
+            )
+        }
+    }
+}
+
+/** 选中句子的语法状态：loading、流式 Markdown、完整结果（可复制/分享/重新分析）、错误 + 重试。 */
 @Composable
 private fun GrammarResult(
     grammar: AsyncGrammar,
+    thinkingChars: Int,
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
     onReanalyze: () -> Unit
@@ -460,8 +505,20 @@ private fun GrammarResult(
     when (grammar) {
         // Idle 只会出现一瞬间（选中句子之后、请求发出之前），按 loading 画。
         AsyncGrammar.Idle, AsyncGrammar.Loading -> LoadingRow(
-            text = stringResource(id = R.string.translation_dialog_analyzing)
+            text = stringResource(id = R.string.translation_dialog_analyzing),
+            thinkingChars = thinkingChars
         )
+
+        // 流式：先渲染已到达的部分。没写完的 Markdown（半截加粗/列表）会自然退化成纯文本；
+        // 不显示复制/分享/重新分析 —— 内容还不完整，拿它分享等于把半截答案发出去。
+        is AsyncGrammar.Streaming -> SelectionContainer {
+            MarkdownText(
+                markdown = grammar.text,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    color = LocalReaderPalette.current.onBar
+                )
+            )
+        }
 
         is AsyncGrammar.Success -> {
             if (grammar.fromCache) CacheIndicator()
@@ -537,8 +594,9 @@ private fun CacheIndicator() {
 }
 
 @Composable
-private fun LoadingRow(text: String) {
+private fun LoadingRow(text: String, thinkingChars: Int = 0) {
     val palette = LocalReaderPalette.current
+    val label = waitingLabel(text, thinkingChars)
     Row(verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(
             modifier = Modifier.size(16.dp),
@@ -546,17 +604,47 @@ private fun LoadingRow(text: String) {
             strokeWidth = 2.dp
         )
         StyledText(
-            text = text,
+            text = label,
             modifier = Modifier.padding(start = 8.dp),
             style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
         )
     }
 }
 
+/**
+ * 加载态的「已经等了多久」。
+ *
+ * 推理模型（DeepSeek / o 系列等）会先思考十几秒才吐第一段正文，界面一直停在「分析中」
+ * 看起来像卡死。超过 [WAITING_HINT_DELAY_SECONDS] 秒就把文案换成「等待模型响应… N 秒」，
+ * 让用户知道请求还活着、慢在模型侧（实测首字延迟见 PROGRESS.md）。
+ */
+@Composable
+private fun waitingLabel(text: String, thinkingChars: Int): String {
+    var seconds by remember(text) { mutableIntStateOf(0) }
+    LaunchedEffect(text) {
+        while (true) {
+            delay(1_000)
+            seconds++
+        }
+    }
+    return when {
+        // 推理模型的思考是**流式**的（实测语法一次 8.6k 字思考、35 秒后才出第一段正文）：
+        // 字数在涨就说明请求活着，比光转圈更有说服力。
+        thinkingChars > 0 -> stringResource(id = R.string.translation_dialog_thinking, thinkingChars)
+        seconds >= WAITING_HINT_DELAY_SECONDS ->
+            stringResource(id = R.string.translation_dialog_waiting, seconds)
+
+        else -> text
+    }
+}
+
+private const val WAITING_HINT_DELAY_SECONDS = 3
+
 /** 紧凑加载态：居中、留一点上下空间，配小卡片看起来不空。 */
 @Composable
-private fun LoadingPanel(text: String) {
+private fun LoadingPanel(text: String, thinkingChars: Int = 0) {
     val palette = LocalReaderPalette.current
+    val label = waitingLabel(text, thinkingChars)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -570,7 +658,7 @@ private fun LoadingPanel(text: String) {
             strokeWidth = 2.dp
         )
         StyledText(
-            text = text,
+            text = label,
             modifier = Modifier.padding(start = 10.dp),
             style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
         )

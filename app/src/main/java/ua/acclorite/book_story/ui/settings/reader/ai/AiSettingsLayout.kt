@@ -26,6 +26,7 @@ import ua.acclorite.book_story.ui.settings.reader.ai.components.AiCacheOption
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiGrammarOption
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiModelOption
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiProviderPresetOption
+import ua.acclorite.book_story.ui.settings.reader.ai.components.AiReasoningEffortOption
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiTargetLanguageOption
 import ua.acclorite.book_story.ui.settings.reader.ai.components.AiTestConnectionOption
 import ua.acclorite.book_story.ui.theme.Spacing
@@ -52,6 +53,7 @@ fun AiSettingsLayout(
         item { AiProviderPresetOption() }
         item { AiBaseUrlOption() }
         item { AiModelOption() }
+        item { AiReasoningEffortOption() }
         item { AiApiKeyOption(model) }
         item { AiTargetLanguageOption() }
         item { AiGrammarOption() }

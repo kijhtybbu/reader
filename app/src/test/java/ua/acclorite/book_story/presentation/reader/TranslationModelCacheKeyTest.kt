@@ -14,7 +14,6 @@
 
 package ua.acclorite.book_story.presentation.reader
 
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -81,8 +80,8 @@ class TranslationModelCacheKeyTest {
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         every { configProvider.current() } returns config
-        every { ai.translate(any(), any()) } returns flowOf("译文")
-        coEvery { ai.analyzeGrammar(any(), any()) } returns Result.success("## Main clause")
+        every { ai.translate(any(), any(), any()) } returns flowOf("译文")
+        every { ai.analyzeGrammar(any(), any(), any()) } returns flowOf("## Main clause")
     }
 
     @After
@@ -130,7 +129,7 @@ class TranslationModelCacheKeyTest {
         advanceUntilIdle()
 
         assertEquals(AsyncText.Success("译文", fromCache = true), model.state.value.translation)
-        verify(exactly = 1) { ai.translate(any(), any()) }
+        verify(exactly = 1) { ai.translate(any(), any(), any()) }
     }
 
     @Test
@@ -145,7 +144,7 @@ class TranslationModelCacheKeyTest {
         advanceUntilIdle()
 
         assertEquals(AsyncText.Success("译文", fromCache = false), second.state.value.translation)
-        verify(exactly = 2) { ai.translate(any(), any()) }
+        verify(exactly = 2) { ai.translate(any(), any(), any()) }
         assertEquals(2, cache.puts.map { it.key }.distinct().size)
     }
 

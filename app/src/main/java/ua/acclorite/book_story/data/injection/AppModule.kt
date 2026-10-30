@@ -104,7 +104,8 @@ object AppModule {
                 AiClientConfig(
                     baseUrl = settings.aiBaseUrl.lastValue,
                     model = settings.aiModel.lastValue,
-                    sessionId = settings.aiSessionId.lastValue
+                    sessionId = settings.aiSessionId.lastValue,
+                    reasoningEffort = settings.aiReasoningEffort.lastValue
                 )
             },
             keyStore = keyStore,

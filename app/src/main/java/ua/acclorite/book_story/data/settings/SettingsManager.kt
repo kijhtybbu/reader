@@ -26,6 +26,7 @@ import ua.acclorite.book_story.core.language.Language
 import ua.acclorite.book_story.core.language.LanguageUtils
 import ua.acclorite.book_story.core.log.logI
 import ua.acclorite.book_story.data.ai.AiTargetLanguage
+import ua.acclorite.book_story.data.ai.AiReasoningEffort
 import ua.acclorite.book_story.data.ai.DEFAULT_AI_BASE_URL
 import ua.acclorite.book_story.data.ai.DEFAULT_AI_MODEL
 import ua.acclorite.book_story.data.ai.normalizeAiBaseUrl
@@ -232,6 +233,16 @@ class SettingsManager @Inject constructor(
     )
     val aiGrammarEnabled = setting<Boolean, Boolean>(
         key = booleanPreferencesKey("ai_grammar_enabled"), default = true
+    )
+    // fork: 推理模型的思考强度（`reasoning_effort`）。默认 OFF（发 `"none"`）：实测
+    // （OpenCode Zen + deepseek-v4.1-flash）关掉思考后第一段正文 0.8–3.4 秒、reasoning 0 字符，
+    // 而默认档是 35–42 秒 / 8–10k 字思考，low 是 11.6–23 秒 / 2–5k 字。`"minimal"` 在该网关被
+    // 静默忽略（思考量回到默认档），所以「关闭」用的是 `"none"`；不认这个值的端点选「默认」
+    // （不发送该字段）。认不出的存量值回落 OFF（与 AiReasoningEffort.fromName 一致）。
+    val aiReasoningEffort = setting<AiReasoningEffort, String>(
+        key = stringPreferencesKey("ai_reasoning_effort"), default = AiReasoningEffort.OFF,
+        serialize = { it.name },
+        deserialize = { name -> AiReasoningEffort.fromName(name) }
     )
     val fastColorPresetChange = setting<Boolean, Boolean>(
         key = booleanPreferencesKey("fast_color_preset_change"), default = true

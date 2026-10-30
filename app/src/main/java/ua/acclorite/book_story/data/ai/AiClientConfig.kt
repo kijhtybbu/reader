@@ -29,7 +29,9 @@ data class AiClientConfig(
     val baseUrl: String,
     val model: String,
     /** 稳定会话 ID，作为 `x-opencode-session` 发送；普通 OpenAI 兼容服务会忽略。 */
-    val sessionId: String = ""
+    val sessionId: String = "",
+    /** 推理模型的思考强度（`reasoning_effort`）；[AiReasoningEffort.DEFAULT] = 不发送该字段。 */
+    val reasoningEffort: AiReasoningEffort = AiReasoningEffort.LOW
 )
 
 fun normalizeAiBaseUrl(value: String): String {

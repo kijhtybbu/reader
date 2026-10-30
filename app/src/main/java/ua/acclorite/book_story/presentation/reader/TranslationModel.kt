@@ -10,6 +10,8 @@
  *
  * 关键约束（设计 §7.3/§8.2）：
  *  - **缓存优先**：打开对话框先读 translation 缓存；命中直接展示、不建网络请求。
+ *  - **两个标签都流式**：译文与语法分析都是 SSE 逐块产出，边到边更新 `AsyncText.Streaming` /
+ *    `AsyncGrammar.Streaming`；**只有完整结果才落库**（空结果算失败，`EMPTY_RESPONSE`）。
  *  - **语法逐句**：`open` 只切句不请求；两句以上时切到语法标签也不请求，用户点中哪句才分析哪句。
  *    结果按 `translationCacheKey(sentence, GRAMMAR, …)` 缓存，本次打开期间还多留一份在
  *    [grammarResults] 里，收起再展开不用重新请求。
@@ -59,6 +61,15 @@ private const val TAG = "TranslationModel"
 /** 长按选区没有段落节点；缓存表的 `nodeId` 非空，用 -1 表示「不是段落」（不参与缓存键）。 */
 private const val UNKNOWN_NODE_ID = -1
 
+/**
+ * 语法流式输出的发布步长（字符）。
+ *
+ * 语法结果是 Markdown，每变一次就要重新解析 + 重排版；一个 token 一次推送（~10–50 次/秒）
+ * 在低端机上能明显拖慢对话框。攒够这么多个字符才推一次中间态，**最终结果总会推送**。
+ * 按长度而不按时间节流：单测跑在虚拟时间上，长度阈值才可复现。
+ */
+private const val GRAMMAR_STREAM_PUBLISH_STEP = 32
+
 @HiltViewModel
 class TranslationModel @Inject constructor(
     private val ai: AiTranslationRepository,
@@ -98,6 +109,15 @@ class TranslationModel @Inject constructor(
      */
     private val grammarResults = mutableMapOf<String, AsyncGrammar.Success>()
 
+    /**
+     * 还在流式输出的句子片段（键同上）。
+     *
+     * 只为了「写到一半时收起再展开还能接着看」：收起的时候状态回到 Idle，而请求照旧在跑，
+     * 片段下一块才会再推给状态 —— 没有这一份就会短暂空白。写完（成功/失败）就从这里删掉：
+     * 成功结果进 [grammarResults]，失败不缓存。
+     */
+    private val grammarStreaming = mutableMapOf<String, String>()
+
     private var translationJob: Job? = null
 
     /**
@@ -111,6 +131,7 @@ class TranslationModel @Inject constructor(
 
         cancelJobs()
         grammarResults.clear()
+        grammarStreaming.clear()
         val config = configProvider.current()
         val sentences = splitIntoSentences(text)
         val session = Session(
@@ -195,10 +216,14 @@ class TranslationModel @Inject constructor(
             return
         }
 
-        val stored = grammarResults[grammarKey(session, current.sentences[index])]
+        val key = grammarKey(session, current.sentences[index])
+        val stored = grammarResults[key]
         _state.value = current.copy(
             selectedSentenceIndex = index,
-            grammar = stored ?: AsyncGrammar.Idle
+            // 请求还在跑、结果还没写完时先接上已到达的片段：收起再展开不该是一块空白。
+            grammar = stored
+                ?: grammarStreaming[key]?.let { AsyncGrammar.Streaming(it) }
+                ?: AsyncGrammar.Idle
         )
         if (stored == null) startGrammarRequest(session, index, force = false)
     }
@@ -230,7 +255,10 @@ class TranslationModel @Inject constructor(
                     return
                 }
                 // 取消这一句的在途请求：重新分析必须让新结果落地，不能被旧请求先写进缓存。
-                inFlight[grammarKey(session, current.sentences[index])]?.cancel()
+                // 同时丢掉上一轮的片段，否则中途收起再展开会看到旧的一半。
+                val key = grammarKey(session, current.sentences[index])
+                inFlight[key]?.cancel()
+                grammarStreaming.remove(key)
                 _state.value = current.copy(grammar = AsyncGrammar.Loading)
                 startGrammarRequest(session, index, force = true)
             }
@@ -241,6 +269,7 @@ class TranslationModel @Inject constructor(
     fun dismiss() {
         cancelJobs()
         grammarResults.clear()
+        grammarStreaming.clear()
         session = null
         _state.value = TranslationState(requestId = _state.value.requestId + 1)
     }
@@ -265,10 +294,17 @@ class TranslationModel @Inject constructor(
 
                 publish(session.requestId) { it.copy(translation = AsyncText.Loading) }
                 val builder = StringBuilder()
-                ai.translate(session.text, session.config.targetLanguage).collect { delta ->
+                ai.translate(
+                    text = session.text,
+                    targetLanguage = session.config.targetLanguage,
+                    onThinking = { chars -> publishThinking(session.requestId, chars) }
+                ).collect { delta ->
                     builder.append(delta)
                     val text = builder.toString()
-                    publish(session.requestId) { it.copy(translation = AsyncText.Streaming(text)) }
+                    // 正文开始了：思考阶段的字数不再有意义，顺手清零（同一个状态字段两处共用）。
+                    publish(session.requestId) {
+                        it.copy(translation = AsyncText.Streaming(text), thinkingChars = 0)
+                    }
                 }
 
                 val result = builder.toString()
@@ -306,7 +342,8 @@ class TranslationModel @Inject constructor(
 
     /**
      * 分析第 [index] 句。先读这一句的缓存（`force` 时跳过），未命中才请求；
-     * 完成后 `put` Markdown 原文，并留一份在 [grammarResults] 里。
+     * 请求是流式的：中间态推 [AsyncGrammar.Streaming]（按 [GRAMMAR_STREAM_PUBLISH_STEP]
+     * 攒块），全部到齐后 `put` Markdown 原文并推 [AsyncGrammar.Success]。
      */
     private fun startGrammarRequest(session: Session, index: Int, force: Boolean) {
         val sentence = session.sentences.getOrNull(index) ?: return
@@ -329,8 +366,41 @@ class TranslationModel @Inject constructor(
                 }
 
                 publishGrammar(session, sentence, key, AsyncGrammar.Loading)
-                val markdown = ai.analyzeGrammar(sentence, session.config.targetLanguage)
-                    .getOrElse { throw it }
+                val builder = StringBuilder()
+                var publishedLength = 0
+                ai.analyzeGrammar(
+                    text = sentence,
+                    targetLanguage = session.config.targetLanguage,
+                    onThinking = { chars -> publishThinking(session.requestId, chars) }
+                ).collect { delta ->
+                    builder.append(delta)
+                    // 第一块立刻渲染（`publishedLength == 0`）：Markdown 重排再贵也贵不过让用户
+                    // 对着「分析中」干等；之后才按步长攒块。
+                    if (publishedLength == 0 ||
+                        builder.length - publishedLength >= GRAMMAR_STREAM_PUBLISH_STEP
+                    ) {
+                        publishedLength = builder.length
+                        publishGrammar(
+                            session = session,
+                            sentence = sentence,
+                            key = key,
+                            result = AsyncGrammar.Streaming(builder.toString())
+                        )
+                    }
+                }
+
+                val markdown = builder.toString()
+                if (markdown.isBlank()) {
+                    // 空结果按失败处理：不能把空串当分析结果写进缓存，否则下次命中一片空白。
+                    // 与译文同一条路径（`AsyncText` 侧也在状态机里判空）。
+                    publishGrammar(
+                        session = session,
+                        sentence = sentence,
+                        key = key,
+                        result = AsyncGrammar.Error(AiError.EMPTY_RESPONSE, null)
+                    )
+                    return@launch
+                }
 
                 putCache(session, TranslationKind.GRAMMAR, key, markdown)
                 publishGrammar(
@@ -360,6 +430,7 @@ class TranslationModel @Inject constructor(
      * 发布一句的结果。
      *
      * 成功结果先写进 [grammarResults]（这一句没被展开也留着，重新展开直接显示）；
+     * 流式片段写进 [grammarStreaming]（只为了续显，不是结果）；写完就从片段表里删掉。
      * 状态只在「这次 open 还是当前的」且「展开的还是这一句」时才更新 —— 切换句子之后
      * 上一句迟到的结果只能进缓存，不能把当前这句的 loading/结果盖掉。
      */
@@ -370,7 +441,15 @@ class TranslationModel @Inject constructor(
         result: AsyncGrammar
     ) {
         if (!isActive) return
-        if (result is AsyncGrammar.Success) grammarResults[key] = result
+        when (result) {
+            is AsyncGrammar.Streaming -> grammarStreaming[key] = result.text
+            is AsyncGrammar.Success -> {
+                grammarResults[key] = result
+                grammarStreaming.remove(key)
+            }
+            is AsyncGrammar.Error -> grammarStreaming.remove(key)
+            AsyncGrammar.Idle, AsyncGrammar.Loading -> Unit
+        }
         publish(session.requestId) { state ->
             val selected = state.selectedSentenceIndex
             if (selected == null || state.sentences.getOrNull(selected) != sentence) {
@@ -462,6 +541,16 @@ class TranslationModel @Inject constructor(
         // 先拷贝再取消：完成回调会改 inFlight，边遍历边改会抛 ConcurrentModificationException。
         inFlight.values.toList().forEach { it.cancel() }
         inFlight.clear()
+    }
+
+    /**
+     * 推理阶段的进度。只是一个「还活着」的提示：不改 translation/grammar 的状态机，
+     * 也不落库；正文一到（[AsyncText.Streaming] / [AsyncGrammar.Streaming]）就清零。
+     */
+    private fun publishThinking(requestId: Long, chars: Int) {
+        if (_state.value.requestId != requestId) return
+        if (_state.value.thinkingChars == chars) return
+        _state.value = _state.value.copy(thinkingChars = chars)
     }
 
     /**

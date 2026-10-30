@@ -9,18 +9,17 @@
  *  - 缓存命中 → 零请求；未命中 → 立即流式；
  *  - 第二次打开同一段 → 命中缓存（不再请求）；
  *  - 语法逐句：多句时切到标签不发请求，点中哪句就只分析那句（没有「开始分析」按钮）；
+ *  - 语法也是流式：中间态是 `AsyncGrammar.Streaming`（按长度阈值攒块推），写完才 `Success` + 落库；
  *  - 语法缓存按**句子**算键；本次打开算过的句子再展开不再请求；
  *  - 切换句子后，上一句迟到的结果只进缓存，不覆盖当前展开的那句；
  *  - 同一 cacheKey 的并发请求去重；
  *  - 关闭取消请求，且不写半截结果；取消后迟到的结果既不进状态也不落库（含重新生成后的旧请求）；
- *  - 空串译文按失败处理（`AiError.EMPTY_RESPONSE`），不写缓存；
+ *  - 空串结果（译文/语法）按失败处理（`AiError.EMPTY_RESPONSE`），不写缓存；
  *  - 重新生成覆盖同一键，错误只映射类别 + 状态码。
  */
 
 package ua.acclorite.book_story.presentation.reader
 
-import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -180,14 +179,14 @@ class TranslationModelTest {
         val state = model.state.value
         assertTrue(state.visible)
         assertEquals(AsyncText.Success("那是最好的时代，也是最坏的时代。", fromCache = true), state.translation)
-        verify(exactly = 0) { ai.translate(any(), any()) }
-        coVerify(exactly = 0) { ai.analyzeGrammar(any(), any()) }
+        verify(exactly = 0) { ai.translate(any(), any(), any()) }
+        verify(exactly = 0) { ai.analyzeGrammar(any(), any(), any()) }
         assertTrue(cache.puts.isEmpty())
     }
 
     @Test
     fun `a cache miss streams the translation and stores the complete result`() = runTest(dispatcher) {
-        every { ai.translate(paragraph, config.targetLanguage) } returns
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returns
                 flowOf("那是最好的", "时代。")
         val model = model()
 
@@ -212,7 +211,7 @@ class TranslationModelTest {
 
     @Test
     fun `opening the same paragraph twice hits the cache the second time`() = runTest(dispatcher) {
-        every { ai.translate(paragraph, config.targetLanguage) } returns flowOf("译文")
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returns flowOf("译文")
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
@@ -222,7 +221,7 @@ class TranslationModelTest {
         advanceUntilIdle()
 
         assertEquals(AsyncText.Success("译文", fromCache = true), model.state.value.translation)
-        verify(exactly = 1) { ai.translate(any(), any()) }
+        verify(exactly = 1) { ai.translate(any(), any(), any()) }
     }
 
     @Test
@@ -241,14 +240,14 @@ class TranslationModelTest {
             assertEquals(sentences, state.sentences)
             assertNull(state.selectedSentenceIndex)
             assertEquals(AsyncGrammar.Idle, state.grammar)
-            coVerify(exactly = 0) { ai.analyzeGrammar(any(), any()) }
+            verify(exactly = 0) { ai.analyzeGrammar(any(), any(), any()) }
         }
 
     @Test
     fun `picking a sentence analyzes exactly that sentence`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returns
-                Result.success(secondMarkdown)
+        every { ai.analyzeGrammar(sentences[1], config.targetLanguage, any()) } returns
+                flowOf(secondMarkdown)
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
@@ -264,8 +263,8 @@ class TranslationModelTest {
             AsyncGrammar.Success(secondMarkdown, fromCache = false),
             model.state.value.grammar
         )
-        coVerify(exactly = 1) { ai.analyzeGrammar(sentences[1], config.targetLanguage) }
-        coVerify(exactly = 0) { ai.analyzeGrammar(sentences[0], config.targetLanguage) }
+        verify(exactly = 1) { ai.analyzeGrammar(sentences[1], config.targetLanguage, any()) }
+        verify(exactly = 0) { ai.analyzeGrammar(sentences[0], config.targetLanguage, any()) }
         val put = cache.puts.single()
         assertEquals(sentenceGrammarKey(sentences[1]), put.key)
         assertEquals(TranslationKind.GRAMMAR, put.kind)
@@ -290,15 +289,15 @@ class TranslationModelTest {
             AsyncGrammar.Success(firstMarkdown, fromCache = true),
             model.state.value.grammar
         )
-        coVerify(exactly = 0) { ai.analyzeGrammar(any(), any()) }
+        verify(exactly = 0) { ai.analyzeGrammar(any(), any(), any()) }
         assertTrue(cache.puts.isEmpty())
     }
 
     @Test
     fun `picking the selected sentence again collapses it`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returns
-                Result.success(secondMarkdown)
+        every { ai.analyzeGrammar(sentences[1], config.targetLanguage, any()) } returns
+                flowOf(secondMarkdown)
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
@@ -317,10 +316,10 @@ class TranslationModelTest {
     fun `a sentence analyzed earlier in the same session is shown again without a request`() =
         runTest(dispatcher) {
             cacheTranslation("译文")
-            coEvery { ai.analyzeGrammar(sentences[0], config.targetLanguage) } returns
-                    Result.success(firstMarkdown)
-            coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returns
-                    Result.success(secondMarkdown)
+            every { ai.analyzeGrammar(sentences[0], config.targetLanguage, any()) } returns
+                    flowOf(firstMarkdown)
+            every { ai.analyzeGrammar(sentences[1], config.targetLanguage, any()) } returns
+                    flowOf(secondMarkdown)
             val model = model()
 
             model.open(paragraph, bookId = 7, nodeId = 12)
@@ -339,8 +338,8 @@ class TranslationModelTest {
                 AsyncGrammar.Success(firstMarkdown, fromCache = false),
                 model.state.value.grammar
             )
-            coVerify(exactly = 1) { ai.analyzeGrammar(sentences[0], config.targetLanguage) }
-            coVerify(exactly = 1) { ai.analyzeGrammar(sentences[1], config.targetLanguage) }
+            verify(exactly = 1) { ai.analyzeGrammar(sentences[0], config.targetLanguage, any()) }
+            verify(exactly = 1) { ai.analyzeGrammar(sentences[1], config.targetLanguage, any()) }
         }
 
     @Test
@@ -348,12 +347,12 @@ class TranslationModelTest {
         runTest(dispatcher) {
             cacheTranslation("译文")
             val gate = CompletableDeferred<Unit>()
-            coEvery { ai.analyzeGrammar(sentences[0], config.targetLanguage) } coAnswers {
+            every { ai.analyzeGrammar(sentences[0], config.targetLanguage, any()) } returns flow {
                 gate.await()
-                Result.success(firstMarkdown)
+                emit(firstMarkdown)
             }
-            coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returns
-                    Result.success(secondMarkdown)
+            every { ai.analyzeGrammar(sentences[1], config.targetLanguage, any()) } returns
+                    flowOf(secondMarkdown)
             val model = model()
 
             model.open(paragraph, bookId = 7, nodeId = 12)
@@ -389,9 +388,9 @@ class TranslationModelTest {
     @Test
     fun `regenerate re-analyzes the selected sentence`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        coEvery { ai.analyzeGrammar(sentences[1], config.targetLanguage) } returnsMany listOf(
-            Result.success(secondMarkdown),
-            Result.success("## Second pass")
+        every { ai.analyzeGrammar(sentences[1], config.targetLanguage, any()) } returnsMany listOf(
+            flowOf(secondMarkdown),
+            flowOf("## Second pass")
         )
         val model = model()
 
@@ -408,7 +407,7 @@ class TranslationModelTest {
             AsyncGrammar.Success("## Second pass", fromCache = false),
             model.state.value.grammar
         )
-        coVerify(exactly = 2) { ai.analyzeGrammar(sentences[1], config.targetLanguage) }
+        verify(exactly = 2) { ai.analyzeGrammar(sentences[1], config.targetLanguage, any()) }
         assertEquals(
             listOf(secondMarkdown, "## Second pass"),
             cache.puts.map { it.payload }
@@ -422,8 +421,8 @@ class TranslationModelTest {
     fun `a single sentence paragraph is analyzed as soon as the grammar tab is selected`() =
         runTest(dispatcher) {
             cacheTranslation("译文")
-            coEvery { ai.analyzeGrammar(singleSentence, config.targetLanguage) } returns
-                    Result.success(firstMarkdown)
+            every { ai.analyzeGrammar(singleSentence, config.targetLanguage, any()) } returns
+                    flowOf(firstMarkdown)
             val model = model()
 
             model.open(singleSentence, bookId = 7, nodeId = 12)
@@ -438,16 +437,16 @@ class TranslationModelTest {
                 AsyncGrammar.Success(firstMarkdown, fromCache = false),
                 model.state.value.grammar
             )
-            coVerify(exactly = 1) { ai.analyzeGrammar(singleSentence, config.targetLanguage) }
+            verify(exactly = 1) { ai.analyzeGrammar(singleSentence, config.targetLanguage, any()) }
         }
 
     @Test
     fun `repeated tab clicks do not duplicate an in-flight grammar request`() = runTest(dispatcher) {
         cacheTranslation("译文")
         val gate = CompletableDeferred<Unit>()
-        coEvery { ai.analyzeGrammar(singleSentence, config.targetLanguage) } coAnswers {
+        every { ai.analyzeGrammar(singleSentence, config.targetLanguage, any()) } returns flow {
             gate.await()
-            Result.success(firstMarkdown)
+            emit(firstMarkdown)
         }
         val model = model()
 
@@ -461,7 +460,7 @@ class TranslationModelTest {
         model.selectTab(TranslationTab.GRAMMAR)
         runCurrent()
 
-        coVerify(exactly = 1) { ai.analyzeGrammar(any(), any()) }
+        verify(exactly = 1) { ai.analyzeGrammar(any(), any(), any()) }
 
         gate.complete(Unit)
         advanceUntilIdle()
@@ -471,8 +470,8 @@ class TranslationModelTest {
     @Test
     fun `dismissing forgets the sentences and the selection`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        coEvery { ai.analyzeGrammar(sentences[0], config.targetLanguage) } returns
-                Result.success(firstMarkdown)
+        every { ai.analyzeGrammar(sentences[0], config.targetLanguage, any()) } returns
+                flowOf(firstMarkdown)
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
@@ -493,7 +492,7 @@ class TranslationModelTest {
     @Test
     fun `dismissing cancels the request and never stores a partial result`() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
-        every { ai.translate(paragraph, config.targetLanguage) } returns flow {
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returns flow {
             emit("半截")
             gate.await()
             awaitCancellation()
@@ -515,7 +514,7 @@ class TranslationModelTest {
 
     @Test
     fun `regenerate overwrites the same cache key`() = runTest(dispatcher) {
-        every { ai.translate(paragraph, config.targetLanguage) } returnsMany listOf(
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returnsMany listOf(
             flowOf("第一版"),
             flowOf("第二版")
         )
@@ -536,9 +535,9 @@ class TranslationModelTest {
     @Test
     fun `regenerate keeps the other tab untouched`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        coEvery { ai.analyzeGrammar(sentences[0], config.targetLanguage) } returns
-                Result.success(firstMarkdown)
-        every { ai.translate(paragraph, config.targetLanguage) } returns flowOf("新译文")
+        every { ai.analyzeGrammar(sentences[0], config.targetLanguage, any()) } returns
+                flowOf(firstMarkdown)
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returns flowOf("新译文")
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
@@ -559,7 +558,7 @@ class TranslationModelTest {
 
     @Test
     fun `ai errors are mapped to a category and status code`() = runTest(dispatcher) {
-        every { ai.translate(paragraph, config.targetLanguage) } returns flow {
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returns flow {
             throw AiException(AiError.RATE_LIMIT, 429)
         }
         val model = model()
@@ -575,10 +574,100 @@ class TranslationModelTest {
     }
 
     @Test
+    fun `a long grammar answer streams partial markdown before the complete result`() =
+        runTest(dispatcher) {
+            cacheTranslation("译文")
+            val gate = CompletableDeferred<Unit>()
+            val firstPart = "## Main clause\n- **Subject**: *It* (dummy subject)\n"
+            val secondPart = "- **Predicate**: was the best of times"
+            every { ai.analyzeGrammar(singleSentence, config.targetLanguage, any()) } returns flow {
+                emit(firstPart)
+                gate.await()
+                emit(secondPart)
+            }
+            val model = model()
+
+            model.open(singleSentence, bookId = 7, nodeId = 12)
+            advanceUntilIdle()
+            model.selectTab(TranslationTab.GRAMMAR)
+            runCurrent()
+
+            // 第一块够长（≥ 步长），先以流式中间态展示；此时没有任何完整结果落库。
+            assertEquals(AsyncGrammar.Streaming(firstPart), model.state.value.grammar)
+            assertTrue(cache.puts.isEmpty())
+
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            val markdown = firstPart + secondPart
+            assertEquals(
+                AsyncGrammar.Success(markdown, fromCache = false),
+                model.state.value.grammar
+            )
+            assertEquals(markdown, cache.puts.single().payload)
+        }
+
+    @Test
+    fun `an empty grammar response becomes an empty response error and is never cached`() =
+        runTest(dispatcher) {
+            cacheTranslation("译文")
+            every { ai.analyzeGrammar(singleSentence, config.targetLanguage, any()) } returns flowOf("")
+            val model = model()
+
+            model.open(singleSentence, bookId = 7, nodeId = 12)
+            advanceUntilIdle()
+            model.selectTab(TranslationTab.GRAMMAR)
+            advanceUntilIdle()
+
+            assertEquals(AsyncGrammar.Error(AiError.EMPTY_RESPONSE, null), model.state.value.grammar)
+            assertTrue(cache.puts.isEmpty())
+        }
+
+    @Test
+    fun `collapsing a streaming sentence and expanding it again keeps the partial text`() =
+        runTest(dispatcher) {
+            cacheTranslation("译文")
+            val gate = CompletableDeferred<Unit>()
+            val firstPart = "## Main clause\n- **Subject**: *We*\n- **Object**: everything\n"
+            val secondPart = "- **Verb**: had"
+            every { ai.analyzeGrammar(sentences[1], config.targetLanguage, any()) } returns flow {
+                emit(firstPart)
+                gate.await()
+                emit(secondPart)
+            }
+            val model = model()
+
+            model.open(paragraph, bookId = 7, nodeId = 12)
+            advanceUntilIdle()
+            model.selectTab(TranslationTab.GRAMMAR)
+
+            model.selectSentence(1)
+            runCurrent()
+            assertEquals(AsyncGrammar.Streaming(firstPart), model.state.value.grammar)
+
+            model.selectSentence(1) // 收起
+            assertEquals(AsyncGrammar.Idle, model.state.value.grammar)
+
+            // 再展开：请求还在跑，片段先接上，不再发第二个请求。
+            model.selectSentence(1)
+            assertEquals(AsyncGrammar.Streaming(firstPart), model.state.value.grammar)
+            verify(exactly = 1) { ai.analyzeGrammar(any(), any(), any()) }
+
+            gate.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(
+                AsyncGrammar.Success(firstPart + secondPart, fromCache = false),
+                model.state.value.grammar
+            )
+        }
+
+    @Test
     fun `grammar errors are mapped and retry re-requests`() = runTest(dispatcher) {
         cacheTranslation("译文")
-        coEvery { ai.analyzeGrammar(singleSentence, config.targetLanguage) } returns
-                Result.failure(AiException(AiError.NO_KEY, null))
+        every { ai.analyzeGrammar(singleSentence, config.targetLanguage, any()) } returns flow {
+            throw AiException(AiError.NO_KEY, null)
+        }
         val model = model()
 
         model.open(singleSentence, bookId = 7, nodeId = 12)
@@ -588,8 +677,8 @@ class TranslationModelTest {
 
         assertEquals(AsyncGrammar.Error(AiError.NO_KEY, null), model.state.value.grammar)
 
-        coEvery { ai.analyzeGrammar(singleSentence, config.targetLanguage) } returns
-                Result.success(firstMarkdown)
+        every { ai.analyzeGrammar(singleSentence, config.targetLanguage, any()) } returns
+                flowOf(firstMarkdown)
         model.regenerate(TranslationTab.GRAMMAR)
         advanceUntilIdle()
 
@@ -597,7 +686,7 @@ class TranslationModelTest {
             AsyncGrammar.Success(firstMarkdown, fromCache = false),
             model.state.value.grammar
         )
-        coVerify(exactly = 2) { ai.analyzeGrammar(any(), any()) }
+        verify(exactly = 2) { ai.analyzeGrammar(any(), any(), any()) }
         // 失败的那次不写缓存。
         assertEquals(listOf(firstMarkdown), cache.puts.map { it.payload })
     }
@@ -605,7 +694,7 @@ class TranslationModelTest {
     @Test
     fun `a cache write failure does not hide the finished translation`() = runTest(dispatcher) {
         cache.failPuts = true
-        every { ai.translate(paragraph, config.targetLanguage) } returns flowOf("译文")
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returns flowOf("译文")
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
@@ -617,7 +706,7 @@ class TranslationModelTest {
     @Test
     fun `a cache read failure still starts the request`() = runTest(dispatcher) {
         cache.failReads = true
-        every { ai.translate(paragraph, config.targetLanguage) } returns flowOf("译文")
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returns flowOf("译文")
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
@@ -628,20 +717,20 @@ class TranslationModelTest {
 
     @Test
     fun `the whole paragraph is sent to the AI, not a page slice`() = runTest(dispatcher) {
-        every { ai.translate(any(), any()) } returns flowOf("译文")
+        every { ai.translate(any(), any(), any()) } returns flowOf("译文")
         val model = model()
 
         model.open(paragraph, bookId = 7, nodeId = 12)
         advanceUntilIdle()
 
-        verify(exactly = 1) { ai.translate(paragraph, config.targetLanguage) }
+        verify(exactly = 1) { ai.translate(paragraph, config.targetLanguage, any()) }
         assertEquals(paragraph, model.state.value.originalText)
         assertEquals(12, model.state.value.nodeId)
     }
 
     @Test
     fun `a selection without a paragraph is stored with the unknown node id`() = runTest(dispatcher) {
-        every { ai.translate(any(), any()) } returns flowOf("译文")
+        every { ai.translate(any(), any(), any()) } returns flowOf("译文")
         val model = model()
 
         model.open("selected words", bookId = 7, nodeId = null)
@@ -655,7 +744,7 @@ class TranslationModelTest {
     fun `a value emitted after dismiss never reaches the state or the cache`() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val emittedAfterCancel = AtomicBoolean(false)
-        every { ai.translate(paragraph, config.targetLanguage) } returns
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returns
                 StubbornFlow(gate, before = "半截", after = "迟到", emittedAfterCancel)
         val model = model()
 
@@ -677,7 +766,7 @@ class TranslationModelTest {
     fun `a cancelled request cannot overwrite the cache after regenerate`() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val staleEmitted = AtomicBoolean(false)
-        every { ai.translate(paragraph, config.targetLanguage) } returnsMany listOf(
+        every { ai.translate(paragraph, config.targetLanguage, any()) } returnsMany listOf(
             StubbornFlow(gate, before = "半截", after = "旧译文", staleEmitted),
             flowOf("新译文")
         )
@@ -706,7 +795,7 @@ class TranslationModelTest {
     @Test
     fun `an empty translation becomes an empty response error and is never cached`() =
         runTest(dispatcher) {
-            every { ai.translate(paragraph, config.targetLanguage) } returns flowOf("")
+            every { ai.translate(paragraph, config.targetLanguage, any()) } returns flowOf("")
             val model = model()
 
             model.open(paragraph, bookId = 7, nodeId = 12)
@@ -724,7 +813,7 @@ class TranslationModelTest {
         advanceUntilIdle()
 
         assertFalse(model.state.value.visible)
-        verify(exactly = 0) { ai.translate(any(), any()) }
+        verify(exactly = 0) { ai.translate(any(), any(), any()) }
     }
 
     @Test
@@ -745,6 +834,6 @@ class TranslationModelTest {
 
         assertEquals(TranslationTab.TRANSLATION, model.state.value.activeTab)
         assertNull(model.state.value.selectedSentenceIndex)
-        coVerify(exactly = 0) { ai.analyzeGrammar(any(), any()) }
+        verify(exactly = 0) { ai.analyzeGrammar(any(), any(), any()) }
     }
 }

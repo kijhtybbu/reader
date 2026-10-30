@@ -54,6 +54,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.acclorite.book_story.R
+import ua.acclorite.book_story.data.ai.AiReasoningEffort
 import ua.acclorite.book_story.data.ai.AiTargetLanguage
 import ua.acclorite.book_story.data.ai.DEFAULT_AI_MODEL
 import ua.acclorite.book_story.data.ai.isLoopbackAiBaseUrl
@@ -64,6 +65,7 @@ import ua.acclorite.book_story.ui.common.components.settings.ChipsWithTitle
 import ua.acclorite.book_story.ui.common.components.settings.SwitchWithTitle
 import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.model.ListItem
+import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryNote
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryTitle
 import ua.acclorite.book_story.ui.settings.reader.ai.titleRes
 import ua.acclorite.book_story.ui.theme.Spacing
@@ -281,6 +283,31 @@ fun AiTargetLanguageOption() {
         },
         onClick = { settings.aiTargetLanguage.update(it) }
     )
+}
+
+/**
+ * 思考强度（`reasoning_effort`）。
+ *
+ * 推理模型先输出 `delta.reasoning_content` 再写正文：实测语法分析第一段正文要等 35 秒
+ * （8.6k 字思考）。默认 `LOW`；换成不认这个字段的端点时选「默认」= 不发送。
+ */
+@Composable
+fun AiReasoningEffortOption() {
+    val settings = LocalSettings.current
+
+    ChipsWithTitle(
+        title = stringResource(id = R.string.ai_reasoning_effort),
+        chips = AiReasoningEffort.entries.map { effort ->
+            ListItem(
+                item = effort,
+                title = stringResource(effort.titleRes()),
+                selected = effort == settings.aiReasoningEffort.value
+            )
+        },
+        onClick = { settings.aiReasoningEffort.update(it) }
+    )
+
+    SettingsSubcategoryNote(text = stringResource(id = R.string.ai_reasoning_effort_desc))
 }
 
 @Composable

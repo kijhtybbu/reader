@@ -48,9 +48,17 @@ class AiTranslationRepositoryTest {
         baseUrl: String = "https://example.test/v1/",
         model: String = "test-model",
         locale: Locale = Locale.US,
-        sessionId: String = ""
+        sessionId: String = "",
+        reasoningEffort: AiReasoningEffort = AiReasoningEffort.LOW
     ) = AiTranslationRepository(
-        config = { AiClientConfig(baseUrl = baseUrl, model = model, sessionId = sessionId) },
+        config = {
+            AiClientConfig(
+                baseUrl = baseUrl,
+                model = model,
+                sessionId = sessionId,
+                reasoningEffort = reasoningEffort
+            )
+        },
         keyStore = keyStore,
         engine = engine,
         uiLocale = { locale }
@@ -99,6 +107,39 @@ class AiTranslationRepositoryTest {
         assertTrue("stream flag missing: $requestBody", requestBody?.contains("\"stream\":true") == true)
         assertTrue("target language missing: $requestBody", requestBody?.contains("English (en)") == true)
         assertTrue("user text missing: $requestBody", requestBody?.contains("Hello world.") == true)
+    }
+
+    /**
+     * 推理模型先思考再写正文（实测语法分析要 35 秒才出第一段正文），所以默认发 low。
+     * `DEFAULT` 必须真的**不发**这个字段：有些兼容端点不认 `reasoning_effort` 会直接 400。
+     */
+    @Test
+    fun reasoningEffortIsSentByDefaultAndCanBeOmitted() = runTest {
+        keyStore.set("sk-test-key")
+
+        val requestBodies = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            requestBodies += (request.body as TextContent).text
+            respond(
+                content = ByteReadChannel(sse("x")),
+                status = HttpStatusCode.OK,
+                headers = eventStreamHeaders()
+            )
+        }
+
+        repository(engine).translate("Hello.", AiTargetLanguage.ENGLISH).toList()
+        repository(engine, reasoningEffort = AiReasoningEffort.DEFAULT)
+            .translate("Hello.", AiTargetLanguage.ENGLISH)
+            .toList()
+
+        assertTrue(
+            "reasoning_effort=low missing: ${requestBodies[0]}",
+            requestBodies[0].contains("\"reasoning_effort\":\"low\"")
+        )
+        assertFalse(
+            "reasoning_effort must not be sent for DEFAULT: ${requestBodies[1]}",
+            requestBodies[1].contains("reasoning_effort")
+        )
     }
 
     @Test
@@ -380,30 +421,31 @@ class AiTranslationRepositoryTest {
     }
 
     /**
-     * 语法请求不再要 `response_format=json_object`，模型返回什么 Markdown 就原样返回什么。
+     * 语法请求：流式 SSE、不要 `response_format=json_object`，模型返回什么 Markdown 就原样输出什么。
      */
     @Test
-    fun grammarRequestsMarkdownWithoutResponseFormat() = runTest {
+    fun grammarStreamsMarkdownWithoutResponseFormat() = runTest {
         keyStore.set("sk-test-key")
 
-        val markdown = "## Main clause\n- **Subject**: *It* (dummy subject)"
         var requestBody: String? = null
+        var accept: String? = null
         val engine = MockEngine { request ->
             requestBody = (request.body as TextContent).text
+            accept = request.headers[HttpHeaders.Accept]
             respond(
-                content = ByteReadChannel(chatCompletion(markdown)),
+                content = ByteReadChannel(sse("## Main clause\n", "- **Subject**: *It*")),
                 status = HttpStatusCode.OK,
-                headers = jsonHeaders()
+                headers = eventStreamHeaders()
             )
         }
 
-        val result = repository(engine).analyzeGrammar(
+        val deltas = repository(engine).analyzeGrammar(
             text = "It was the best of times.",
             targetLanguage = AiTargetLanguage.SIMPLIFIED_CHINESE
-        )
+        ).toList()
 
-        assertTrue(result.isSuccess)
-        assertEquals(markdown, result.getOrNull())
+        assertEquals(listOf("## Main clause\n", "- **Subject**: *It*"), deltas)
+        assertEquals("text/event-stream", accept)
         assertFalse(
             "response_format must not be sent: $requestBody",
             requestBody?.contains("response_format") == true
@@ -416,7 +458,10 @@ class AiTranslationRepositoryTest {
             "grammar prompt missing: $requestBody",
             requestBody?.contains("Markdown") == true
         )
-        assertFalse(requestBody?.contains("\"stream\":true") == true)
+        assertTrue(
+            "the grammar request must be streamed: $requestBody",
+            requestBody?.contains("\"stream\":true") == true
+        )
     }
 
     /**
@@ -437,32 +482,38 @@ class AiTranslationRepositoryTest {
             )
         }
 
-        val error = repository(engine)
-            .analyzeGrammar("Hello.", AiTargetLanguage.ENGLISH)
-            .exceptionOrNull() as AiException
+        val error = assertFailsWith<AiException> {
+            repository(engine)
+                .analyzeGrammar("Hello.", AiTargetLanguage.ENGLISH)
+                .toList()
+        }
 
         assertEquals(AiError.UNKNOWN, error.error)
         assertEquals(400, error.statusCode)
         assertEquals(1, requests)
     }
 
+    /**
+     * 空内容不再在这里变成 `EMPTY_RESPONSE`：流式仓库只管把 delta 原样发出，
+     * 聚合与判空在状态机里（`TranslationModelTest` 里有那条用例）。这里钉住「一个 delta 都没有」。
+     */
     @Test
-    fun blankGrammarContentBecomesAnEmptyResponseError() = runTest {
+    fun emptyGrammarStreamEmitsNothing() = runTest {
         keyStore.set("sk-test-key")
 
         val engine = MockEngine {
             respond(
-                content = ByteReadChannel(chatCompletion("")),
+                content = ByteReadChannel(sse()),
                 status = HttpStatusCode.OK,
-                headers = jsonHeaders()
+                headers = eventStreamHeaders()
             )
         }
 
-        val error = repository(engine)
+        val deltas = repository(engine)
             .analyzeGrammar("Hello.", AiTargetLanguage.ENGLISH)
-            .exceptionOrNull() as AiException
+            .toList()
 
-        assertEquals(AiError.EMPTY_RESPONSE, error.error)
+        assertTrue(deltas.isEmpty())
     }
 
     @Test
@@ -515,18 +566,12 @@ class AiTranslationRepositoryTest {
         append("data: [DONE]\n\n")
     }
 
-    private fun chatCompletion(content: String): String {
-        return """{"id":"completion","object":"chat.completion","created":1,"model":"test-model",""" +
-            """"choices":[{"index":0,"message":{"role":"assistant","content":"${jsonEscape(content)}"},""" +
-            """"finish_reason":"stop"}]}"""
-    }
-
     private fun errorBody(message: String): String {
         return """{"error":{"message":"${jsonEscape(message)}","type":"invalid_request_error"}}"""
     }
 
     private fun jsonEscape(value: String): String {
-        // 换行也必须转义：语法分析的 Markdown 回复是带换行的，裸换行会让 mock 的响应体变成非法 JSON。
+        // 换行也必须转义：语法分析的 Markdown 增量是带换行的，裸换行会让 mock 的响应体变成非法 JSON。
         return value
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")

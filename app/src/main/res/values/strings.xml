@@ -659,6 +659,13 @@
     <string name="ai_target_en">English</string>
     <string name="ai_target_ja">Japanese</string>
     <string name="ai_target_ko">Korean</string>
+    <string name="ai_reasoning_effort">Thinking effort</string>
+    <string name="ai_reasoning_default">Default</string>
+    <string name="ai_reasoning_off">Off</string>
+    <string name="ai_reasoning_low">Low</string>
+    <string name="ai_reasoning_medium">Medium</string>
+    <string name="ai_reasoning_high">High</string>
+    <string name="ai_reasoning_effort_desc">Sent as the reasoning_effort parameter (Off sends none). Reasoning models think before writing the answer, which can delay the first line by tens of seconds; lower is faster. Pick Default (the field is not sent) if your endpoint rejects the value.</string>
     <string name="ai_grammar_enabled">Grammar analysis</string>
     <string name="ai_grammar_enabled_desc">Show the grammar tab in the translation dialog.</string>
     <string name="ai_test_connection">Test connection</string>
@@ -695,8 +702,11 @@
     <string name="translation_dialog_close">Close</string>
     <string name="translation_dialog_tab_translation">Translation</string>
     <string name="translation_dialog_tab_grammar">Grammar</string>
+    <string name="translation_dialog_analysis">Analysis</string>
     <string name="translation_dialog_translating">Translating…</string>
     <string name="translation_dialog_analyzing">Analyzing grammar…</string>
+    <string name="translation_dialog_waiting">Waiting for the model… %1$d s</string>
+    <string name="translation_dialog_thinking">Model is thinking… %1$d chars</string>
     <string name="translation_dialog_from_cache">Cached result</string>
     <string name="translation_dialog_show_original">Show original text</string>
     <string name="translation_dialog_hide_original">Hide original text</string>
