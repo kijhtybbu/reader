@@ -35,6 +35,8 @@ import com.anggrayudi.storage.file.DocumentFileCompat
 import com.qiuminal.juicedict.engine.DictionaryEngines
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -429,12 +431,12 @@ object DictionaryImporter {
     private fun hasSpaceFor(dictionariesDir: File, bytes: Long): Boolean =
         dictionariesDir.usableSpace >= bytes * SPACE_NUMERATOR / SPACE_DENOMINATOR
 
-    private fun copy(source: CachedFile, target: File, onBytes: (Long) -> Unit): Long {
+    private suspend fun copy(source: CachedFile, target: File, onBytes: (Long) -> Unit): Long {
         val input = source.openInputStream() ?: throw ImportRejection(DictionaryImportError.UNREADABLE)
         return input.use { stream -> writeTo(stream, target, onBytes) }
     }
 
-    private fun copy(
+    private suspend fun copy(
         uri: Uri,
         context: Context,
         target: File,
@@ -448,11 +450,17 @@ object DictionaryImporter {
         return input.use { stream -> writeTo(stream, target, onBytes) }
     }
 
-    private fun writeTo(input: InputStream, target: File, onBytes: (Long) -> Unit): Long {
+    /**
+     * 复制循环。每读一块检查一次取消：离开设置页时 `CancellationException` 必须在下一个
+     * 256 KB 之内抛出来，否则 512 MB 的词典会一直复制完才响应（`finally` 里的暂存目录清理
+     * 也就跟着拖到最后）。`ensureActive` 只抛取消，不吞其它异常。
+     */
+    private suspend fun writeTo(input: InputStream, target: File, onBytes: (Long) -> Unit): Long {
         var copied = 0L
         BufferedOutputStream(FileOutputStream(target), BUFFER_BYTES).use { output ->
             val buffer = ByteArray(BUFFER_BYTES)
             while (true) {
+                currentCoroutineContext().ensureActive()
                 val read = input.read(buffer)
                 if (read == -1) break
                 copied += read

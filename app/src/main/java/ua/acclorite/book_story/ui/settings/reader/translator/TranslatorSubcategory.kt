@@ -17,6 +17,7 @@ import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategory
 import ua.acclorite.book_story.ui.settings.reader.translator.components.DictionaryManagerOption
 import ua.acclorite.book_story.ui.settings.reader.translator.components.DoubleClickTranslationOption
+import ua.acclorite.book_story.ui.settings.reader.translator.components.LookupGestureOption
 
 fun LazyListScope.TranslatorSubcategory(
     titleColor: @Composable () -> Color = { MaterialTheme.colorScheme.primary },
@@ -30,6 +31,10 @@ fun LazyListScope.TranslatorSubcategory(
         showTitle = showTitle,
         showDivider = showDivider
     ) {
+        item {
+            LookupGestureOption()
+        }
+
         item {
             DoubleClickTranslationOption()
         }

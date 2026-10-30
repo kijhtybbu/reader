@@ -2,7 +2,7 @@
 
 > 快照时间：2026-10-29
 > 基线：`upstream/master` = `464891e`（Acclorite/book-story，GPL-3.0-only）
-> 分支：`ui-redesign`
+> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.5）
 
 ---
 
@@ -225,7 +225,7 @@ Round-1 review（CHANGES REQUIRED）的修复：
 
 S3 遗留项在 S4 的落地情况：
 
-- ⏳ `openBuiltIn()` 的锁：`DictionaryRepository` 内部有进程级每引擎 `Mutex`，但**仓库在 S4 还没有消费者**（没有 Hilt 绑定、没有调用方），`openBuiltIn()` 对外仍是裸引擎。真正关掉这条接缝要等 S5 让取词路径只走 `DictionaryRepository`（S5 接管）。
+- ✅ `openBuiltIn()` 的锁：`DictionaryRepository` 内部有进程级每引擎 `Mutex`。S4 时仓库还没有消费者，`openBuiltIn()` 对外仍是裸引擎；**S5 已接管** —— 仓库有 `@Singleton` 绑定、取词路径只走仓库，`openBuiltIn()` 的唯一调用点就是仓库的 `engineFor`（见 §3.5）。
 - ✅ 枚举过滤 `.tmp` / `.old` / `.staging`：见 `DictionaryCatalogTest`。
 - ⏳ 内置词典的错误文案仍是英文消息（`BuiltInState.Error.message` 原样显示）。S4 只把**导入**错误做成枚举 + 字符串资源；改 `BuiltInState` 的形状会牵动 S3 的安装器契约，留到 S9 统一文案时做。
 - ⏳ 安装器边角用例（无 `.ifo`、两个 StarDict、坏 `version` 标记、空间不足）：S4 的导入路径不复用安装器的 7z 计划逻辑，StarDict 的「缺文件/多部词典」在导入侧已有枚举分支，但**没有**自动化测试（需要 SAF URI，见下方手工矩阵）。
@@ -241,11 +241,79 @@ S3 遗留项在 S4 的落地情况：
 | 5 | 关闭某部词典的开关 | 条目变灰/开关关闭；取词（S5）不再命中；重启后保持关闭 |
 | 6 | 删除当前优先词典 | 优先词典回落内置 ECDICT；`imported/<uuid>/` 被删除；列表立即更新 |
 | 7 | 导入过程中滚动设置页列表（把导入行滚出屏幕） | 导入**继续**：协程挂在页面级作用域，`LazyColumn` 回收 item 不会取消它（Round-1 修复前会静默中止） |
-| 7b | 导入过程中按返回键离开设置页再回来 | 导入被取消（页面作用域随页面销毁），暂存目录被清理、状态回到 Idle；若取消发生在 rename 之后，词典文件留在 `imported/` 且未入索引，下次启动 `refresh` 会收养（不会出现半个词典） |
+| 7b | 导入过程中按返回键离开设置页再回来 | 导入被取消（页面作用域随页面销毁）：复制循环每读一块（256 KB）`ensureActive()` 检查一次，所以取消在下一块就生效，不会把 512 MB 复制完才响应；暂存目录由 `finally` 递归删除、状态回到 Idle；若取消发生在 rename 之后，词典文件留在 `imported/` 且未入索引，下次启动 `refresh` 会收养（不会出现半个词典）。页面级作用域用的是 `applicationContext`，旋转屏幕不会吊住已销毁的 Activity |
 | 8 | 内置词典首次安装中进入词典管理页 | 显示「正在准备… N%」进度条；安装完成后变为词条数/体积/资产版本（`v1`） |
 | 9 | 剩余空间不足（模拟小分区） | 复制前提示空间不足，不留暂存目录 |
 | 10 | 导入的 MDX 词条引用 `entry://` 图片/音频 | 正文缺图（本期不导入 `.mdd`，见设计 §4.3 的欠账说明），不应崩溃 |
 | 11 | 滚动导入行出屏幕后再滚回来 | 进度/状态仍在（`ImportState` 是进程级 `StateFlow`，不随 item 回收丢失） |
+
+### 3.5 第二阶段（翻译与词典）/ S5
+
+| 项 | 内容 |
+| --- | --- |
+| 取词手势 | `presentation/reader/model/ReaderLookupGesture`（`SINGLE_TAP` / `LONG_PRESS` / `OFF`）+ `SettingsManager.lookupGesture`（`stringPreferencesKey("lookup_gesture")`，默认 `SINGLE_TAP`；认不出的存量值经 `fromName` 回落 `SINGLE_TAP`，不会静默关掉功能）；设置页 `TranslatorSubcategory` 新增 chip 行 + 说明（单击接管「点到文字」，空白区仍翻页/呼菜单） |
+| 仓库接线 | `AppModule.provideDictionaryRepository`（`@Provides @Singleton`）：`activeDictionaryId = { settings.activeDictionaryId.lastValue }`。取词路径只走仓库，不再有裸 `openBuiltIn()` 调用方 |
+| 文本布局注册表 | `ui/reader/ReaderTextLayoutRegistry`：键 = 节点 id + 页项起点；存 `TextLayoutResult` + **窗口矩形**；命中取「后注册的优先」；注销按 entry 身份比对（重排时旧组合的 `onDispose` 晚于新 `register`，按 key 无条件删会把新布局删掉）。`StyledText` 两种重载都加了 `onTextLayout` |
+| 词归一 | `ui/reader/ReaderLookupWord`：剥首尾标点/引号，连字符与撇号只在词内保留，CJK 截 8 字，纯标点返回 null；`firstLookupWord` 给多词选区取首个词；`juice://lookup/<urlencoded>` 解码（含 U+FFFD 的截断转义拒绝） |
+| 分页命中 | 沿用 Pager 上唯一的 `detectTapGestures`：`readerPageItemAtY` 定位页项（页脚空白 → null），再用该项注册的 `TextLayoutResult` 取词；命中就取词并吃掉这次点击，未命中照旧 `tapActionFor` 翻页/呼菜单 |
+| 连续命中 | 内容层**一个** `detectTapGestures`（替换原来的 `noRippleClickable`），段落/标题/图注把文本块注册进表里，点击换算成窗口坐标后查表；空白仍切菜单。**菜单开着时先收菜单 + 关卡片并 return**（与分页一致，排在取词之前）。段落不再各挂 `combinedClickable`（那会吞掉单击） |
+| 长按 | `SelectionContainer` 新增 `onSelectionSettled(rect)`（rect 本身就是窗口坐标：同一个 rect 原样交给 ActionMode 的 `onGetContentRect`，不再二次 `localToWindow`），阅读页防抖 350ms 后用注册表按选区中心反查单词；跨行选区（矩形高于词高的 1.5 倍，两行选区必被拒）本期忽略。工具栏「词典」改为应用内取词，多词选区只查第一个词（整串短语必 miss），真 miss 时外部 Intent 退到卡片未找到时的「用其他应用查询」 |
+| 取词模型 | `presentation/reader/DictionaryLookupModel`（`@HiltViewModel`）+ `LookupState`（`Idle`/`Loading`/`Success`/`NotFound`/`Error`）：新查询取消旧 Job，`select(index)` 取该条正文，`dismiss()` 取消并复位；`Success.fromCache` 恒 false（S7），`sentence` 参数留给 S6 |
+| 取词卡片 | `ui/reader/ReaderLookupPopup`：`Popup` + 自定义 `PopupPositionProvider`（先算位置再渲染，不会先画下面再跳上面；RTL 下也没有 `Popup(alignment, offset)` 的坐标翻转问题）；最大宽 360dp、最大高 **45% 安全区高度**（窗口扣系统栏/导航栏/刘海挖孔，定位与夹紧也都在安全区内）、内部滚动，配色只用 `LocalReaderPalette`；`AnnotatedString.fromHtml` 渲染正文并拦截 `juice://lookup/`，解析失败退化成引擎的纯文本预览；未找到给「导入词典」/「AI 解释（S6，禁用）」/「用其他应用查询」，错误态给「重试」。外部点击/返回/翻页/滚动/切菜单都会关卡片 |
+| 状态 | ✅ `:app:testDebugUnitTest` **257 个用例全绿**（40 个文件，新增 44 个）；`:dict-engine:test --rerun-tasks` 101 个全绿（未改动）；`:app:assembleDebug` / `:app:assembleRelease-debug` 通过 |
+
+S5 的测试（全部纯 JVM，无 Android 上下文）：
+
+| 测试 | 钉住什么 |
+| --- | --- |
+| `ReaderLookupWordTest`（13） | 引号/括号/句末标点剥离、词内撇号与连字符保留、首尾连字符剥离、CJK 截 8 字、拉丁长词不截、纯标点/空白返回 null、归一范围（含 CJK 截断后的 end）、`juice://lookup/` 解码与畸形转义拒绝、多词选区取首个词、单词选区与归一一致、无词的选区返回 null |
+| `ReaderTextLayoutRegistryTest`（8） | 矩形内命中、矩形外/负坐标不命中、后注册的优先、同 key 替换旧布局、注销、**旧 entry 的注销不会删掉新 entry**、`clear` |
+| `ReaderLookupPopupPositionTest`（8） | 贴词下方、放不下翻到上方、左右夹在屏幕内、锚点未知时居中、卡片比屏幕还高时贴顶、系统栏/挖孔 inset 缩小夹紧范围、无锚点时在安全区内居中、翻到上方的卡片仍不越过状态栏 |
+| `ReaderNodeHitTestTest`（+3） | `readerPageItemAtY` 的 `topInPage`/`localY`、段前空隙 `localY < 0`、越过最后一项返回 null（原有 5 条双击翻译命中不变） |
+| `DictionaryLookupModelTest`（8） | Loading → Success（第一条命中的正文）、查询词先归一、无命中 → NotFound、仓库抛异常 → Error 且 `retry()` 重跑、切词条重新取正文、`dismiss()` 取消且**迟到的结果不会把卡片弹回来**、第二次查询取消第一次、纯标点查询不动状态 |
+| `ReaderLookupGestureTest`（3） | 三个取值 round-trip、null 回落 `SINGLE_TAP`、未知/大小写不符回落 `SINGLE_TAP` |
+| `DictionaryCatalogTest`（+1） | `imported/builtin/` 目录不被收养（会与内置条目撞 id） |
+
+与设计稿的偏差（实施时的结论，已同步进 `docs/phase-2-design.md` §5.1）：
+
+1. `onSelectionSettled` 只传矩形，不传选中文本。`TextToolbar.showMenu` 只给矩形；拿文本只能读剪贴板，而 Android 13+ 每次写剪贴板都会弹系统提示，拖选择手柄等于连续弹窗。词由注册表按选区中心反查。
+2. 连续布局的双击翻译改为「注册表命中段落」：原来段落自己的 `combinedClickable` 是第二套点击检测器，会把单击吞掉。代价是点在段落的**行尾空白/左右留白**上双击不再翻译，也不会切菜单（无响应）；双击正文文字不受影响。
+3. `app/build.gradle.kts` 打开 `testOptions.unitTests.isReturnDefaultValues = true`：取词状态机的错误分支会 `logW`（`android.util.Log`），不开这个开关就只能在真机上测错误态。
+4. `DictionaryRepository` 的三处 `catch (e: Exception)` 现在先重抛 `CancellationException`：否则「取消上一次取词」会被仓库吞成空结果，已取消的查询会把「未找到」写回卡片。
+
+**真机上要重点确认的一条**：`SINGLE_TAP`（默认）下，正文铺满页面时「点空白翻页」的空白只剩行间空隙、页脚与 `sidePadding`（默认 6dp）—— 分区翻页的可点区域会明显变小。这是设计 §0/§5.1 已确认的取舍（设置项里说明了「单击接管点到文字」），但手感只有真机能判断；若不可接受，S9 再评估「只在中间分区取词」或把 `sidePadding` 下限抬高，不改本期行为。
+
+有意留给后续阶段（**不是遗漏**）：
+
+- AI 解释：卡片里的按钮是禁用态，`DictionaryLookupModel.lookup(..., sentence)` 的 sentence 参数目前不参与查询 → S6。
+- 缓存：`LookupState.Success.fromCache` 恒 false，第二次查同一个词仍然走引擎 → S7/S8。
+- 长选区 → 翻译对话框：本期直接忽略跨行选区 → S8。
+- 卡片是 `focusable` 的：卡片开着时点正文的第一下只是关卡片（不会同时取下一个词），这是浮层的常见行为；如果真机上觉得别扭，S9 再评估改成非 focusable + 自定义外部点击检测。
+- 翻页动画期间注册表里存的是动画**前**的窗口矩形（`boundsInWindow` 只在 placement 时刷新，`graphicsLayer` 平移不会重新布局）：动画中点击理论上会命中旧位置。重排时内容 alpha 为 0、滑动中途点击罕见，本期仅记录（S8/S9 如要做平移入场的动画再评估）。
+- `isReturnDefaultValues` 保持开启（S5 错误路径确实用到 `logW`）。它会把未来误用 android.* 的单测静默变成 `0`/`null`；如果要收紧，S8/S9 改成注入 logger（或 `Warn` lambda）进 `DictionaryLookupModel`，而不是全局开关。本期无具体失败，不动。
+- `.mdd` 资源包、`entry://` 图片仍然缺图（S4 的欠账）。
+
+S5 的手工矩阵**未执行**（没有 Compose UI 测试依赖，按项目约定不加），不得当作已验证：
+
+| # | 场景 | 期望 |
+| --- | --- | --- |
+| 1 | 分页 + 单击正文单词 | 卡片贴在该词上方/下方，显示词头、来源词典与释义 |
+| 2 | 分页 + 单击页脚/段间空白、左中右分区 | 仍然翻页/呼菜单，不弹卡片 |
+| 3 | 连续 + 单击正文单词 | 同 #1；卡片跟随滚动前的位置正确 |
+| 4 | 连续 + 单击空白 | 仍然切菜单 |
+| 5 | 长按选中一个词（手势设为 LONG_PRESS，两种布局） | 350ms 后弹出卡片，锚点是选区 |
+| 6 | 长按拖选跨行文本（包括刚好选中两行） | 不取词；复制/分享/翻译工具栏动作仍然正常 |
+| 7 | 选中单词后点工具栏「词典」 | 应用内卡片（不再跳外部词典应用） |
+| 7b | 选中**两个词**后点工具栏「词典」 | 只查第一个词（不是「未找到」）；真查不到时卡片上的「用其他应用查询」仍能拉起外部应用 |
+| 8 | 查一个不存在的词 | 卡片显示「未找到」+「导入词典」/「AI 解释（S6，禁用）」/「用其他应用查询」 |
+| 9 | 导入 MDX 后查一个内置词库没有的词 | 命中导入词典，卡片显示该词典名；多词典命中时 chip 可切换 |
+| 10 | 卡片开着时点卡片外/按返回/翻页/滚动/切菜单 | 卡片关闭，且不误触翻页；**菜单开着时**点正文第一下只收菜单 + 关卡片（两种布局一致） |
+| 11 | 卡片正文里的 `juice://lookup/` 链接 | 在原位换成目标词的释义 |
+| 12 | RTL 布局 + 阿拉伯语/希伯来语正文 | 卡片不跑到屏幕外，锚点贴词 |
+| 13 | 夜间/纯黑预设 | 卡片不闪白，正文与链接可读 |
+| 14 | 超大字号 + 横屏（带刘海/挖孔） | 卡片不超过 45% **安全区**高，不会钻到状态栏/挖孔下面，内部可滚动 |
+| 15 | 双击段落（分页 + 连续） | 分页照旧；连续下双击正文文字仍打开翻译，双击行尾空白无响应（见偏差 2） |
+| 16 | 取词手势设为 OFF | 单击完全不取词；工具栏「词典」仍可用 |
 
 ---
 

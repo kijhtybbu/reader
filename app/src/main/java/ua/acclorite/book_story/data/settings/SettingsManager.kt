@@ -36,6 +36,7 @@ import ua.acclorite.book_story.presentation.library.model.LibraryTitlePosition
 import ua.acclorite.book_story.presentation.reader.model.ReaderColorEffects
 import ua.acclorite.book_story.presentation.reader.model.ReaderFontThickness
 import ua.acclorite.book_story.presentation.reader.model.ReaderLayout
+import ua.acclorite.book_story.presentation.reader.model.ReaderLookupGesture
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedAnimation
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
 import ua.acclorite.book_story.presentation.reader.model.ReaderTapZones
@@ -185,6 +186,13 @@ class SettingsManager @Inject constructor(
     // 这里不做存在性校验 —— 词典可能还没导入（恢复备份），校验失败就回落默认值反而会吞掉用户的选择。
     val activeDictionaryId = setting<String, String>(
         key = stringPreferencesKey("active_dictionary_id"), default = "builtin"
+    )
+    // fork: 取词手势（设计 §5.1）。SINGLE_TAP 接管「点到文字」的单击，空白区仍然翻页/切菜单；
+    // 认不出的存量值回落默认值而不是 OFF（取词是默认行为，不该被一个脏值静默关掉）。
+    val lookupGesture = setting<ReaderLookupGesture, String>(
+        key = stringPreferencesKey("lookup_gesture"), default = ReaderLookupGesture.SINGLE_TAP,
+        serialize = { it.name },
+        deserialize = { name -> ReaderLookupGesture.fromName(name) }
     )
     val fastColorPresetChange = setting<Boolean, Boolean>(
         key = booleanPreferencesKey("fast_color_preset_change"), default = true

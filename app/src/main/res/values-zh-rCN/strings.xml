@@ -431,4 +431,18 @@
     <string name="dictionary_import_error_incomplete">该文件夹不是完整的 StarDict（需要 .ifo、.idx、.dict）。</string>
     <string name="dictionary_import_error_multiple">该文件夹里有多部 StarDict 词典。</string>
     <string name="dictionary_import_error_failed">无法导入该词典。</string>
+    <!-- fork: phase 2 / S5 取词 -->
+    <string name="lookup_gesture_option">取词手势</string>
+    <string name="lookup_gesture_single_tap">单击</string>
+    <string name="lookup_gesture_long_press">长按</string>
+    <string name="lookup_gesture_off">关闭</string>
+    <string name="lookup_gesture_note">单击：点到单词就弹出词典卡片；点到空白区仍然是翻页/呼出菜单。长按：单击保持翻页，选中单词后再取词。</string>
+    <string name="dictionary_priority_note">单选 = 优先词典：先查它，再查其余已启用的词典；它不会屏蔽其它词典。</string>
+    <string name="lookup_popup_loading">正在查询…</string>
+    <string name="lookup_popup_not_found">已安装的词典里没有这个词。</string>
+    <string name="lookup_popup_error">查询失败。</string>
+    <string name="lookup_popup_import_dictionary">导入词典</string>
+    <string name="lookup_popup_ai_explain">AI 解释（S6）</string>
+    <string name="lookup_popup_external">用其他应用查询</string>
+    <string name="lookup_popup_source">来自 %1$s</string>
 </resources>

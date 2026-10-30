@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDirection
@@ -27,7 +28,12 @@ fun StyledText(
     minLines: Int = 1,
     overflow: TextOverflow = TextOverflow.Ellipsis,
     highlightText: Boolean = false,
-    highlightThickness: FontWeight = FontWeight.SemiBold
+    highlightThickness: FontWeight = FontWeight.SemiBold,
+    /**
+     * fork: 取词命中（S5）需要拿到每个文本块真正的 [TextLayoutResult]。
+     * 两种重载都透传，既有调用方不受影响（默认 null）。
+     */
+    onTextLayout: ((TextLayoutResult) -> Unit)? = null
 ) {
     when (highlightText) {
         true -> {
@@ -41,7 +47,8 @@ fun StyledText(
                 ),
                 maxLines = maxLines,
                 minLines = minLines,
-                overflow = overflow
+                overflow = overflow,
+                onTextLayout = onTextLayout
             )
         }
 
@@ -55,7 +62,8 @@ fun StyledText(
                 ),
                 maxLines = maxLines,
                 minLines = minLines,
-                overflow = overflow
+                overflow = overflow,
+                onTextLayout = onTextLayout
             )
         }
     }
@@ -68,7 +76,8 @@ fun StyledText(
     style: TextStyle = LocalTextStyle.current,
     maxLines: Int = Int.MAX_VALUE,
     minLines: Int = 1,
-    overflow: TextOverflow = TextOverflow.Ellipsis
+    overflow: TextOverflow = TextOverflow.Ellipsis,
+    onTextLayout: ((TextLayoutResult) -> Unit)? = null
 ) {
     BasicText(
         modifier = modifier,
@@ -79,6 +88,7 @@ fun StyledText(
         ),
         maxLines = maxLines,
         minLines = minLines,
-        overflow = overflow
+        overflow = overflow,
+        onTextLayout = onTextLayout
     )
 }

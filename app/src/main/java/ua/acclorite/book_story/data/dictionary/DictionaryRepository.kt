@@ -11,8 +11,9 @@
  *  1. **每引擎一把锁**。上游 `DictionaryEngine` 并不是线程安全的（`StarDictIndex` 是普通
  *     `HashMap`，`DictPlainReader`/`DictZipReader` 的 seek+read 非原子），S3 的
  *     `DictionaryRegistry.openBuiltIn()` 因此只交出裸引擎。锁按词典 id 放在进程级 map 里，
- *     即使将来出现多个仓库实例也仍然串行。注意这只锁住**仓库自己**的调用：
- *     `openBuiltIn()` 仍是裸引擎，直到 S5 让取词路径只走本仓库才算真正关掉 S3 的接缝。
+ *     即使将来出现多个仓库实例也仍然串行。注意这只锁住**仓库自己**的调用 ——
+ *     `DictionaryRegistry.openBuiltIn()` 本身仍是裸引擎；S3 留下的「锁由调用方负责」这条接缝
+ *     是靠「S5 起取词路径只走本仓库、`openBuiltIn()` 的唯一调用点就在 `engineFor`」关掉的。
  *  2. **引擎 LRU**。内置实例归 [DictionaryRegistry] 所有（这里只借不关）；导入词典最多缓存
  *     2 个实例，超出的关闭，删除/禁用后在下一次查询时关闭并丢弃。关闭前先拿该引擎自己的锁，
  *     否则可能关掉一个并发 `lookup`/`article` 正在读的 reader。
@@ -21,8 +22,8 @@
  *     （[DictionaryCatalog] 的顺序），不在同一级里再按名字打乱。
  *
  * 构造参数是为了单测能注入假引擎：默认值走 [DictionaryCatalog] 与 `DictionaryEngines`。
- * 进程内应当只有一个实例（S5 会用 @Singleton 持有）；多实例虽然不会破坏线程安全（锁是
- * 进程级的），但会各自缓存一份导入词典实例。
+ * 进程内只有一个实例（`AppModule.provideDictionaryRepository` 是 `@Singleton`）；多实例虽然
+ * 不会破坏线程安全（锁是进程级的），但会各自缓存一份导入词典实例。
  */
 
 package ua.acclorite.book_story.data.dictionary
@@ -30,6 +31,7 @@ package ua.acclorite.book_story.data.dictionary
 import com.qiuminal.juicedict.engine.DictHit
 import com.qiuminal.juicedict.engine.DictionaryEngine
 import com.qiuminal.juicedict.engine.DictionaryEngines
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -92,6 +94,10 @@ class DictionaryRepository(
                 withContext(Dispatchers.IO) {
                     lockFor(dictionary.id).withLock { engine.lookupSmart(q, limit) }
                 }
+            } catch (e: CancellationException) {
+                // 取消不是「查不到」：吞掉它会让已取消的取词把「未找到」写回 UI（S5 的
+                // 卡片会在关闭后又自己弹出来）。其它异常仍然降级成空结果。
+                throw e
             } catch (e: Exception) {
                 emptyList()
             }
@@ -135,6 +141,8 @@ class DictionaryRepository(
                     engine.article(DictHit(hit.word, hit.offset, hit.size)).toHtml()
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -149,6 +157,8 @@ class DictionaryRepository(
                         .preview(PREVIEW_CHARS)
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             ""
         }

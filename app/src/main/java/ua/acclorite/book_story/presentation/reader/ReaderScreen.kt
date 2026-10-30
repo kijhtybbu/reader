@@ -549,6 +549,7 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
             imagesOriginalSize = settings.imagesOriginalSize.value,
             horizontalAlignment = horizontalAlignment,
             doubleClickTranslation = settings.doubleClickTranslation.value,
+            lookupGesture = settings.lookupGesture.value,
             switchColorPreset = settingsModel::onEvent,
             leave = screenModel::onEvent,
             restoreCheckpoint = screenModel::onEvent,

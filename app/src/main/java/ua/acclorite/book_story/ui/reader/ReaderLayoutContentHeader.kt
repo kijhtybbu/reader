@@ -20,7 +20,7 @@ import ua.acclorite.book_story.ui.reader.model.ReaderNode
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ReaderLayoutContentHeader(
+internal fun ReaderLayoutContentHeader(
     header: ReaderNode.Header,
     header1TextStyle: TextStyle,
     header2TextStyle: TextStyle,
@@ -28,8 +28,15 @@ fun ReaderLayoutContentHeader(
     header4TextStyle: TextStyle,
     header5TextStyle: TextStyle,
     header6TextStyle: TextStyle,
-    sidePadding: Dp
+    sidePadding: Dp,
+    textLayouts: ReaderTextLayoutRegistry
 ) {
+    // fork: 标题也注册取词 —— 标题里的词和正文一样值得查，且不注册就等于「分页能查、连续不能查」。
+    val textLayout = rememberReaderTextLayoutHandle(
+        registry = textLayouts,
+        nodeId = header.node.id
+    )
+
     Column(
         Modifier
             .fillMaxWidth()
@@ -38,7 +45,9 @@ fun ReaderLayoutContentHeader(
             text = header.title,
             modifier = Modifier
                 .padding(horizontal = sidePadding)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .then(textLayout.positionModifier),
+            onTextLayout = textLayout::onTextLayout,
             style = when (header.level) {
                 NodeContent.HeaderLevel.H1 -> header1TextStyle
                 NodeContent.HeaderLevel.H2 -> header2TextStyle

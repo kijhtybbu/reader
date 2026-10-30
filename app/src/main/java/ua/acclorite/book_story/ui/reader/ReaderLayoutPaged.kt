@@ -43,11 +43,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -134,6 +137,7 @@ fun ReaderLayoutPaged(
     imagesOriginalSize: Boolean,
     imagesColorEffects: ColorFilter?,
     doubleClickTranslation: Boolean,
+    lookup: ReaderLookupActions,
     showMenu: Boolean,
     menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit,
     openShareApp: (ReaderEvent.OnOpenShareApp) -> Unit,
@@ -154,6 +158,9 @@ fun ReaderLayoutPaged(
     // 不翻转 delta 就会出现「点左边翻到上一页」（见 pageDeltaFor）。
     val reversed = direction.reversed xor (!direction.vertical && layoutDirection == LayoutDirection.Rtl)
     val fontFamilyResolver = LocalFontFamilyResolver.current
+    // fork: 取词的文本块注册表。只在点击时读，不需要触发重组，所以是普通对象而不是 snapshot state。
+    val textLayouts = remember { ReaderTextLayoutRegistry() }
+    var pagerCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var pageNodes by remember(book.uuid) { mutableStateOf(emptyList<Node>()) }
     var windowInput by remember(book.uuid) {
         mutableStateOf<Pair<List<Node>, Boolean>?>(null)
@@ -189,7 +196,15 @@ fun ReaderLayoutPaged(
         onShareRequested = { openShareApp(ReaderEvent.OnOpenShareApp(it)) },
         onWebSearchRequested = { openWebBrowser(ReaderEvent.OnOpenWebBrowser(it)) },
         onTranslateRequested = { openTranslator(ReaderEvent.OnOpenTranslator(it, false)) },
-        onDictionaryRequested = { openDictionary(ReaderEvent.OnOpenDictionary(it)) }
+        // fork: 工具栏「词典」改为查应用内词典（S4 之前是外部 Intent）。
+        // 外部 Intent 退到卡片未找到时的「用其他应用查询」，不再是默认动作。
+        // 多词选区只查第一个词：整串短语查不到，会把原本可用的「查词」变成「未找到」。
+        onDictionaryRequested = { textToDefine ->
+            val word = firstLookupWord(textToDefine)
+            if (word != null) lookup.onWord(word, null)
+            else openDictionary(ReaderEvent.OnOpenDictionary(textToDefine))
+        },
+        onSelectionSettled = rememberLookupSelectionHandler(lookup, textLayouts)
     ) { toolbarHidden ->
         Column(
             Modifier
@@ -328,6 +343,8 @@ fun ReaderLayoutPaged(
                         .distinctUntilChanged()
                         .collect { (index, loading) ->
                             pendingTapTarget = null
+                            // 翻页/重排后卡片贴着的是上一页的词，先关掉。
+                            lookup.onDismiss()
                             if (loading || !windowReady || scrollTarget != null || nodes.isEmpty()) return@collect
                             if (pages.isEmpty()) {
                                 if (!paginating && !reachedLast) {
@@ -398,6 +415,7 @@ fun ReaderLayoutPaged(
                                 ) {
                                 ReaderPagedPage(
                                     page = page,
+                                    textLayouts = textLayouts,
                                     sidePadding = sidePadding,
                                     fontColor = fontColor,
                                     imagesCornersRoundness = imagesCornersRoundness,
@@ -411,10 +429,11 @@ fun ReaderLayoutPaged(
                     }
                     val pagerModifier = Modifier
                         .fillMaxSize()
+                        .onGloballyPositioned { pagerCoordinates = it }
                         .graphicsLayer { alpha = contentAlpha }
                         .then(
                             if (toolbarHidden) {
-                                Modifier.pointerInput(tapZones, showMenu, doubleClickTranslation) {
+                                Modifier.pointerInput(tapZones, showMenu, doubleClickTranslation, lookup) {
                                     detectTapGestures(
                                         // 关键：onDoubleTap 非 null 时 detectTapGestures 会把单击
                                         // 延后到双击超时（~300ms）再回调。默认关闭双击翻译，
@@ -442,7 +461,26 @@ fun ReaderLayoutPaged(
                                         // 菜单开着时，点任意位置先收起菜单（与 ReaderLayoutContinuous 一致）
                                         if (showMenu) {
                                             menuVisibility(ReaderEvent.OnMenuVisibility(false, true))
+                                            lookup.onDismiss()
                                             return@detectTapGestures
+                                        }
+                                        // fork: 取词优先。命中单词就弹卡片并吃掉这次点击；
+                                        // 点空白（页脚、行尾、段间空隙）照旧走下面的分区逻辑，
+                                        // 所以「翻页/呼菜单」不会因为开了取词就失效。
+                                        if (lookup.singleTapEnabled) {
+                                            val pageIndex = pagerState.currentPage - leadingPages
+                                            val word = wordAtPageOffset(
+                                                page = pages.getOrNull(pageIndex),
+                                                tapInPager = offset,
+                                                pagerOrigin = pagerCoordinates
+                                                    ?.takeIf { it.isAttached }
+                                                    ?.localToWindow(Offset.Zero),
+                                                textLayouts = textLayouts
+                                            )
+                                            if (word != null) {
+                                                lookup.onWord(word.word, word.rect)
+                                                return@detectTapGestures
+                                            }
                                         }
                                         val action = tapActionFor(
                                             zones = tapZones,
@@ -517,6 +555,7 @@ fun ReaderLayoutPaged(
 @Composable
 private fun ReaderPagedPage(
     page: ReaderPage,
+    textLayouts: ReaderTextLayoutRegistry,
     sidePadding: Dp,
     fontColor: Color,
     imagesCornersRoundness: Dp,
@@ -537,16 +576,27 @@ private fun ReaderPagedPage(
             }
             val height = with(density) { item.height.toDp() }
             when {
-                item.text != null -> StyledText(
-                    text = item.text,
-                    style = requireNotNull(item.style).copy(color = fontColor),
-                    // fork: 去掉逐项点击检测器（见 ReaderLayoutContentParagraph 的说明），
-                    // 单击与双击统一交给 Pager 上那一个检测器
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(height),
-                    overflow = TextOverflow.Clip
-                )
+                item.text != null -> {
+                    // fork: 每个页项注册自己的 TextLayoutResult + 窗口矩形。
+                    // 同一段文本被切成两页时 startOffset 不同，所以 key 要带上它。
+                    val textLayout = rememberReaderTextLayoutHandle(
+                        registry = textLayouts,
+                        nodeId = item.node.node.id,
+                        startOffset = item.startOffset
+                    )
+                    StyledText(
+                        text = item.text,
+                        style = requireNotNull(item.style).copy(color = fontColor),
+                        // fork: 去掉逐项点击检测器（见 ReaderLayoutContentParagraph 的说明），
+                        // 单击与双击统一交给 Pager 上那一个检测器
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(height)
+                            .then(textLayout.positionModifier),
+                        overflow = TextOverflow.Clip,
+                        onTextLayout = textLayout::onTextLayout
+                    )
+                }
 
                 item.node is ReaderNode.Image -> Box(
                     Modifier.fillMaxWidth().height(height),
@@ -572,4 +622,28 @@ private fun ReaderPagedPage(
             }
         }
     }
+}
+/**
+ * Pager 局部点击坐标 → 词命中。
+ *
+ * 先用 [readerPageItemAtY] 定位页项（空白区/页脚直接 null），再用该页项注册的
+ * `TextLayoutResult` 取词。`tapInPager` 加 pager 原点是窗口坐标 —— 注册表存的是窗口矩形，
+ * 滚动/翻页动画里也能对上。
+ */
+private fun wordAtPageOffset(
+    page: ReaderPage?,
+    tapInPager: Offset,
+    pagerOrigin: Offset?,
+    textLayouts: ReaderTextLayoutRegistry
+): WordHit? {
+    if (page == null || pagerOrigin == null) return null
+    val itemHit = readerPageItemAtY(page, tapInPager.y) ?: return null
+    // 落在段前空隙里（localY < 0）不算命中：那里没有字。
+    if (itemHit.localY < 0f) return null
+    val item = itemHit.item
+    if (item.text == null) return null
+    val entry = textLayouts.entry(
+        ReaderTextLayoutKey(nodeId = item.node.node.id.id, startOffset = item.startOffset)
+    ) ?: return null
+    return entry.wordAt(pagerOrigin + tapInPager)
 }

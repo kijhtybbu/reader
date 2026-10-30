@@ -40,7 +40,9 @@ fun DictionaryManagerLayout(
     listState: LazyListState,
     paddingValues: PaddingValues
 ) {
-    val context = LocalContext.current
+    // fork: 用 applicationContext —— 导入/启用/删除都挂在页面级作用域上，捕获 Activity 会让
+    // 一个几百 MB 的导入把已销毁的 Activity 一直吊住（旋转屏幕后尤其明显）。
+    val context = LocalContext.current.applicationContext
     val settings = LocalSettings.current
     // 页面级作用域：只有真正离开设置页才会取消导入（见 DictionaryImportActions 的注释）。
     val scope = rememberCoroutineScope()
@@ -114,6 +116,11 @@ fun DictionaryManagerLayout(
 
         item {
             DictionaryImportStatus(state = importState)
+        }
+
+        item {
+            // 「单选」到底是唯一词典还是优先词典，光看单选控件看不出来 —— 写在这里。
+            SettingsSubcategoryNote(text = stringResource(id = R.string.dictionary_priority_note))
         }
 
         item {

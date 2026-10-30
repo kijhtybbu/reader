@@ -149,6 +149,19 @@ class DictionaryCatalogTest {
     }
 
     @Test
+    fun `a directory literally named builtin is never adopted`() = withTempDictionariesDir { root ->
+        // 进程被杀/手工改坏都可能留下 `imported/builtin/`：收养出来的 id 会和内置条目撞车，
+        // Compose 的 key = { it.id } 直接抛异常，仓库也会把它当内置词典去查。
+        writeStarDict(
+            File(File(root, DictionaryCatalog.IMPORTED_DIRECTORY), DictionaryCatalog.BUILT_IN_ID),
+            "builtin",
+            listOf("hello" to "<b>hello</b>")
+        )
+
+        assertTrue(reconcileIndex(root, emptyList()).isEmpty())
+    }
+
+    @Test
     fun `staging leftovers are swept and imported files are kept`() =
         withTempDictionariesDir { root ->
             val leftover = File(root, "${DictionaryCatalog.STAGING_DIRECTORY}/abandoned")

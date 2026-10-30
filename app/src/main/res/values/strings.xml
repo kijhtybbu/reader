@@ -602,4 +602,18 @@
     <string name="dictionary_import_error_incomplete">The folder does not contain a complete StarDict (.ifo, .idx, .dict).</string>
     <string name="dictionary_import_error_multiple">The folder contains more than one StarDict dictionary.</string>
     <string name="dictionary_import_error_failed">Could not import the dictionary.</string>
+    <!-- fork: phase 2 / S5 word lookup -->
+    <string name="lookup_gesture_option">Word lookup</string>
+    <string name="lookup_gesture_single_tap">Single tap</string>
+    <string name="lookup_gesture_long_press">Long press</string>
+    <string name="lookup_gesture_off">Off</string>
+    <string name="lookup_gesture_note">Single tap shows the dictionary card for the word you tap; taps on blank areas still turn the page or open the menu. Long press keeps single-tap page turns and looks the word up after you select it.</string>
+    <string name="dictionary_priority_note">The radio button marks the preferred dictionary. It is looked up first, but every enabled dictionary is still searched.</string>
+    <string name="lookup_popup_loading">Looking up…</string>
+    <string name="lookup_popup_not_found">No entry in the installed dictionaries.</string>
+    <string name="lookup_popup_error">The lookup failed.</string>
+    <string name="lookup_popup_import_dictionary">Import dictionary</string>
+    <string name="lookup_popup_ai_explain">Explain with AI (S6)</string>
+    <string name="lookup_popup_external">Look up in another app</string>
+    <string name="lookup_popup_source">From %1$s</string>
 </resources>

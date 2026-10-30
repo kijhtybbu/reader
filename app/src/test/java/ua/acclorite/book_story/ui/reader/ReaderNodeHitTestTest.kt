@@ -73,4 +73,31 @@ class ReaderNodeHitTestTest {
     fun `negative coordinates hit nothing`() {
         assertNull(readerNodeAtY(page, -1f))
     }
+
+    // ---- S5 取词：页项命中 ----------------------------------------------------
+
+    @Test
+    fun `item hit reports the text top and the local offset`() {
+        val hit = requireNotNull(readerPageItemAtY(page, 150f))
+
+        assertEquals(1, (hit.item.node as ReaderNode.Paragraph).node.id.id)
+        // 第二段：spaceBefore 8 + 第一段 100 = 文本块顶部在 108
+        assertEquals(108f, hit.topInPage, 0.01f)
+        assertEquals(42f, hit.localY, 0.01f)
+    }
+
+    @Test
+    fun `a tap inside the paragraph gap belongs to the next item but with a negative local offset`() {
+        val hit = requireNotNull(readerPageItemAtY(page, 104f))
+
+        assertEquals(1, (hit.item.node as ReaderNode.Paragraph).node.id.id)
+        // localY < 0 表示点在段前空隙里：取词要当成空白（那里没有字）
+        assertEquals(-4f, hit.localY, 0.01f)
+    }
+
+    @Test
+    fun `item hit below the last item hits nothing`() {
+        assertNull(readerPageItemAtY(page, 999f))
+        assertNull(readerPageItemAtY(page, -1f))
+    }
 }

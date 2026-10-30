@@ -99,6 +99,13 @@ android {
         includeInApk = false
         includeInBundle = false
     }
+    // fork: JVM 单测跑在 android.jar 的桩上，未实现的 android.* 方法默认抛
+    // "Method ... not mocked"。S5 的取词状态机在错误路径里会 logW（android.util.Log），
+    // 不开这个开关就只能测成功路径。只影响单测，不影响 App 行为。
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

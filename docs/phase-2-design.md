@@ -144,7 +144,9 @@ ReaderLayout (Paged/Continuous)
   阶段把 `.mdd` 复制进同一目录即可自动配对。在此之前，引用 `entry://` 图片/音频的词条
   会缺图 —— 这是本期的已知限制，不是缺陷。
 - StarDict 导入：`OpenDocumentTree` 选目录，校验 `.ifo/.idx/.dict(.dz)` 后复制。
-- 元数据 `index.json`：id、type、files、title、entries、size、enabled、importedAt。
+- 元数据 `index.json`：id、type、baseName、name、directory、wordCount、sizeBytes、enabled、importedAt
+  （只存元数据：词典文件名由 `type` + `baseName` 拼出，不再抄一份文件列表；`directory` 是相对
+  `filesDir/dictionaries/` 的路径，不存绝对路径 —— 绝对路径会随重装/迁移失效）。
 - 引擎实例 LRU（内置 + 最近 2 个导入词典），删除/禁用时 `close()`。
 - 查询：`lookupExact` → 无结果 `lookupSmart(limit=5)`；多词典按“精确 > 前缀 > 模糊”排序，
   同级内先查「优先词典」（`activeDictionaryId`，单选只影响先后，不禁用其它词典），再按目录顺序。
@@ -160,19 +162,28 @@ ReaderLayout (Paged/Continuous)
   - `SINGLE_TAP`（默认）：命中单词即取词；空白区仍走原翻页/菜单。
   - `LONG_PRESS`：保留单击翻页；长按选中后自动取词。
   - `OFF`：关闭取词。
-- 分页布局：沿用 Pager 上**唯一**的 `detectTapGestures`；`readerNodeAtY` 找到 item 后，
+- 分页布局：沿用 Pager 上**唯一**的 `detectTapGestures`；`readerPageItemAtY` 找到页项后，
   用 item 内坐标 `TextLayoutResult.getOffsetForPosition` + `getWordBoundary` 取词。
 - 连续布局：取词模式下用一个手势处理器做同样命中；不新增第二套翻页检测器。
 - 长按：保留 `SelectionContainer` 选区与工具栏；自定义 `SelectionToolbar` 增加
-  `onSelectionSettled(text, rect)`（`showMenu` 时记录 rect），防抖 350ms：
-  单词/短文本 → 取词卡片；长选区 → 翻译对话框。
+  `onSelectionSettled(rect)`，防抖 350ms：用文本布局注册表按矩形反查单词 → 取词卡片；
+  跨行选区本期忽略（S8 接翻译对话框）。`showMenu` 交来的 rect 本身就是窗口坐标（同一个
+  rect 原样交给 ActionMode 的 `onGetContentRect`），**不再叠加 `localToWindow` 二次换算**。
+  **不取选中文本本身**：`showMenu` 只给矩形，拿文本只能读剪贴板，而 Android 13+ 每次写
+  剪贴板都会弹系统提示 —— 拖动选择手柄时等于连续弹窗（S5 实施时的结论）。
+- 工具栏「词典」：改为应用内取词。多词选区只查选区里的**第一个词**（整串短语 `lookupExact`
+  必然 miss），真 miss 时卡片上的「用其他应用查询」回退到外部词典应用。
+- 命中的文本块由 `ui/reader/ReaderTextLayoutRegistry` 按「节点 id + 页项起点」登记
+  `TextLayoutResult` 与窗口矩形；两种布局共用这张表算锚点，卡片才能贴住词。
 
 ### 5.2 取词卡片
 
-- `Popup` 贴词，自动判断上/下与左右边界；最大宽 360dp、最大高 45% 屏高，内容滚动。
+- `Popup` 贴词，自动判断上/下与左右边界；最大宽 360dp、最大高 45% **安全区高度**
+  （窗口扣掉系统栏、刘海/挖孔），定位与夹紧都在安全区内，内容滚动。
 - 使用 `LocalReaderPalette` 配色，夜间不闪白。
 - 外部点击、返回、翻页、滚动关闭。
-- 显示词头、音标、来源词典、释义；多词典结果用来源标签区分。
+- 显示词头、来源词典、释义；多词典结果用来源标签区分（来源标签做成可切换的 chip）。
+  **不单独显示音标**：`DictionaryHit` 没有音标字段，只有词条正文 HTML 里自带的音标会随释义渲染。
 - 支持 `juice://lookup/` 链接点击继续查询。
 
 ## 6. AI 配置与调用

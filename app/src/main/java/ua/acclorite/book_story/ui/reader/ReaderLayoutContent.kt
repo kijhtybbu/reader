@@ -18,13 +18,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
-import ua.acclorite.book_story.presentation.reader.ReaderEvent
 import ua.acclorite.book_story.ui.reader.model.ReaderNode
 import ua.acclorite.book_story.ui.theme.model.HorizontalAlignment
-import ua.acclorite.book_story.domain.model.book.NodeContent
 
 @Composable
-fun ReaderLayoutContent(
+internal fun ReaderLayoutContent(
     readerNode: ReaderNode,
     paragraphTextStyle: TextStyle,
     header1TextStyle: TextStyle,
@@ -33,7 +31,6 @@ fun ReaderLayoutContent(
     header4TextStyle: TextStyle,
     header5TextStyle: TextStyle,
     header6TextStyle: TextStyle,
-    showMenu: Boolean,
     imagesCaptions: Boolean,
     imagesCornersRoundness: Dp,
     imagesAlignment: HorizontalAlignment,
@@ -43,16 +40,12 @@ fun ReaderLayoutContent(
     fontColor: Color,
     horizontalAlignment: Alignment.Horizontal,
     sidePadding: Dp,
-    doubleClickTranslation: Boolean,
-    toolbarHidden: Boolean,
     paragraphHeight: Dp,
-    openTranslator: (ReaderEvent.OnOpenTranslator) -> Unit,
-    menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit,
     /**
-     * fork: 是否给段落挂点击处理。仅连续布局为 true —— 分页布局的单击/双击
-     * 统一由 Pager 上的单一检测器处理，段落再挂一个会把单击吞掉。
+     * fork: 取词的文本块注册表。文本块自己注册 `TextLayoutResult` 与窗口矩形，
+     * 点击统一由连续布局内容层的那**一个**手势处理器查表 —— 段落不再各挂一个点击检测器。
      */
-    paragraphClickEnabled: Boolean = false
+    textLayouts: ReaderTextLayoutRegistry
 ) {
     when (readerNode) {
         is ReaderNode.Header -> {
@@ -64,7 +57,8 @@ fun ReaderLayoutContent(
                 header4TextStyle = header4TextStyle,
                 header5TextStyle = header5TextStyle,
                 header6TextStyle = header6TextStyle,
-                sidePadding = sidePadding
+                sidePadding = sidePadding,
+                textLayouts = textLayouts
             )
         }
 
@@ -74,15 +68,7 @@ fun ReaderLayoutContent(
                 paragraphTextStyle = paragraphTextStyle,
                 horizontalAlignment = horizontalAlignment,
                 sidePadding = sidePadding,
-                onClick = if (paragraphClickEnabled) {
-                    { menuVisibility(ReaderEvent.OnMenuVisibility(!showMenu, true)) }
-                } else null,
-                onDoubleClick = if (paragraphClickEnabled) {
-                    {
-                        val content = readerNode.node.content as NodeContent.Paragraph
-                        openTranslator(ReaderEvent.OnOpenTranslator(content.text, true))
-                    }
-                } else null
+                textLayouts = textLayouts
             )
         }
 
@@ -115,7 +101,8 @@ fun ReaderLayoutContent(
                         ),
                         paragraphTextStyle = paragraphTextStyle,
                         horizontalAlignment = horizontalAlignment,
-                        sidePadding = sidePadding
+                        sidePadding = sidePadding,
+                        textLayouts = textLayouts
                     )
                 }
             }

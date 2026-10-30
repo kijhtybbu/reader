@@ -16,6 +16,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,12 +35,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -112,6 +117,7 @@ fun ReaderLayoutContinuous(
     imagesColorEffects: ColorFilter?,
     horizontalAlignment: Alignment.Horizontal,
     doubleClickTranslation: Boolean,
+    lookup: ReaderLookupActions,
     showMenu: Boolean,
     menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit,
     openShareApp: (ReaderEvent.OnOpenShareApp) -> Unit,
@@ -129,6 +135,9 @@ fun ReaderLayoutContinuous(
     val layoutDirection = LocalLayoutDirection.current
     val listState = rememberLazyListState()
     val textMeasurer = rememberTextMeasurer()
+    // fork: 取词注册表 + 内容层的坐标（把点击点换算成窗口坐标）。
+    val textLayouts = remember { ReaderTextLayoutRegistry() }
+    var contentCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
     val isInitialLoading = remember(book.uuid) { mutableStateOf(true) }
     val initialScrollTarget = remember(book.uuid) {
@@ -263,6 +272,13 @@ fun ReaderLayoutContinuous(
             }
     }
 
+    // fork: 滚动就关卡片 —— 卡片贴着的是滚动前的词，跟着滚会贴到别的字上。
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .collect { lookup.onDismiss() }
+    }
+
     // Pagination
     LaunchedEffect(listState, paginating) {
         snapshotFlow {
@@ -312,13 +328,18 @@ fun ReaderLayoutContinuous(
                 )
             )
         },
+        // fork: 工具栏「词典」改为查应用内词典（S4 之前是外部 Intent）。
+        // 外部 Intent 退到卡片未找到时的「用其他应用查询」，不再是默认动作。
+        // 多词选区只查第一个词：整串短语查不到，会把原本可用的「查词」变成「未找到」。
         onDictionaryRequested = { textToDefine ->
-            openDictionary(
-                ReaderEvent.OnOpenDictionary(
-                    textToDefine = textToDefine
-                )
-            )
-        }
+            val word = firstLookupWord(textToDefine)
+            if (word != null) {
+                lookup.onWord(word, null)
+            } else {
+                openDictionary(ReaderEvent.OnOpenDictionary(textToDefine))
+            }
+        },
+        onSelectionSettled = rememberLookupSelectionHandler(lookup, textLayouts)
     ) { toolbarHidden ->
         Column(
             Modifier
@@ -326,16 +347,62 @@ fun ReaderLayoutContinuous(
                 .background(backgroundColor)
                 .then(
                     if (!isInitialLoading.value && toolbarHidden) {
-                        Modifier.noRippleClickable(
-                            onClick = {
-                                menuVisibility(
-                                    ReaderEvent.OnMenuVisibility(
-                                        show = !showMenu,
-                                        saveCheckpoint = true
-                                    )
+                        // fork: 连续布局唯一的正文手势处理器（原来这里是 noRippleClickable）。
+                        // 段落不再各挂一个检测器：多一套就会吞掉单击，取词与翻页/菜单只能二选一。
+                        Modifier
+                            .onGloballyPositioned { contentCoordinates = it }
+                            .pointerInput(lookup, showMenu, doubleClickTranslation) {
+                                detectTapGestures(
+                                    // 非 null 时单击会等双击超时（~300ms），默认关闭双击翻译，
+                                    // 所以必须传 null，否则每次切菜单都慢一拍。
+                                    onDoubleTap = if (!doubleClickTranslation) null else { offset ->
+                                        val window = contentCoordinates
+                                            ?.takeIf { it.isAttached }
+                                            ?.localToWindow(offset)
+                                        val nodeId = window?.let { textLayouts.hitTest(it)?.nodeId }
+                                        // 用 rememberUpdatedState 的那份：分页追加节点后旧的
+                                        // readerNodes 已经过期，双击会翻到不存在或重复的段落。
+                                        val paragraph = nodeId?.let { id ->
+                                            currentReaderNodes.firstOrNull { it.node.id == id }
+                                                as? ReaderNode.Paragraph
+                                        }
+                                        if (paragraph != null) {
+                                            openTranslator(
+                                                ReaderEvent.OnOpenTranslator(
+                                                    textToTranslate = paragraph.text.text,
+                                                    translateWholeParagraph = true
+                                                )
+                                            )
+                                        }
+                                    },
+                                    onTap = { offset ->
+                                        // 菜单开着时，点任意位置先收起菜单（与 ReaderLayoutPaged 一致）。
+                                        // 必须排在取词前面：否则菜单没关、卡片又弹出来了。
+                                        if (showMenu) {
+                                            menuVisibility(ReaderEvent.OnMenuVisibility(false, true))
+                                            lookup.onDismiss()
+                                            return@detectTapGestures
+                                        }
+                                        val window = contentCoordinates
+                                            ?.takeIf { it.isAttached }
+                                            ?.localToWindow(offset)
+                                        val word = if (lookup.singleTapEnabled && window != null) {
+                                            textLayouts.hitTest(window)
+                                        } else null
+                                        if (word != null) {
+                                            // 命中单词：取词并吃掉这次点击；空白区照旧切菜单。
+                                            lookup.onWord(word.word, word.rect)
+                                        } else {
+                                            menuVisibility(
+                                                ReaderEvent.OnMenuVisibility(
+                                                    show = !showMenu,
+                                                    saveCheckpoint = true
+                                                )
+                                            )
+                                        }
+                                    }
                                 )
                             }
-                        )
                     } else Modifier
                 )
                 .padding(contentPadding)
@@ -397,7 +464,6 @@ fun ReaderLayoutContinuous(
                                     header4TextStyle = header4TextStyle,
                                     header5TextStyle = header5TextStyle,
                                     header6TextStyle = header6TextStyle,
-                                    showMenu = showMenu,
                                     imagesCaptions = imagesCaptions,
                                     imagesCornersRoundness = imagesCornersRoundness,
                                     imagesAlignment = imagesAlignment,
@@ -407,13 +473,8 @@ fun ReaderLayoutContinuous(
                                     fontColor = fontColor,
                                     horizontalAlignment = horizontalAlignment,
                                     sidePadding = sidePadding,
-                                    // 连续布局没有分区翻页，段落点击仍由段落自己处理（单击切菜单 + 双击翻译）
-                paragraphClickEnabled = doubleClickTranslation && toolbarHidden,
-                doubleClickTranslation = doubleClickTranslation,
-                                    toolbarHidden = toolbarHidden,
                                     paragraphHeight = paragraphHeight,
-                                    openTranslator = openTranslator,
-                                    menuVisibility = menuVisibility
+                                    textLayouts = textLayouts
                                 )
                             }
                         }

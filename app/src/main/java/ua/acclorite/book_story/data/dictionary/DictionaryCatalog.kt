@@ -322,10 +322,13 @@ internal fun reconcileIndex(
         if (hasDictionaryFiles(entry.type, directory, entry.baseName)) entry else null
     }.distinctBy { it.id }
     val known = kept.mapTo(HashSet()) { it.id }
+    // 目录名恰好叫 `builtin` 时不能收养：收养出来的 id 会与内置条目撞车（Compose 的
+    // `key = { it.id }` 直接抛异常），而且 `DictionaryRepository` 也会把它当成内置词典。
     val adopted = enumerateImportedDirectories(File(dictionariesDir, DictionaryCatalog.IMPORTED_DIRECTORY))
-        .filterNot { it.name in known }
+        .filterNot { it.name in known || it.name == DictionaryCatalog.BUILT_IN_ID }
         .mapNotNull { adoptDirectory(it) }
-    return kept + adopted
+    // 最后再按 id 去重：即使磁盘上出现同名目录/索引里已有同 id 条目，也不会把重复项交给 UI。
+    return (kept + adopted).distinctBy { it.id }
 }
 
 private fun hasDictionaryFiles(type: DictionaryType, directory: File, baseName: String): Boolean =

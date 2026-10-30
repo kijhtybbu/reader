@@ -49,6 +49,12 @@ import ua.acclorite.book_story.domain.model.book.NodeContent
 import ua.acclorite.book_story.domain.model.bookmark.Bookmark
 import ua.acclorite.book_story.domain.model.bookmark.bookmarkForNode
 import ua.acclorite.book_story.presentation.reader.BookmarkViewModel
+import ua.acclorite.book_story.presentation.reader.DictionaryLookupModel
+import ua.acclorite.book_story.presentation.reader.LookupState
+import ua.acclorite.book_story.presentation.reader.anchor
+import ua.acclorite.book_story.presentation.reader.model.ReaderLookupGesture
+import ua.acclorite.book_story.presentation.settings.DictionaryManagerScreen
+import ua.acclorite.book_story.ui.navigator.LocalNavigator
 
 @Composable
 fun ReaderContent(
@@ -113,6 +119,7 @@ fun ReaderContent(
     imagesOriginalSize: Boolean,
     horizontalAlignment: Alignment.Horizontal,
     doubleClickTranslation: Boolean,
+    lookupGesture: ReaderLookupGesture,
     switchColorPreset: (SettingsEvent.OnSwitchColorPreset) -> Unit,
     menuVisibility: (ReaderEvent.OnMenuVisibility) -> Unit,
     retry: (ReaderEvent.OnRetry) -> Unit,
@@ -167,6 +174,31 @@ fun ReaderContent(
     val accentSeed = MaterialTheme.colorScheme.primary
     val palette = remember(backgroundColor, fontColor, accentSeed) {
         readerPalette(backgroundColor, fontColor, accentSeed)
+    }
+
+    // fork: 取词卡片。状态与回调都在这里收口，两种布局只负责「点到哪个词」。
+    val lookupModel: DictionaryLookupModel = hiltViewModel()
+    val lookupState by lookupModel.state.collectAsStateWithLifecycle()
+    val navigator = LocalNavigator.current
+    val lookup = remember(lookupGesture, lookupModel) {
+        ReaderLookupActions(
+            gesture = lookupGesture,
+            onWord = { word, anchor -> lookupModel.lookup(word, anchor) },
+            onDismiss = { lookupModel.dismiss() }
+        )
+    }
+    // 切菜单/跳转都要先关卡片：它是贴在某一段文字上的，位置一变就贴错了。
+    val menuVisibilityDismissingLookup = remember(menuVisibility, lookupModel) {
+        { event: ReaderEvent.OnMenuVisibility ->
+            lookupModel.dismiss()
+            menuVisibility(event)
+        }
+    }
+    val scrollDismissingLookup = remember(scroll, lookupModel) {
+        { event: ReaderEvent ->
+            lookupModel.dismiss()
+            scroll(event)
+        }
     }
 
     // 阅读页的系统栏区域被 palette.bar 覆盖，图标明暗必须跟着它走，否则默认配置下
@@ -289,11 +321,12 @@ fun ReaderContent(
                     imagesOriginalSize = imagesOriginalSize,
                     horizontalAlignment = horizontalAlignment,
                     doubleClickTranslation = doubleClickTranslation,
+                    lookup = lookup,
                     switchColorPreset = switchColorPreset,
-                    menuVisibility = menuVisibility,
+                    menuVisibility = menuVisibilityDismissingLookup,
                     leave = leave,
                     restoreCheckpoint = restoreCheckpoint,
-                    scroll = scroll,
+                    scroll = scrollDismissingLookup,
                     openShareApp = openShareApp,
                     openWebBrowser = openWebBrowser,
                     openTranslator = openTranslator,
@@ -320,7 +353,28 @@ fun ReaderContent(
             dismissDrawer = dismissDrawer
         )
 
+        if (lookupState !is LookupState.Idle) {
+            ReaderLookupPopup(
+                state = lookupState,
+                onSelect = lookupModel::select,
+                onLookupLink = { word -> lookupModel.lookup(word, lookupState.anchor) },
+                onRetry = lookupModel::retry,
+                onDismiss = lookupModel::dismiss,
+                onImportDictionary = {
+                    lookupModel.dismiss()
+                    navigator.push(DictionaryManagerScreen)
+                },
+                // S4 之前工具栏「词典」走的就是这个外部 Intent；现在它是未找到时的回退。
+                onExternalLookup = { word ->
+                    lookupModel.dismiss()
+                    openDictionary(ReaderEvent.OnOpenDictionary(word))
+                }
+            )
+        }
+
         ReaderBackHandler(
+            lookupOpen = lookupState !is LookupState.Idle,
+            dismissLookup = lookupModel::dismiss,
             leave = leave,
             navigateBack = navigateBack
         )
