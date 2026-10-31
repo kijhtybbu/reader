@@ -48,6 +48,7 @@ import ua.acclorite.book_story.presentation.reader.model.ReaderTapZones
 import ua.acclorite.book_story.presentation.reader.model.ReaderProgressCount
 import ua.acclorite.book_story.presentation.reader.model.ReaderScreenOrientation
 import ua.acclorite.book_story.presentation.reader.model.ReaderTextAlignment
+import ua.acclorite.book_story.ui.reader.DictionaryAudioAccent
 import ua.acclorite.book_story.ui.reader.data.FontRegistry
 import ua.acclorite.book_story.ui.reader.data.ReaderData
 import ua.acclorite.book_story.ui.reader.model.FontWithName
@@ -197,6 +198,14 @@ class SettingsManager @Inject constructor(
     // 这里不做存在性校验 —— 词典可能还没导入（恢复备份），校验失败就回落默认值反而会吞掉用户的选择。
     val activeDictionaryId = setting<String, String>(
         key = stringPreferencesKey("active_dictionary_id"), default = "builtin"
+    )
+    // fork: 词条自带音频的口音偏好（设计 §3.8）。AUTO = 不筛，按候选顺序播。
+    // 认不出的存量值回落 AUTO 而不是 US/UK：口音只决定「播哪一个」，猜错会直接换掉用户的发音。
+    val dictionaryAudioAccent = setting<DictionaryAudioAccent, String>(
+        key = stringPreferencesKey("dictionary_audio_accent"),
+        default = DictionaryAudioAccent.AUTO,
+        serialize = { it.name },
+        deserialize = { name -> DictionaryAudioAccent.fromName(name) }
     )
     // fork: 取词手势（设计 §5.1）。SINGLE_TAP 接管「点到文字」的单击，空白区仍然翻页/切菜单；
     // 认不出的存量值回落默认值而不是 OFF（取词是默认行为，不该被一个脏值静默关掉）。

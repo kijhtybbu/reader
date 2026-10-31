@@ -54,6 +54,10 @@ enum class DictionaryType(val wire: String) {
 /**
  * 一部可用词典的运行时视图。[directory] 是词典文件所在目录，[baseName] 是引擎拼文件名
  * 用的主干（`ecdict` → `ecdict.ifo` / `.idx` / `.dict`）。
+ *
+ * [hasResources] 表示同目录下有没有 `<baseName>.mdd`（含 `.1.mdd` 分卷）：有资源的词条才走
+ * WebView 渲染，纯文本仍然用结构化卡片。它是运行时由 [DictionaryEngines.mddFilesFor] 推导的，
+ * 不进 `index.json` —— 加 `.mdd` 不需要迁移索引格式。
  */
 data class InstalledDictionary(
     val id: String,
@@ -65,7 +69,8 @@ data class InstalledDictionary(
     val sizeBytes: Long,
     val enabled: Boolean,
     val importedAt: Long,
-    val builtIn: Boolean
+    val builtIn: Boolean,
+    val hasResources: Boolean = false
 )
 
 object DictionaryCatalog {
@@ -209,7 +214,8 @@ object DictionaryCatalog {
                 sizeBytes = entry.sizeBytes,
                 enabled = entry.enabled,
                 importedAt = entry.importedAt,
-                builtIn = false
+                builtIn = false,
+                hasResources = hasResourcePacks(entry.type, directory, entry.baseName)
             )
         }
         _dictionaries.value = listOf(builtInEntry(dictionariesDir)) + imported
@@ -223,17 +229,19 @@ object DictionaryCatalog {
         val state = DictionaryRegistry.builtInState.value
         val ready = state as? BuiltInState.Ready
         val directory = ready?.directory ?: File(dictionariesDir, BUILT_IN_ID)
+        val baseName = ready?.baseName ?: "ecdict"
         return InstalledDictionary(
             id = BUILT_IN_ID,
             type = DictionaryType.STARDICT,
             name = BUILT_IN_NAME,
-            baseName = ready?.baseName ?: "ecdict",
+            baseName = baseName,
             directory = directory,
             wordCount = ready?.wordCount ?: 0,
             sizeBytes = sizeOf(directory),
             enabled = true,
             importedAt = 0L,
-            builtIn = true
+            builtIn = true,
+            hasResources = hasResourcePacks(DictionaryType.STARDICT, directory, baseName)
         )
     }
 
@@ -330,6 +338,17 @@ internal fun reconcileIndex(
     // 最后再按 id 去重：即使磁盘上出现同名目录/索引里已有同 id 条目，也不会把重复项交给 UI。
     return (kept + adopted).distinctBy { it.id }
 }
+
+/**
+ * 词典目录里有没有 `.mdd` 资源包（MDX 才有；StarDict 的资源页不在本期范围）。
+ * 每次 [DictionaryCatalog.publish] 重新推导：导入/删除 `.mdd` 后会跟着变，不需要写索引。
+ */
+internal fun hasResourcePacks(
+    type: DictionaryType,
+    directory: File,
+    baseName: String
+): Boolean = type == DictionaryType.MDX &&
+    DictionaryEngines.mddFilesFor(directory, baseName).isNotEmpty()
 
 private fun hasDictionaryFiles(type: DictionaryType, directory: File, baseName: String): Boolean =
     when (type) {

@@ -415,21 +415,25 @@
     <string name="dictionary_priority_content_desc">优先词典</string>
     <string name="dictionary_delete">删除词典</string>
     <string name="dictionary_import_mdx">导入 MDX 文件</string>
+    <string name="dictionary_import_mdx_folder">导入 MDX 文件夹（含图片、发音）</string>
     <string name="dictionary_import_stardict">导入 StarDict 文件夹</string>
-    <string name="dictionary_import_note">导入的词典会复制到应用内部存储。本版本不导入 MDD 资源。</string>
+    <string name="dictionary_import_note">导入的词典会复制到应用内部存储。带 .mdd 资源包（图片、样式、字体、发音）的 MDX 请用文件夹入口；资源包较大时复制需要几分钟。</string>
+    <string name="dictionary_has_resources">含资源</string>
     <string name="dictionary_import_copying">正在复制… %1$d%%</string>
     <string name="dictionary_import_validating">正在校验词典…</string>
     <string name="dictionary_import_done">已导入「%1$s」。</string>
     <string name="dictionary_import_error_unreadable">无法读取选中的文件或文件夹。</string>
     <string name="dictionary_import_error_empty">选中的文件为空。</string>
-    <string name="dictionary_import_error_too_large">词典文件超过 512 MB。</string>
+    <string name="dictionary_import_error_too_large">词典超过导入体积上限。</string>
     <string name="dictionary_import_error_no_space">剩余空间不足，无法导入该词典。</string>
     <string name="dictionary_import_error_not_mdx">该文件不是 MDX 词典。</string>
     <string name="dictionary_import_error_encrypted">不支持加密的 MDX 词典。</string>
     <string name="dictionary_import_error_resource_pack">这是 MDD 资源包，不是词典。</string>
     <string name="dictionary_import_error_corrupt">词典已损坏、被截断或没有词条。</string>
-    <string name="dictionary_import_error_incomplete">该文件夹不是完整的 StarDict（需要 .ifo、.idx、.dict）。</string>
-    <string name="dictionary_import_error_multiple">该文件夹里有多部 StarDict 词典。</string>
+    <string name="dictionary_import_error_incomplete">该文件夹里没有可用的词典（.mdx，或 .ifo / .idx / .dict 三件套不齐）。</string>
+    <string name="dictionary_import_error_multiple">该文件夹里有多部词典，请分开导入。</string>
+    <string name="dictionary_import_error_resource_parts_missing">.mdd 资源包编号不连续（例如有 .2.mdd 却没有 .1.mdd），图片或发音会静默丢失。</string>
+    <string name="dictionary_import_error_resource_corrupt">.mdd 资源包已损坏或被截断。</string>
     <string name="dictionary_import_error_failed">无法导入该词典。</string>
     <!-- fork: phase 2 / S5 取词 -->
     <string name="lookup_gesture_option">取词手势</string>
@@ -438,6 +442,11 @@
     <string name="lookup_gesture_off">关闭</string>
     <string name="lookup_gesture_note">单击：点到单词就弹出词典卡片；点到空白区仍然是翻页/呼出菜单，长按仍可选中文本复制、翻译或查词。长按：单击保持翻页，按住不动就直接取出那个词；该模式下长按不再选中文本，需要选文本时请切回「单击」。</string>
     <string name="dictionary_priority_note">单选 = 优先词典：先查它，再查其余已启用的词典；它不会屏蔽其它词典。</string>
+    <string name="dictionary_audio_accent_title">发音口音</string>
+    <string name="dictionary_audio_accent_auto">自动</string>
+    <string name="dictionary_audio_accent_us">美音</string>
+    <string name="dictionary_audio_accent_uk">英音</string>
+    <string name="dictionary_audio_accent_note">词典自带录音时优先播放录音；只有没有录音的词条才用系统朗读。</string>
     <string name="lookup_popup_loading">正在查询…</string>
     <string name="lookup_popup_not_found">已安装的词典里没有这个词。</string>
     <string name="lookup_popup_error">查询失败。</string>
@@ -445,6 +454,7 @@
     <string name="lookup_popup_ai_explain">AI 解释（S9）</string>
     <string name="lookup_popup_external">用其他应用查询</string>
     <string name="lookup_popup_pronounce">朗读单词</string>
+    <string name="lookup_popup_audio_unavailable">词条录音无法播放，已改用系统朗读。</string>
     <string name="lookup_popup_tts_unavailable">系统没有安装英语语音包，请先在系统“文字转语音”设置中安装英语语音。</string>
     <string name="lookup_popup_tts_unavailable_title">无法朗读这个单词</string>
     <string name="lookup_popup_tts_install_data">安装英语语音数据</string>

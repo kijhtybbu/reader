@@ -30,8 +30,10 @@ import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryNote
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryTitle
 import ua.acclorite.book_story.ui.settings.reader.dictionary.components.BuiltInDictionaryItem
+import ua.acclorite.book_story.ui.settings.reader.dictionary.components.DictionaryAudioAccentOption
 import ua.acclorite.book_story.ui.settings.reader.dictionary.components.DictionaryImportActions
 import ua.acclorite.book_story.ui.settings.reader.dictionary.components.DictionaryImportStatus
+import ua.acclorite.book_story.ui.settings.reader.dictionary.components.ImportKind
 import ua.acclorite.book_story.ui.settings.reader.dictionary.components.ImportedDictionaryItem
 import ua.acclorite.book_story.ui.theme.Spacing
 
@@ -100,15 +102,28 @@ fun DictionaryManagerLayout(
             HorizontalDivider()
         }
 
+        // 口音只影响「有真人录音的词典播哪一条」，所以留在词典管理页：已安装列表之后、导入入口之前。
+        // 列表每项自带分隔线（包括最后一项），这里不再补一条，否则会出现两条连续的分隔线。
+        item {
+            DictionaryAudioAccentOption()
+        }
+
+        item {
+            HorizontalDivider()
+        }
+
         item {
             DictionaryImportActions(
                 importing = importState is ImportState.Copying || importState is ImportState.Validating,
                 // 导入必须挂在页面作用域上：LazyColumn 会回收滚出屏幕的 item，item 内的
                 // rememberCoroutineScope 随之取消，滚动列表就会静默中止导入。
-                onImport = { uri, isMdx ->
+                onImport = { uri, kind ->
                     scope.launch {
-                        if (isMdx) DictionaryImporter.importMdx(context, uri)
-                        else DictionaryImporter.importStarDict(context, uri)
+                        when (kind) {
+                            ImportKind.MDX_FILE -> DictionaryImporter.importMdx(context, uri)
+                            ImportKind.MDX_FOLDER -> DictionaryImporter.importMdxDirectory(context, uri)
+                            ImportKind.STARDICT_FOLDER -> DictionaryImporter.importStarDict(context, uri)
+                        }
                     }
                 }
             )

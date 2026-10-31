@@ -11,7 +11,9 @@
 
 package ua.acclorite.book_story.data.dictionary
 
+import com.qiuminal.juicedict.engine.MdxPackCheck
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class DictionaryImportErrorTest {
@@ -29,6 +31,12 @@ class DictionaryImportErrorTest {
         assertEquals(
             DictionaryImportError.ENCRYPTED,
             classifyMdxFailure("password-protected MDict files are not supported")
+        )
+        // 加密先于「资源包」判定：加密的 `.mdd` 消息里同时也含 "resource pack"，
+        // 归错类会把用户指向「换一个文件」而不是「换一部没加密的词典」。
+        assertEquals(
+            DictionaryImportError.ENCRYPTED,
+            classifyMdxFailure("password-protected MDict resource packs are not supported")
         )
     }
 
@@ -48,6 +56,33 @@ class DictionaryImportErrorTest {
         )
         assertEquals(DictionaryImportError.CORRUPT, classifyMdxFailure("something unexpected"))
         assertEquals(DictionaryImportError.CORRUPT, classifyMdxFailure(null))
+    }
+
+    /**
+     * 资源包失败的两种措辞不能混：`is a resource pack, not a dictionary` 是「选错了文件」，
+     * `not an MDict resource pack` 是「这个包根本读不出来」（导入时的 `RESOURCE_CORRUPT`）。
+     */
+    @Test
+    fun `unreadable resource packs map to the corrupt error code`() {
+        assertEquals(
+            DictionaryImportError.RESOURCE_CORRUPT,
+            classifyMdxFailure("not an MDict resource pack: broken.mdd")
+        )
+    }
+
+    /** `.mdd` 校验结果 → 错误码：加密与「包用不了」是两种不同的下一步操作。 */
+    @Test
+    fun `resource pack checks are classified by what the user can do next`() {
+        assertNull(classifyPackFailure(MdxPackCheck.Ok(resourceCount = 12)))
+        assertEquals(DictionaryImportError.ENCRYPTED, classifyPackFailure(MdxPackCheck.Encrypted))
+        assertEquals(
+            DictionaryImportError.RESOURCE_CORRUPT,
+            classifyPackFailure(MdxPackCheck.NotResourcePack)
+        )
+        assertEquals(
+            DictionaryImportError.RESOURCE_CORRUPT,
+            classifyPackFailure(MdxPackCheck.Corrupt("EOF"))
+        )
     }
 
     @Test

@@ -110,5 +110,9 @@ internal fun DictionaryImportError.messageRes(): Int = when (this) {
     DictionaryImportError.CORRUPT -> R.string.dictionary_import_error_corrupt
     DictionaryImportError.INCOMPLETE -> R.string.dictionary_import_error_incomplete
     DictionaryImportError.MULTIPLE_DICTIONARIES -> R.string.dictionary_import_error_multiple
+    DictionaryImportError.RESOURCE_PARTS_MISSING ->
+        R.string.dictionary_import_error_resource_parts_missing
+
+    DictionaryImportError.RESOURCE_CORRUPT -> R.string.dictionary_import_error_resource_corrupt
     DictionaryImportError.FAILED -> R.string.dictionary_import_error_failed
 }

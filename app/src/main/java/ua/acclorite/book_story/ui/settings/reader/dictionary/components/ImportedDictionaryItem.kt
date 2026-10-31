@@ -7,6 +7,9 @@
  *
  * 一行里三种操作互不遮挡：整行点击 = 设为优先词典（只影响同 rank 命中的先后），
  * 开关 = 是否参与取词，垃圾桶 = 删除文件。
+ *
+ * `hasResources`（同目录有 `.mdd`）时多一个「含资源」标记：它决定取词卡片能否显示图片/CSS/真人发音，
+ * 用户看不到资源包列表，不标出来就只能靠「怎么这次有图」去猜。
  */
 
 package ua.acclorite.book_story.ui.settings.reader.dictionary.components
@@ -103,6 +106,14 @@ fun ImportedDictionaryItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 )
+                if (dictionary.hasResources) {
+                    StyledText(
+                        text = stringResource(id = R.string.dictionary_has_resources),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
             }
         }
 
