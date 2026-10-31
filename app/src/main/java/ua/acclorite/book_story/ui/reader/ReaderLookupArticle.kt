@@ -150,6 +150,14 @@ private val DEFINITION_REGEX = Regex("""^[a-z]{1,6}\.\s+\S""")
 /** 英文释义的词性前缀。 */
 private val DEFINITION_PREFIX_REGEX = Regex("""^([a-z]{1,6}\.)\s+(.+)$""")
 
+/**
+ * ECDICT 的 `definition` 栏里还有一批没写点号的 WordNet 释义：`n a mathematical element…`，
+ * 与 `n. the smallest whole number…` 同源，只是上游另一条抽取流水线没有补点。同一词条内部
+ * 从不混用（45,045 条全无点、92,184 条全有点），所以只认 `n`/`v`/`a`/`s`/`r` 这五个
+ * WordNet 词性码；`O.K.` 那种残留的 `k an endorsement` 不在白名单里，仍按正文处理。
+ */
+private val BARE_DEFINITION_PREFIX_REGEX = Regex("""^([nvasr])\s+(\S.*)$""")
+
 private val PHONETIC_SPAN_REGEX = Regex(
     """^<span[^>]*>\s*(.*?)\s*</span>$""",
     setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
@@ -244,7 +252,7 @@ internal fun parseLookupBody(html: String, word: String): LookupBody {
             // 词形/形态注：整行 <small> 或 <i>，只保留里面的文字，样式由卡片统一给。
             small != null -> notes += small.groupValues[1]
             italic != null -> notes += italic.groupValues[2]
-            inDefinitions -> definitions += splitDefinition(line)
+            inDefinitions -> definitions += splitDefinition(line, allowBarePos = true)
             looksLikeEnglishDefinition(line) -> definitions += splitDefinition(line)
             else -> senses += splitSense(line)
         }
@@ -315,11 +323,23 @@ private fun looksLikeEnglishDefinition(line: String): Boolean {
     return DEFINITION_REGEX.containsMatchIn(text)
 }
 
-/** 把英文释义拆成「词性前缀 + 正文」。前缀只认行首的纯 ASCII（`n. `），其余原样保留。 */
-internal fun splitDefinition(line: String): LookupDefinition =
+/**
+ * 把英文释义拆成「词性前缀 + 正文」。前缀只认行首的纯 ASCII（`n. `），其余原样保留。
+ *
+ * @param allowBarePos 允许无点号的 `n …`。只在 `<!--def-->` 之后开启：那个标记只有内置
+ *   ECDICT 资产会写，导入词典走的是启发式分支，不会把 `a piece of …` 这类正文误当词性。
+ */
+internal fun splitDefinition(line: String, allowBarePos: Boolean = false): LookupDefinition {
     DEFINITION_PREFIX_REGEX.matchEntire(line)?.let { match ->
-        LookupDefinition(match.groupValues[1], match.groupValues[2].trim())
-    } ?: LookupDefinition(null, line)
+        return LookupDefinition(match.groupValues[1], match.groupValues[2].trim())
+    }
+    if (allowBarePos) {
+        BARE_DEFINITION_PREFIX_REGEX.matchEntire(line)?.let { match ->
+            return LookupDefinition("${match.groupValues[1]}.", match.groupValues[2].trim())
+        }
+    }
+    return LookupDefinition(null, line)
+}
 
 private fun isDuplicateWordLine(line: String, word: String): Boolean {
     val inner = BOLD_ONLY_REGEX.matchEntire(line)?.groupValues?.get(2) ?: return false

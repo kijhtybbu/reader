@@ -173,6 +173,37 @@ class ReaderLookupArticleTest {
     }
 
     @Test
+    fun `bare wordnet pos is only split inside the ecdict definition block`() {
+        // ECDICT 有一批释义没写点号（`0` = `n a mathematical element…`），要当词性徽标。
+        val html = "<b>sometimes</b>" +
+            "<br>adv. 有时\\n偶尔" +
+            "<br><!--def-->r on certain occasions or in some specified manner" +
+            "<br>r at some indefinite or unstated time"
+
+        val body = parseLookupBody(html, "sometimes") as LookupBody.Sections
+
+        assertEquals(listOf(LookupSense("adv.", "有时"), LookupSense(null, "偶尔")), body.senses)
+        assertEquals(
+            listOf(
+                LookupDefinition("r.", "on certain occasions or in some specified manner"),
+                LookupDefinition("r.", "at some indefinite or unstated time")
+            ),
+            body.definitions
+        )
+        // 白名单之外的残行（`O.K.` 的 `k an endorsement`）仍当正文
+        assertEquals(LookupDefinition(null, "k an endorsement"), splitDefinition("k an endorsement"))
+        // 没打 `<!--def-->` 的导入词典不享受这条放宽，避免把 `a piece of …` 当词性
+        assertEquals(
+            LookupDefinition(null, "a piece of land"),
+            splitDefinition("a piece of land")
+        )
+        assertEquals(
+            LookupDefinition("a.", "piece of land"),
+            splitDefinition("a piece of land", allowBarePos = true)
+        )
+    }
+
+    @Test
     fun `sense labels cover parts of speech and domain tags`() {
         assertEquals(LookupSense("vt.", "感觉, 认知"), splitSense("vt. 感觉, 认知"))
         assertEquals(LookupSense("[计]", "结果"), splitSense("[计] 结果"))

@@ -630,6 +630,17 @@ S9 的测试增量：
 | 边缘快速翻页 | 正文区左右各 10% 的点击跳过双击判定直接翻页：在 `detectTapGestures` 之后追加一个 `pointerInput`（链上更内层、Main pass 先跑），带内 + `tapActionFor` 为 NEXT/PREVIOUS 才继续，再按取词模式分流：`SINGLE_TAP` 命中单词→放手给取词、空白→`down.consume()` 抢占后松手即翻；`LONG_PRESS`/`OFF`→down 不消费，用 `withTimeoutOrNull(longPressTimeout)` 等抬手，单击立刻翻页、超时（长按）放手给外层。外层 `onTap` 在带内跳过翻页（否则一翻两页），`onDoubleTap` 在带内忽略。翻页动作抽成 `turnPage()` 与分区点击共用；菜单带/中间区域/连续布局不变。迭代两轮：第一版消费了所有边缘 down，导致边缘长按取词失效、单击单词不取词 |
 | 验证 | `:app:testDebugUnitTest` **399 个用例 / 58 类 / 0 失败**（删掉 4 条选区用例，新增思考强度/思考回调用例）；`:app:assembleDebug` / `:app:assembleRelease-debug` 通过；`reasoning_effort=low` 真机复测：语法首段正文 35.0s → 11.6s，思考 8.6k → 4.6k 字符 |
 
+### 3.16 ECDICT 英英释义的无点词性（数据 vs 转换的归因）
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 取词卡片的英文释义小节里词性徽标时有时无：`one` 是 `[n.] the smallest whole number…`，`0` 却是 `· n a mathematical element…`（那个圆点是 `ReaderLookupPopup` 里 `pos == null` 的占位符，不是数据里的点） |
+| 归因 | **上游 ECDICT 数据问题，不是 `prepare_ecdict.py`**。脚本对 `definition` 只做 `html.escape`。钉死的 `ecdict.csv`（SHA-256 `d1ecbdf9…43cc`）里两套写法互不混用：带点 `n.`/`v.`/`a.`/`s.`/`r.` 共 92,184 条（WordNet 3.0 + 韦氏 1913），不带点 `n`/`v`/`a`/`s`/`r` 共 45,045 条（另一条 WordNet 抽取流水线，覆盖屈折形式：`is` = `v have the quality of being…` 与 `be` = `v. have the quality of being…` 同源）。字节级证据：`0` 的定义是 `6e 20 61…`（`n` + 空格），`one` 是 `6e 2e 20…`（`n.` + 空格）；全为无点的词条里 `^[nvasr] ` 行有 95k 行，全为带点的词条里同类残行 **0** 条，所以按行放宽不会误伤 |
+| 修复 | `ReaderLookupArticle` 新增 `BARE_DEFINITION_PREFIX_REGEX = ^([nvasr])\s+(\S.*)$`，`splitDefinition(line, allowBarePos = false)` 加开关，只在对 `inDefinitions`（`<!--def-->` 之后）时置 true：无点行也出 `[n.]` 徽标。`<!--def-->` 只有内置 ECDICT 资产会写，导入词典走的还是 `looksLikeEnglishDefinition` + 严格点号，`a piece of land` 这类正文不会被当词性 |
+| 有意不修 | ① 同一批数据还有约 15 条残行（`O.K.` → `k an endorsement`、`Ph.D.` → `d a doctorate`、`i.e.` → `e that is to say`），`k/d/e/o` 不在白名单，仍按正文显示——这是上游解析残留，属数据问题；② 数据本身仍然缺点号，要彻底干净得重跑 `prepare_ecdict.py` 归一（`^(n|v|a|s|r)\s` → `\1. `）并联动 `NOTICE.txt` 的 SHA、`BuiltInDictionaryAssetTest` 常量、`ECDICT_ASSET_VERSION`，本轮不动资产 |
+| 测试 | `ReaderLookupArticleTest` 12 → 13 个用例（无点释义拆分、白名单外残行、未打 `<!--def-->` 的导入词典不享受放宽） |
+| 验证 | `:app:testDebugUnitTest` **400 个用例 / 58 类 / 0 失败**；`:dict-engine:test` 102 绿；未跑真机 |
+
 ## 4. 真机验证结果
 
 设备：Lenovo TB322FC（Android 16 / API 36 / 1904×3040 / 440dpi）
