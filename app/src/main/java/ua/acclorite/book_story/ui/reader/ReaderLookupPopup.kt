@@ -136,7 +136,7 @@ private val CardShape = RoundedCornerShape(18.dp)
  * 长到目标尺寸，多出来的内容由 [CardShape] 裁掉（「卡片从贴词那侧展开」）。
  */
 private val CardSizeAnimation: TweenSpec<IntSize> =
-    Motion.base<IntSize>(easing = Motion.Emphasized)
+    Motion.short<IntSize>(easing = Motion.Emphasized)
 
 /**
  * 富媒体正文在量出内容高度之前的高度。和 Loading 卡片（头部 + 一行提示）差不多高：正文一
