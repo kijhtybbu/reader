@@ -28,8 +28,6 @@ package ua.acclorite.book_story.ui.reader
 
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.TweenSpec
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -109,7 +107,6 @@ import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.helpers.showToast
 import ua.acclorite.book_story.ui.theme.LocalReaderPalette
-import ua.acclorite.book_story.ui.theme.Motion
 import java.io.File
 import java.text.NumberFormat
 import kotlin.math.roundToInt
@@ -130,13 +127,6 @@ internal const val PopupMaxHeightFraction = 0.45f
 
 /** 卡片圆角。[Surface] 与「展开动画」的裁剪区必须用同一个形状，否则动画时能看见直角边。 */
 private val CardShape = RoundedCornerShape(18.dp)
-
-/**
- * 尺寸变化（结果到达、切词典 chip、富媒体正文量出高度）的过渡：容器在 180ms 内从当前尺寸
- * 长到目标尺寸，多出来的内容由 [CardShape] 裁掉（「卡片从贴词那侧展开」）。
- */
-private val CardSizeAnimation: TweenSpec<IntSize> =
-    Motion.short<IntSize>(easing = Motion.Emphasized)
 
 /**
  * 富媒体正文在量出内容高度之前的高度。和 Loading 卡片（头部 + 一行提示）差不多高：正文一
@@ -268,8 +258,7 @@ fun ReaderLookupPopup(
 
     // 卡片尺寸要自己量：弹窗是全屏的（见下面的说明），`PopupPositionProvider` 拿到的
     // `popupContentSize` 是全屏尺寸，不能再用来算卡片位置。
-    // 量到的是**动画中的当前尺寸**（见下面的 `animateContentSize`）：贴着词的那条边在整个
-    // 长高过程中固定不动，只有远端在动。
+    // 贴着词的那条边由 [lookupPopupPosition] 钉住，所以尺寸变化时只有远端在动。
     //
     // 位置在 **layout 阶段**算（`Modifier.offset { }` 的 lambda 版）：动画期间尺寸每帧都在变，
     // 走 state 会每帧重组整张卡片（里面还有 WebView），lambda 版只触发重排。
@@ -310,20 +299,12 @@ fun ReaderLookupPopup(
                         detectTapGestures { onDismiss() }
                     }
             )
-            // 尺寸变化用「容器裁剪展开」表现：子内容一开始就按**最终尺寸**排版并摆放，容器从
-            // 当前尺寸平滑长到目标尺寸，多出来的部分被卡片圆角裁掉 —— 看上去就是卡片从贴词
-            // 那侧把内容展开。
+            // 尺寸变化**不做动画**：结果到达（或富媒体正文量出高度）时卡片直接换成最终尺寸，
+            // 位置仍由 [lookupPopupPosition] 钉住贴词的那条边，所以跳的只有远离词的那条边。
             //
-            // 为什么不用 `heightIn(max = 动画值)`：那样每一帧都会把新高度交给子内容，富媒体的
-            // WebView 会跟着每帧重排（文字跳动/白闪），长词条还会在中途冒出滚动条再消失。
-            // 现在的写法子内容只测量一次，`animateContentSize` 只动容器。
-            //
-            // 顺序有讲究：`clip` 必须在 `animateContentSize` **外面**，裁剪区才会跟着动画
-            // 尺寸走；`onSizeChanged` 也在它外面，量到的才是动画中的尺寸（位置据此每帧重算）。
-            //
-            // alignment 取**贴词那一侧**：`animateContentSize` 把已经按最终尺寸排好的内容对齐
-            // 到容器的贴词边，于是内容里紧挨着词的那部分从第一帧起就在最终位置上，长高只是
-            // 「把远端放出来」—— 动画全程内容和词的相对位置都不动，不会出现文字被推着跑。
+            // 这里保留 `clip` 与 `onSizeChanged`：前者保证卡片圆角，后者供 `offset { }` 取当前
+            // 尺寸算位置。要注意 `offset` 的 lambda 只在布局阶段读尺寸，所以尺寸变化不会每帧
+            // 重组整张卡片（里面还有 WebView）。
             Box(
                 modifier = Modifier
                     .offset {
@@ -342,19 +323,10 @@ fun ReaderLookupPopup(
                         cardSize.value = it
                         measured = true
                     }
-                    // 吞掉点击的节点必须和**可见区域**同尺寸（跟着动画走）。放进 animateContentSize
-                    // 里的话它的边界是内容的最终尺寸，动画期间卡片外那条空白会吃掉本该关闭卡片的点击。
+                    // 吞掉点击的节点必须和可见卡片同尺寸，否则卡片外的空白会吃掉本该关闭卡片的点击。
                     .pointerInput(Unit) {
                         detectTapGestures { }
                     }
-                    .animateContentSize(
-                        animationSpec = CardSizeAnimation,
-                        alignment = if (placement.below) {
-                            Alignment.TopCenter
-                        } else {
-                            Alignment.BottomCenter
-                        }
-                    )
                     .alpha(if (measured) 1f else 0f)
             ) {
                 Surface(
