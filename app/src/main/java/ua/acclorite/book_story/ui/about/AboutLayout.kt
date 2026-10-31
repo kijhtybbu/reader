@@ -75,7 +75,8 @@ fun AboutLayout(
         item {
             AboutItem(
                 title = stringResource(id = R.string.app_version_option),
-                description = "${stringResource(R.string.app_name)} v${BuildConfig.VERSION_NAME}",
+                // fork: 带上构建短哈希 —— 同名同版本的 debug / release-debug 只能靠它区分。
+                description = "${stringResource(R.string.app_name)} v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
             ) {
                 navigateToBrowserPage(
                     AboutEvent.OnNavigateToBrowserPage(

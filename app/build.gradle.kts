@@ -1,5 +1,20 @@
 import com.google.protobuf.gradle.proto
 
+/**
+ * fork: 本次构建对应的 git 短哈希。
+ *
+ * 为什么需要：debug 与 release-debug 两个变体的应用名都是「本地阅读器」，版本号也相同，
+ * 装在同一台设备上时无法分辨哪个是刚构建的包（排查问题时因此白跑过一轮）。把短哈希写进
+ * `BuildConfig` 并显示在「关于」页，一眼就能确认手上是不是目标构建。
+ *
+ * 用 `providers.exec` 而不是 `"git ...".execute()`：前者对 configuration cache 友好。
+ * 取不到 git（例如从源码包构建）时回落 "unknown"，不让构建失败。
+ */
+val gitShortHash: String = providers.exec {
+    commandLine("git", "rev-parse", "--short", "HEAD")
+    isIgnoreExitValue = true
+}.standardOutput.asText.get().trim().ifEmpty { "unknown" }
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -35,6 +50,8 @@ android {
         targetSdk = 36
         versionCode = 14
         versionName = "1.8.0"
+        // fork: 「关于」页显示的构建标识，见文件头的 gitShortHash。
+        buildConfigField("String", "GIT_HASH", "\"$gitShortHash\"")
 
         vectorDrawables {
             useSupportLibrary = true
