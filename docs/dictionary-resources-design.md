@@ -131,6 +131,7 @@
 | --- | --- |
 | 拦截器对未知路径统一 404 | `loadDataWithBaseURL` 会把 base URL 本身送进 `shouldInterceptRequest`。根路径回 404 → 整篇变 `net::ERR_HTTP_RESPONSE_CODE_FAILED`。**改为：根路径 / 其它 host 返回 `null`，只有「路径存在但包里没有」才 404**（子资源缺失不影响主文档） |
 | `textZoom` 对齐卡片正文 | 不跟阅读正文字号（`settings.fontSize`）走：卡片排版本来是固定的（义项用 `bodyMedium` = 14sp），跟过去会让「大字」预设下 WebView 正文比 ECDICT 卡片大一圈（真机反馈 22pt 阅读字号 → 137%）。最终 `textZoom = 14 × fontScale × 100 / 16`（1.0 → 88%、1.3 → 114%）。Compose 的 sp 自动吃 `fontScale`，WebView 不吃，漏乘会在系统放大字号时偏小 |
+| 富媒体正文 `weight(1f)`（卡片直接吃满 45% 上限） | 卡片一出现就是最大高度，正文却还在加载 —— 用户看到的是「先撑满、再塌一下」。改为 `weight(1f, fill = false)` + 正文显式高度：加载完成后用 `contentHeight × scale` 量一次（`onContentHeight`，**每篇词条只报一次**，之后的图片懒加载不再重测），卡片「内容多高就多高，最多到上限」；量到之前用 56dp 占位。卡片尺寸变化本身由外层 `animateContentSize` 做成「从贴词那侧展开」的动画（定位规则见 `PROGRESS.md` §3.12） |
 | `onDispose` 里直接 `destroy()` | 文档还在加载时直接销毁会在内部线程抛 NPE。顺序：`stopLoading()` → 换回默认 `WebViewClient`（否则 `about:blank` 被当外部导航拦下）→ `loadUrl("about:blank")` → `destroy()` |
 
 暗色走 `WebSettingsCompat.setAlgorithmicDarkeningAllowed`（AndroidX WebKit 1.14.0），浅色预设显式关掉，否则正常配色会被压暗。

@@ -28,6 +28,8 @@ package ua.acclorite.book_story.ui.reader
 
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.TweenSpec
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -39,6 +41,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -73,6 +76,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -96,6 +100,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import kotlinx.coroutines.delay
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.presentation.reader.LookupState
 import ua.acclorite.book_story.presentation.reader.anchor
@@ -104,6 +109,7 @@ import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.helpers.showToast
 import ua.acclorite.book_story.ui.theme.LocalReaderPalette
+import ua.acclorite.book_story.ui.theme.Motion
 import java.io.File
 import java.text.NumberFormat
 import kotlin.math.roundToInt
@@ -120,7 +126,29 @@ private val PopupMaxWidth = 360.dp
 private val PopupMinWidth = 248.dp
 
 /** 卡片最高占安全区高度的比例（设计 §5.2）。 */
-private const val PopupMaxHeightFraction = 0.45f
+internal const val PopupMaxHeightFraction = 0.45f
+
+/** 卡片圆角。[Surface] 与「展开动画」的裁剪区必须用同一个形状，否则动画时能看见直角边。 */
+private val CardShape = RoundedCornerShape(18.dp)
+
+/**
+ * 尺寸变化（结果到达、切词典 chip、富媒体正文量出高度）的过渡：容器在 180ms 内从当前尺寸
+ * 长到目标尺寸，多出来的内容由 [CardShape] 裁掉（「卡片从贴词那侧展开」）。
+ */
+private val CardSizeAnimation: TweenSpec<IntSize> =
+    Motion.base<IntSize>(easing = Motion.Emphasized)
+
+/**
+ * 富媒体正文在量出内容高度之前的高度。和 Loading 卡片（头部 + 一行提示）差不多高：正文一
+ * 到位就直接长到最终高度，中间不会再有一次「先撑满/先塌一下」。
+ */
+private val MediaBodyPlaceholderHeight = 56.dp
+
+/**
+ * 富媒体正文量不出高度时的兜底：超过这个时间还没量到，就让正文吃满剩余高度（回到旧的
+ * 「宁可全高」行为）。宁可卡片大一点，也不能把一篇词条关在一个 56dp 的小窗口里。
+ */
+private const val MediaBodyMeasureTimeoutMillis = 800L
 
 /** 词性标签列的宽度：让所有义项的左边缘对齐（`n.` / `prep.` / `[网络]` 共用一列）。 */
 private val SenseLabelWidth = 44.dp
@@ -179,10 +207,16 @@ fun ReaderLookupPopup(
 
     val margin = with(density) { PopupMargin.roundToPx() }
     val gap = with(density) { PopupGap.roundToPx() }
-    val maxHeight = with(density) {
-        (safeBounds.height * PopupMaxHeightFraction).toDp()
-    }
     val anchor = state.anchor
+    // 方向在「点击那一刻」就能算出来：只看词落在屏幕哪个位置，与卡片尺寸无关。所以卡片
+    // 之后怎么长高，方向都不会变 —— 用户看到的始终是「朝一侧长出来」，而不是「先朝下再翻上去」。
+    val placement = remember(anchor, safeBounds, margin, gap) {
+        lookupPopupPlacement(anchor, safeBounds, margin, gap)
+    }
+    // 高度上限 = min(设计上限, 该侧真正剩下的空间)。因为卡片贴词那条边是固定的（见
+    // [lookupPopupPosition]），上限必须按这一侧的空间算，否则长到头会被夹回去、词边就动了。
+    val maxHeightPx = lookupPopupMaxHeightPx(safeBounds, placement)
+    val maxHeight = with(density) { maxHeightPx.toDp() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = LocalSettings.current
@@ -234,14 +268,14 @@ fun ReaderLookupPopup(
 
     // 卡片尺寸要自己量：弹窗是全屏的（见下面的说明），`PopupPositionProvider` 拿到的
     // `popupContentSize` 是全屏尺寸，不能再用来算卡片位置。
-    var cardSize by remember { mutableStateOf(IntSize.Zero) }
-    val cardOffset = remember(anchor, safeBounds, cardSize, margin, gap) {
-        if (cardSize == IntSize.Zero) {
-            IntOffset.Zero
-        } else {
-            lookupPopupPosition(anchor, safeBounds, cardSize, margin, gap)
-        }
-    }
+    // 量到的是**动画中的当前尺寸**（见下面的 `animateContentSize`）：贴着词的那条边在整个
+    // 长高过程中固定不动，只有远端在动。
+    //
+    // 位置在 **layout 阶段**算（`Modifier.offset { }` 的 lambda 版）：动画期间尺寸每帧都在变，
+    // 走 state 会每帧重组整张卡片（里面还有 WebView），lambda 版只触发重排。
+    val cardSize = remember { mutableStateOf(IntSize.Zero) }
+    // 第一帧还没量到尺寸，没法算位置，先透明；量到之后再淡入，避免卡片先在左上角闪一下。
+    var measured by remember { mutableStateOf(false) }
 
     Popup(
         // 弹窗占满整个窗口，内部再摆卡片。为什么不用「贴卡的 wrap-content 弹窗 + 外部点击关闭」：
@@ -276,46 +310,85 @@ fun ReaderLookupPopup(
                         detectTapGestures { onDismiss() }
                     }
             )
-            Surface(
+            // 尺寸变化用「容器裁剪展开」表现：子内容一开始就按**最终尺寸**排版并摆放，容器从
+            // 当前尺寸平滑长到目标尺寸，多出来的部分被卡片圆角裁掉 —— 看上去就是卡片从贴词
+            // 那侧把内容展开。
+            //
+            // 为什么不用 `heightIn(max = 动画值)`：那样每一帧都会把新高度交给子内容，富媒体的
+            // WebView 会跟着每帧重排（文字跳动/白闪），长词条还会在中途冒出滚动条再消失。
+            // 现在的写法子内容只测量一次，`animateContentSize` 只动容器。
+            //
+            // 顺序有讲究：`clip` 必须在 `animateContentSize` **外面**，裁剪区才会跟着动画
+            // 尺寸走；`onSizeChanged` 也在它外面，量到的才是动画中的尺寸（位置据此每帧重算）。
+            //
+            // alignment 取**贴词那一侧**：`animateContentSize` 把已经按最终尺寸排好的内容对齐
+            // 到容器的贴词边，于是内容里紧挨着词的那部分从第一帧起就在最终位置上，长高只是
+            // 「把远端放出来」—— 动画全程内容和词的相对位置都不动，不会出现文字被推着跑。
+            Box(
                 modifier = Modifier
-                    .offset { cardOffset }
-                    .widthIn(min = PopupMinWidth, max = PopupMaxWidth)
+                    .offset {
+                        if (measured) {
+                            lookupPopupPosition(anchor, safeBounds, cardSize.value, margin, gap)
+                        } else {
+                            IntOffset.Zero
+                        }
+                    }
                     .heightIn(max = maxHeight)
-                    // 第一帧还没量到尺寸，没法算位置；先透明，量到尺寸后再淡入，
-                    // 避免卡片先在左上角闪一下。
-                    .alpha(if (cardSize == IntSize.Zero) 0f else 1f)
-                    .onSizeChanged { cardSize = it }
-                    // 卡片自己吞掉点击：否则点在释义文字上会穿透到透明遮罩，卡片直接关掉。
+                    // 阴影必须画在 clip 之外：Material 的 elevation 是圆角轮廓**外面**的一圈，
+                    // 与卡片同尺寸的 clip 会把它整圈剪掉（只剩一张没有投影的平面）。
+                    .shadow(elevation = 10.dp, shape = CardShape)
+                    .clip(CardShape)
+                    .onSizeChanged {
+                        cardSize.value = it
+                        measured = true
+                    }
+                    // 吞掉点击的节点必须和**可见区域**同尺寸（跟着动画走）。放进 animateContentSize
+                    // 里的话它的边界是内容的最终尺寸，动画期间卡片外那条空白会吃掉本该关闭卡片的点击。
                     .pointerInput(Unit) {
                         detectTapGestures { }
-                    },
-                shape = RoundedCornerShape(18.dp),
-                color = palette.bar,
-                contentColor = palette.onBar,
-                shadowElevation = 10.dp
+                    }
+                    .animateContentSize(
+                        animationSpec = CardSizeAnimation,
+                        alignment = if (placement.below) {
+                            Alignment.TopCenter
+                        } else {
+                            Alignment.BottomCenter
+                        }
+                    )
+                    .alpha(if (measured) 1f else 0f)
             ) {
-                when (state) {
-                    is LookupState.Loading -> LoadingCard(state, onSpeak)
-                    is LookupState.Success -> SuccessCard(
-                        state = state,
-                        linkStyles = linkStyles,
-                        onLookupLink = currentOnLookupLink,
-                        onSelect = onSelect,
-                        accent = accent,
-                        audio = audio,
-                        audioFile = { dictId, path -> currentOnAudioFile.value(dictId, path) }
-                    )
+                Surface(
+                    modifier = Modifier
+                        .widthIn(min = PopupMinWidth, max = PopupMaxWidth),
+                    shape = CardShape,
+                    color = palette.bar,
+                    contentColor = palette.onBar,
+                    // 阴影由外层 shadow 画（见上），这里不能再画一遍。
+                    shadowElevation = 0.dp
+                ) {
+                    when (state) {
+                        is LookupState.Loading -> LoadingCard(state, onSpeak)
+                        is LookupState.Success -> SuccessCard(
+                            state = state,
+                            linkStyles = linkStyles,
+                            onLookupLink = currentOnLookupLink,
+                            onSelect = onSelect,
+                            accent = accent,
+                            audio = audio,
+                            audioFile = { dictId, path -> currentOnAudioFile.value(dictId, path) }
+                        )
 
-                    is LookupState.NotFound -> NotFoundCard(
-                        state = state,
-                        onImportDictionary = onImportDictionary,
-                        onExternalLookup = onExternalLookup,
-                        onAiExplain = onAiExplain,
-                        onSpeak = onSpeak
-                    )
+                        is LookupState.NotFound -> NotFoundCard(
+                            state = state,
+                            onImportDictionary = onImportDictionary,
+                            onExternalLookup = onExternalLookup,
+                            onAiExplain = onAiExplain,
+                            onSpeak = onSpeak
+                        )
 
-                    is LookupState.Error -> ErrorCard(state, onRetry, onSpeak)
-                    LookupState.Idle -> Unit
+                        is LookupState.Error -> ErrorCard(state, onRetry, onSpeak)
+                        LookupState.Idle -> Unit
+                    }
                 }
             }
         }
@@ -330,7 +403,8 @@ fun ReaderLookupPopup(
  * 会把卡片永远撑到最大高度。
  *
  * @param fixedHeightBody 正文自己负责滚动（富媒体词条的 WebView）。此时：
- *  - 正文吃满剩余高度（`weight(1f)`，卡片就是最大高度 —— 媒体词条没法预测高度，宁可全高）；
+ *  - 正文高度由它自己决定（WebView 量出的内容高度，见 [DictionaryArticleWebView] 的
+ *    `onContentHeight`），放不下时才被剩余空间夹住；
  *  - **不**套 `verticalScroll`：WebView 内部已经在滚，外面再套一层就变成嵌套滚动，
  *    两层会抢手势（滑一下跳两屏）。头尾仍然固定。
  */
@@ -350,10 +424,10 @@ private fun LookupCard(
         HorizontalDivider(color = palette.onBar.copy(alpha = 0.10f))
         Column(
             modifier = Modifier
-                .then(
-                    if (fixedHeightBody) Modifier.weight(1f)
-                    else Modifier.weight(1f, fill = false)
-                )
+                // fill = false 是关键：正文按自己的高度排（短词条卡片就矮），只有放不下时才
+                // 被剩余空间夹住。富媒体正文也一样 —— 它的高度由量出来的内容高度决定，
+                // 所以卡片是「内容多高就多高，最多到上限」，不是一上来就撑满。
+                .weight(1f, fill = false)
                 .padding(horizontal = 18.dp, vertical = 12.dp)
                 .then(
                     if (fixedHeightBody) Modifier
@@ -412,6 +486,18 @@ private fun SuccessCard(
         )
     }
     val media = body as? LookupBody.Media
+    // 富媒体正文的高度：WebView 加载完成后用 `contentHeight` 量一次（见 DictionaryArticleWebView
+    // 的 onContentHeight），量到之前先按占位高度显示。
+    // 只跟词走、不跟命中的词典走：切 chip 时上一条的高度先留一会儿，比「先塌下去再长起来」稳。
+    var mediaBodyHeightPx by remember(state.word) { mutableStateOf(0) }
+    // 量不出来的兜底（见 MediaBodyMeasureTimeoutMillis）：正文吃满剩余高度，而不是停在占位高度。
+    var mediaBodyUnmeasured by remember(state.word) { mutableStateOf(false) }
+    LaunchedEffect(state.word, media != null) {
+        if (media == null) return@LaunchedEffect
+        mediaBodyUnmeasured = false
+        delay(MediaBodyMeasureTimeoutMillis)
+        mediaBodyUnmeasured = mediaBodyHeightPx <= 0
+    }
     // 口音偏好只决定「先试哪一条」，其余候选跟在后面：单条失败不等于要立刻回落 TTS。
     val playbackOrder = remember(media?.audio, accent) {
         media?.let { audioPlaybackOrder(it.audio, accent) }.orEmpty()
@@ -469,12 +555,25 @@ private fun SuccessCard(
                 )
 
                 is LookupBody.Media -> DictionaryArticleWebView(
-                    // WebView 自己吃满剩余高度并自己滚（`fixedHeightBody = true` 已去掉外层滚动）。
-                    modifier = Modifier.fillMaxSize(),
+                    // 高度 = 量出来的内容高度；放不下时由卡片高度上限夹住，WebView 自己滚
+                    // （`fixedHeightBody = true` 已去掉外层滚动）。
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            when {
+                                mediaBodyHeightPx > 0 -> Modifier.height(
+                                    with(LocalDensity.current) { mediaBodyHeightPx.toDp() }
+                                )
+                                // 量不出来：吃满剩余高度（旧的「宁可全高」行为）。
+                                mediaBodyUnmeasured -> Modifier.fillMaxHeight()
+                                else -> Modifier.height(MediaBodyPlaceholderHeight)
+                            }
+                        ),
                     html = body.html,
                     dictId = selected?.dictId.orEmpty(),
                     onLookupLink = { word -> onLookupLink.value(word) },
-                    onPlayAudio = playAudio
+                    onPlayAudio = playAudio,
+                    onContentHeight = { px -> if (px > 0) mediaBodyHeightPx = px }
                 )
             }
         }
@@ -911,11 +1010,68 @@ private fun parseLookupHtml(
 }
 
 /**
- * 卡片定位：优先贴在词下方，放不下就翻到词上方；水平居中于词，并夹在**安全区**内。
- * 锚点未知（长按选区拿不到矩形）时在安全区内居中。
+ * 卡片朝哪一侧展开，以及那一侧还剩多少空间（px）。
  *
- * [safeBounds] 是窗口坐标系里的可用区域（已扣除系统栏/刘海）；卡片不会摆到它外面。
- * 纯函数（无 Compose 运行时依赖），JVM 单测覆盖（ReaderLookupPopupPositionTest）。
+ * 只取决于**词在屏幕上的位置**，与卡片尺寸无关 —— 这是「点击那一刻就定方向」的前提：
+ * 卡片之后怎么长高，方向都不会变，所以看到的是「朝一侧长出来」，不是「先朝下再翻上去」。
+ *
+ * 竖屏尺寸下（安全区高 ≥ 2000 px）两侧取大者总大于 45% 的高度上限（[PopupMaxHeightFraction]），
+ * 上限先起作用、贴词那条边不会被夹。横屏或分屏时安全区只有 ~1000 px，45% 比该侧剩余空间还大，
+ * 此时 [lookupPopupMaxHeightPx] 会按该侧空间收紧 —— 卡片变矮（正文可滚），贴词边仍然不动。
+ */
+internal data class LookupPopupPlacement(
+    /** 卡片在词的下方（true）还是上方（false）。 */
+    val below: Boolean,
+    /** 该侧还剩多少可用高度（px），已扣掉边距与贴词间隙。 */
+    val availableSpace: Int
+)
+
+internal fun lookupPopupPlacement(
+    anchor: Rect?,
+    safeBounds: IntRect,
+    margin: Int,
+    gap: Int
+): LookupPopupPlacement {
+    if (anchor == null) {
+        // 没有锚点（整词卡片之类）：居中显示，方向不影响结果。
+        return LookupPopupPlacement(below = true, availableSpace = safeBounds.height - margin * 2)
+    }
+    val spaceBelow = safeBounds.bottom - margin - (anchor.bottom.roundToInt() + gap)
+    val spaceAbove = (anchor.top.roundToInt() - gap) - (safeBounds.top + margin)
+    // 相等时朝下：正文是从词往下读的。
+    return if (spaceBelow >= spaceAbove) {
+        LookupPopupPlacement(below = true, availableSpace = spaceBelow)
+    } else {
+        LookupPopupPlacement(below = false, availableSpace = spaceAbove)
+    }
+}
+
+/**
+ * 卡片高度上限（px）= min(设计上限, 该侧剩余空间)。
+ *
+ * 因为贴词那条边是钉住的，上限必须按**这一侧**的空间算：否则卡片长到一半被屏幕边缘夹回来，
+ * 钉住的边就动了（这正是「跳一下」的来源之一）。
+ */
+internal fun lookupPopupMaxHeightPx(
+    safeBounds: IntRect,
+    placement: LookupPopupPlacement
+): Int {
+    val cap = (safeBounds.height * PopupMaxHeightFraction).roundToInt()
+    return if (placement.availableSpace > 0) minOf(cap, placement.availableSpace) else cap
+}
+
+/**
+ * 卡片位置。
+ *
+ * **贴词的那条边固定**，另一条边跟着高度走：
+ *  - 在词下方 → 顶边钉在「词底 + 间隙」，卡片只能向下长；
+ *  - 在词上方 → 底边钉在「词顶 − 间隙」，卡片只能向上长。
+ *
+ * 这就是「结果到达后卡片按内容高度调整」不跳的原因：调整时动的永远是远离词的那条边，
+ * 而它旁边是空白的正文，用户视线所在的词一侧丝毫不动。
+ *
+ * 方向由 [lookupPopupPlacement] 决定（只按空间大小），不按「这次放不放得下」判断 ——
+ * 后者会让卡片随内容高度翻面。
  */
 internal fun lookupPopupPosition(
     anchor: Rect?,
@@ -937,11 +1093,10 @@ internal fun lookupPopupPosition(
     }
 
     val x = (anchor.center.x - popupSize.width / 2f).roundToInt().coerceIn(minX, maxX)
-    val below = anchor.bottom.roundToInt() + gap
-    val y = if (below + popupSize.height <= safeBounds.bottom - margin) {
-        below.coerceIn(minY, maxY)
+    val placement = lookupPopupPlacement(anchor, safeBounds, margin, gap)
+    val y = if (placement.below) {
+        (anchor.bottom.roundToInt() + gap).coerceIn(minY, maxY)
     } else {
-        // 上方也放不下时贴安全区顶，宁可盖住词本身也不要一半在屏幕外/状态栏下面。
         (anchor.top.roundToInt() - gap - popupSize.height).coerceIn(minY, maxY)
     }
     return IntOffset(x, y)

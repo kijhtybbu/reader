@@ -58,6 +58,12 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import kotlin.math.roundToInt
 
+/**
+ * 量正文高度的时刻（ms，相对 `onPageFinished`）。取这几次里的最大值、只在最后一次上报：
+ * 一次测量太早（排版/图片还没落），反复上报又会让卡片来回长。
+ */
+private val MEDIA_CONTENT_HEIGHT_CHECKS_MS = longArrayOf(0L, 90L, 260L)
+
 /** 词条资源的虚拟站点。除它之外的 host 一律不服务（§2.7）。 */
 internal const val DICT_RESOURCE_HOST = "dict.local"
 
@@ -217,6 +223,9 @@ private fun Color.toCssColor(): String {
  * @param dictId 当前词条所在词典的 id。
  * @param onLookupLink 点了正文里的 `juice://lookup/…` 链接，参数是解出来的词。
  * @param onPlayAudio 点了正文里的 `dict-audio://…` 发音链接，参数是 `.mdd` 里的路径。
+ * @param onContentHeight 加载完成后量到的正文高度（View 像素，`contentHeight × scale`）。
+ *   卡片拿它当正文高度，好让卡片是「内容多高就多高」而不是一上来撑满上限。**只回调一次**：
+ *   之后的图片懒加载/异步字体不再重测 —— 反复重测会让卡片一直抖。
  */
 @Composable
 internal fun DictionaryArticleWebView(
@@ -224,7 +233,8 @@ internal fun DictionaryArticleWebView(
     dictId: String,
     onLookupLink: (String) -> Unit,
     onPlayAudio: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onContentHeight: (Int) -> Unit = {}
 ) {
     val palette = LocalReaderPalette.current
     // 系统字号缩放：Compose 的 sp 自动吃它，WebView 的 textZoom 不会，得自己乘上去。
@@ -237,6 +247,7 @@ internal fun DictionaryArticleWebView(
     val textZoom = articleTextZoom(fontScale)
     val currentOnLookupLink = rememberUpdatedState(onLookupLink)
     val currentOnPlayAudio = rememberUpdatedState(onPlayAudio)
+    val currentOnContentHeight = rememberUpdatedState(onContentHeight)
 
     key(dictId) {
         // 非 State 的容器：View 不需要参与快照，只有 onDispose 读它。
@@ -247,11 +258,14 @@ internal fun DictionaryArticleWebView(
                 WebView(context).apply {
                     holder.webView = this
                     configureForArticle()
-                    webViewClient = DictionaryArticleClient(
+                    val client = DictionaryArticleClient(
                         dictId = dictId,
                         onLookupLink = { word -> currentOnLookupLink.value(word) },
-                        onPlayAudio = { path -> currentOnPlayAudio.value(path) }
+                        onPlayAudio = { path -> currentOnPlayAudio.value(path) },
+                        onContentHeight = { px -> currentOnContentHeight.value(px) }
                     )
+                    holder.client = client
+                    webViewClient = client
                 }
             },
             update = { webView ->
@@ -261,6 +275,8 @@ internal fun DictionaryArticleWebView(
                 // 重组时不重载：每帧 loadDataWithBaseURL 会让图片闪烁、滚动位置归零。
                 if (webView.tag != document) {
                     webView.tag = document
+                    // 同一个 WebView 换了词条：内容高度要重新量（上一次的值属于上一篇词条）。
+                    holder.client?.resetMeasurement()
                     webView.loadDataWithBaseURL(
                         dictionaryBaseUrl(dictId),
                         document,
@@ -273,6 +289,8 @@ internal fun DictionaryArticleWebView(
         )
         DisposableEffect(Unit) {
             onDispose {
+                holder.client?.cancelPendingMeasurements()
+                holder.client = null
                 holder.webView?.let(::destroyWebView)
                 holder.webView = null
             }
@@ -282,6 +300,9 @@ internal fun DictionaryArticleWebView(
 
 private class WebViewHolder {
     var webView: WebView? = null
+
+    /** 复用同一个 WebView 换词条时，让下一次加载重新量一遍内容高度。 */
+    var client: DictionaryArticleClient? = null
 }
 
 /**
@@ -345,8 +366,53 @@ private fun WebSettings.applyAlgorithmicDarkening(allowed: Boolean) {
 private class DictionaryArticleClient(
     private val dictId: String,
     private val onLookupLink: (String) -> Unit,
-    private val onPlayAudio: (String) -> Unit
+    private val onPlayAudio: (String) -> Unit,
+    private val onContentHeight: (Int) -> Unit
 ) : WebViewClient() {
+
+    /** 内容高度只报一次：图片异步到达时再报会让卡片反复长高（用户要的是「一次性长到最终高度」）。 */
+    private var measured = false
+
+    /**
+     * 代次：换文档时自增。已经排进消息队列的测量回调带着旧代次，会被丢掉 —— 否则上一次的词条
+     * 会把高度报到新词条上，新文档再也不会被测量（卡片停在一个错误的高度）。
+     */
+    private var generation = 0
+
+    /** 换词条复用同一个 WebView 时调用，让新文档重新量一次高度。 */
+    fun resetMeasurement() {
+        generation++
+        measured = false
+    }
+
+    /** WebView 要销毁了：丢掉还没跑完的测量回调（不能再碰一个已 destroy 的 WebView）。 */
+    fun cancelPendingMeasurements() {
+        generation++
+        measured = true
+    }
+
+    override fun onPageFinished(view: WebView, url: String?) {
+        super.onPageFinished(view, url)
+        if (measured) return
+        val expected = generation
+        // 量三次取最大值、只在最后一次上报：`onPageFinished` 之后排版/图片/字体还可能继续落，
+        // 只量一次容易偏小（正文被裁）。取最大值 + 单次上报 = 卡片只长一次。
+        var best = 0
+        MEDIA_CONTENT_HEIGHT_CHECKS_MS.forEachIndexed { index, delayMillis ->
+            view.postDelayed({
+                if (expected != generation || measured) return@postDelayed
+                // `contentHeight` 是 CSS 像素，乘 `scale` 才是 View 像素（Compose 的 px 就是 View 像素）。
+                // `scale` 异常时退回屏幕密度，量出来的高度只会偏小（正文可滚），不会撑坏卡片。
+                val scale = view.scale.takeIf { it > 0f } ?: view.resources.displayMetrics.density
+                val height = (view.contentHeight * scale).roundToInt()
+                if (height > best) best = height
+                if (index == MEDIA_CONTENT_HEIGHT_CHECKS_MS.lastIndex && best > 0) {
+                    measured = true
+                    onContentHeight(best)
+                }
+            }, delayMillis)
+        }
+    }
 
     override fun shouldInterceptRequest(
         view: WebView,
