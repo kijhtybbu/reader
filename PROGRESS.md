@@ -1,8 +1,9 @@
 # 进度记录
 
-> 快照时间：2026-10-29
-> 基线：`upstream/master` = `464891e`（Acclorite/book-story，GPL-3.0-only）
-> 分支：`phase-2`（第二阶段进行中；§1/§2 为第一阶段 `ui-redesign` 快照，当前进度见 §3.1–§3.11）
+> 快照时间：2026-10-31
+> 基线：tag `upstream-base` = `464891ec`（Acclorite/book-story 的 `master`，GPL-3.0-only）
+> 仓库：独立仓库 `kijhtybbu/reader`，分支 `main`（2026-10-31 起独立发展，上游只作只读参考）
+> §1/§2 为第一阶段 `ui-redesign` 快照，该分支已并入 `main` 并删除；当前进度见 §3.1–§3.17
 
 ---
 
@@ -60,7 +61,7 @@ export ANDROID_HOME=$HOME/Library/Android/sdk
 
 | 项 | 内容 |
 | --- | --- |
-| 分支 | `phase-2` |
+| 分支 | `main`（独立仓库 `kijhtybbu/reader`） |
 | 设计文档 | [`docs/phase-2-design.md`](docs/phase-2-design.md) |
 | S1 内容 | 设计文档、依赖（openai-kotlin 4.1.0 + Ktor 3.0.0、tink-android 1.18.0、commons-compress 1.28.0 + xz 1.10）、三个 JVM spike 测试 |
 | 状态 | ✅ 三重门禁通过（`assembleDebug` / `testDebugUnitTest` / `assembleRelease-debug`，171 个单测全绿） |
@@ -650,7 +651,7 @@ S9 的测试增量：
 | 真因 | `app/build.gradle.kts` `targetSdk = 36`（上游 `1772d9e7` 从 35 抬上来的）+ Android 16 新行为：targetSdk 36 的应用在**最小宽度 ≥ 600dp** 的屏幕上被忽略 `screenOrientation` / `setRequestedOrientation()` / `getRequestedOrientation()` / 宽高比限制，全屏与多窗口都一样。测试机 TB322FC：1904×3040 @440dpi → sw ≈ **692dp**，正好踩中。官方例外只有游戏（`appCategory`）、用户在系统「应用宽高比」里手动选择按应用默认行为、以及 `sw < 600dp` 的屏幕 |
 | 修复 | `MainActivity` 加 `<property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true"/>`；合并后的 manifest 已确认带上（`app/build/intermediates/merged_manifest/debug/...`），不引入任何代码改动 |
 | 时限 | Android 17（API 37）**删除了这个 opt-out**，`sw≥600dp` 上永久失效；抬 targetSdk 前必须把大屏上的方向 UI 换掉（隐藏 chip / 改成应用内提示）。已写进 `REBASE.md` §4 与 `UPSTREAM_DIFF.md` §2.3 |
-| 上游状态 | `upstream/master` 的 manifest 同样没有 `<property>`，所以这是上游缺陷（§2.3），fork 只是先修 |
+| 上游状态 | `upstream-base`（`464891ec`）的 manifest 同样没有 `<property>`，所以这是上游缺陷（§2.3），fork 只是先修 |
 | 测试 | 新增 `ReaderOrientationManifestTest`（2 个用例：MainActivity 必须带该 property；`ReaderScreen` 必须继续写 `requestedOrientation` 并在离开时复位 `UNSPECIFIED`）——rebase 吞掉 property 时直接失败，不用等设备 |
 | 验证 | `:app:assembleDebug` / `:app:assembleRelease-debug`（R8 + lintVital）通过；`:app:testDebugUnitTest` **402 个用例 / 59 类 / 0 失败** |
 | 未验证 | 真机行为未复测（当前无连接设备）。设备复测时建议同时跑：`adb shell dumpsys activity top \| grep -i requestedOrientation`（`SCREEN_ORIENTATION_PORTRAIT` 的常量值是 1）、`adb shell dumpsys window \| grep -i mLastOrientation`（加 opt-out 前后应发生变化） |
@@ -786,4 +787,4 @@ R8 把 `text_` 改名成 `e` 后 `parseFrom` 抛异常，而异常被 `runCatchi
 1. **真机上过一遍 §4 的 8 项未验证功能**，重点是书签跳转（唯一修过两次 blocker 的功能）
 2. **给上游提 issue**：protobuf + R8（一行修法，能避免他们下个版本发布包完全不可用）
 3. ~~决定是否做「用户导入字体」~~ **已完成**（`bc3edd8c`），minSdk 29 的成本已兑现
-4. 定期 `git rebase upstream/master`，按 `REBASE.md` 逐条检查
+4. 上游已转只读（`upstream` push URL = `no_push`），不再定期 rebase；仅在主动拾取上游修复（cherry-pick / 局部 merge）时按 `REBASE.md` 逐条检查

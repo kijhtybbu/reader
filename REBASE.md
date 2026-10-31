@@ -1,11 +1,16 @@
-# Rebase checklist
+# 上游改动拾取检查清单
 
-fork 与上游的三处分歧**不会在编译期报错**：改错了照样能 build，只是功能静默退化。
-每次 `git rebase upstream/master` 之后跑一遍下面的检查，任何一条不通过都不要继续。
+本仓库自 2026-10-31 起是独立仓库（`kijhtybbu/reader`，分支 `main`），**不再定期 rebase 上游**。
+上游只作只读参考：`upstream` 的 fetch 指向 Acclorite/book-story，push URL 已设为 `no_push`，
+任何误推会被 git 直接拒绝。
+
+下面这份清单只在**主动从上游拾取改动**时使用（cherry-pick，或局部 merge 上游某段修复）。
+fork 与上游的几处分歧**不会在编译期报错**：改错了照样能 build，只是功能静默退化，
+所以拾取后必须逐条确认，任何一条不通过都不要继续。
 
 ```bash
-git remote -v            # upstream 应指向 Acclorite/book-story
-git log --oneline -3     # 确认自己在 fork 分支上，不是 detached HEAD
+git remote -v            # upstream fetch = Acclorite/book-story / push = no_push；origin = kijhtybbu/reader
+git status -sb           # 确认在 main 上、工作区干净，不是 detached HEAD
 ```
 
 ---
@@ -72,7 +77,8 @@ grep -nE 'subtitle = \{|ExperimentalMaterial3ExpressiveApi' app/src/main/java/ua
 
 原因：`targetSdk = 36` 时 Android 16 在最小宽度 ≥ 600dp 的屏幕上忽略
 `screenOrientation` / `setRequestedOrientation()`（全屏与多窗口都一样），这条 property 是
-唯一的临时解法。上游没有它（`upstream/master` 同样受影响），所以每次 rebase 都会被覆盖。
+唯一的临时解法。上游没有它（`upstream-base` 同样受影响），所以每次整段拾取上游的
+`AndroidManifest.xml` 时都会被覆盖。
 
 预期值：`app/src/main/AndroidManifest.xml` 的 `MainActivity` 内有一条
 `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY`，且值是 `true`。

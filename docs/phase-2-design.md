@@ -1,8 +1,8 @@
 # 第二阶段设计：取词词典与 AI 翻译
 
 > 状态：S1–S9 已实施完成（最终整体 review 按要求取消）
-> 基线：`ui-redesign` 分支（fork of Book's Story）
-> 目标分支：`phase-2`
+> 基线：`ui-redesign` 分支（当时的写作基线；该分支已并入 `main` 并删除）
+> 目标分支：`phase-2`（现已更名为 `main`，仓库为独立的 `kijhtybbu/reader`）
 > 相关文档：`DEV_PLAN.md`、`UPSTREAM_DIFF.md`、`PROGRESS.md`、`REBASE.md`
 
 ## 0. 已确认的产品决策

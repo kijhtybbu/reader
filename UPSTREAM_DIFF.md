@@ -2,10 +2,11 @@
 
 本文档记录本 fork（`dev.jia.reader`）相对上游 **Acclorite/book-story**（`ua.acclorite.book_story`，GPL-3.0-only）的全部差异。
 
-- 基线：`upstream/master` = `464891e`（feat: update translations）
-- 本 fork：23 个提交，89 个文件，+6075 / −360 行
-- 单元测试：21 个文件 / 110 个用例（上游 7 个文件 / 30 个用例）
-- 仪器测试：1 个（排版自检）
+- 基线：tag `upstream-base` = `464891ec`（feat: update translations，即 Acclorite/book-story 的 `master`）
+- 本仓库：独立的 `kijhtybbu/reader`（2026-10-31 起独立发展，上游只作只读参考，不再 rebase）
+- 相对基线：51 个提交，295 个文件，+35045 / −488 行
+- 单元测试：`app` 61 个文件 / 402 个用例 / 59 个类；`:dict-engine` 16 个文件 / 102 个用例
+- 仪器测试：4 个文件
 
 因为本 fork 派生自 GPL-3.0 项目，**整个 fork 同样是 GPL-3.0-only**，不能闭源分发。
 
@@ -33,13 +34,13 @@
 
 准确范围（已用官方发布包 + 未改动的上游源码双向验证）：
 
-| | 官方发布版 **v1.8.0** | `upstream/master`（本 fork 的基线） |
+| | 官方发布版 **v1.8.0** | `upstream-base` = `464891ec`（分叉时的上游 `master`） |
 | --- | --- | --- |
 | `.proto` 文件 | 0 个 | 1 个 |
 | `protobuf-javalite` | 无 | 4.33.2 |
 | minified 构建能否打开书籍 | ✅ 正常 | ❌ **失败** |
 
-protobuf 是在 `upstream/master` 那唯一一个超出 v1.8.0 的提交（`464891ec`，提交信息写的是 "feat: update translations"）里引入的。
+protobuf 是在分叉点那唯一一个超出 v1.8.0 的上游提交（`464891ec`，提交信息写的是 "feat: update translations"）里引入的。
 也就是说：**这是一个会随上游下一个版本发布出去的回归**，而本 fork 因为基于 `master` 才踩到它。
 
 ### 2.1 minified 构建完全无法打开书籍
@@ -55,7 +56,7 @@ Known fields are [... e, ... f, ... g, ... h]
 
 **对照实验**：
 - 官方发布的 **v1.8.0** APK（26.6MB，minified）——打开真实 EPUB 正常（它没有 protobuf）
-- 未改动的 `upstream/master` 构建 `release-debug`——同一台设备、同一个文件，失败（`Could not parse book content.`）
+- 未改动的上游基线（`upstream-base` = `464891ec`）构建 `release-debug`——同一台设备、同一个文件，失败（`Could not parse book content.`）
 - 同一份 master 的 **debug** 构建——正常（不开 R8）
 - 上游 `proguard-rules.pro` 里没有任何 protobuf 规则，而 `protobuf-javalite` 自身不带 consumer 规则
 
@@ -84,7 +85,7 @@ Known fields are [... e, ... f, ... g, ... h]
 `activity.requestedOrientation = …code` → `lastValue` 不是滞后值），所以只能从 manifest 复现，
 纯 JVM 单测与 debug 构建都看不出来。
 
-**上游状态**：`upstream/master` 的 `AndroidManifest.xml` 里没有任何 `<property>`，
+**上游状态**：`upstream-base`（`464891ec`）的 `AndroidManifest.xml` 里没有任何 `<property>`，
 所以这不是 fork 引入的问题，上游同样有这个缺陷。
 
 **修复**：`MainActivity` 声明
