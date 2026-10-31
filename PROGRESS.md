@@ -641,6 +641,20 @@ S9 的测试增量：
 | 测试 | `ReaderLookupArticleTest` 12 → 13 个用例（无点释义拆分、白名单外残行、未打 `<!--def-->` 的导入词典不享受放宽） |
 | 验证 | `:app:testDebugUnitTest` **400 个用例 / 58 类 / 0 失败**；`:dict-engine:test` 102 绿；未跑真机 |
 
+### 3.17 大屏上「锁定竖屏」无效（Android 16 定向策略，不是代码 bug）
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 平板上阅读页「屏幕方向」的六个 chip（默认/自由/竖屏/横屏/锁定竖屏/锁定横屏）点了全部没反应；手机正常 |
+| 归因（代码侧全部正常） | `SettingsManager.screenOrientation`（DataStore `screen_orientation`）持久化正常；`ReaderScreen.kt:445` `activity.requestedOrientation = settings.screenOrientation.lastValue.code`；`Setting.lastValue` 就是 `_value.value`（不是滞后值）；manifest 里没有 `android:screenOrientation`，全局也没有第二处改 `requestedOrientation` |
+| 真因 | `app/build.gradle.kts` `targetSdk = 36`（上游 `1772d9e7` 从 35 抬上来的）+ Android 16 新行为：targetSdk 36 的应用在**最小宽度 ≥ 600dp** 的屏幕上被忽略 `screenOrientation` / `setRequestedOrientation()` / `getRequestedOrientation()` / 宽高比限制，全屏与多窗口都一样。测试机 TB322FC：1904×3040 @440dpi → sw ≈ **692dp**，正好踩中。官方例外只有游戏（`appCategory`）、用户在系统「应用宽高比」里手动选择按应用默认行为、以及 `sw < 600dp` 的屏幕 |
+| 修复 | `MainActivity` 加 `<property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true"/>`；合并后的 manifest 已确认带上（`app/build/intermediates/merged_manifest/debug/...`），不引入任何代码改动 |
+| 时限 | Android 17（API 37）**删除了这个 opt-out**，`sw≥600dp` 上永久失效；抬 targetSdk 前必须把大屏上的方向 UI 换掉（隐藏 chip / 改成应用内提示）。已写进 `REBASE.md` §4 与 `UPSTREAM_DIFF.md` §2.3 |
+| 上游状态 | `upstream/master` 的 manifest 同样没有 `<property>`，所以这是上游缺陷（§2.3），fork 只是先修 |
+| 测试 | 新增 `ReaderOrientationManifestTest`（2 个用例：MainActivity 必须带该 property；`ReaderScreen` 必须继续写 `requestedOrientation` 并在离开时复位 `UNSPECIFIED`）——rebase 吞掉 property 时直接失败，不用等设备 |
+| 验证 | `:app:assembleDebug` / `:app:assembleRelease-debug`（R8 + lintVital）通过；`:app:testDebugUnitTest` **402 个用例 / 59 类 / 0 失败** |
+| 未验证 | 真机行为未复测（当前无连接设备）。设备复测时建议同时跑：`adb shell dumpsys activity top \| grep -i requestedOrientation`（`SCREEN_ORIENTATION_PORTRAIT` 的常量值是 1）、`adb shell dumpsys window \| grep -i mLastOrientation`（加 opt-out 前后应发生变化） |
+
 ## 4. 真机验证结果
 
 设备：Lenovo TB322FC（Android 16 / API 36 / 1904×3040 / 440dpi）

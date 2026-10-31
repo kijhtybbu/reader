@@ -63,6 +63,35 @@ grep -nE 'subtitle = \{|ExperimentalMaterial3ExpressiveApi' app/src/main/java/ua
 
 站内标记：`ui/reader/ReaderTopBar.kt` 的 `subtitle = {` 上方有 `// fork: rebase-critical` 注释。
 
+## 4. `MainActivity` 的定向 opt-out property
+
+**失效表现**：rebase 直接采用上游的 `AndroidManifest.xml`，`MainActivity` 里的
+`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` 被丢掉 —— 编译、安装、启动、翻页全部正常，
+但**平板上**阅读页「屏幕方向」六个选项（默认/自由/竖屏/横屏/锁定竖屏/锁定横屏）又变成
+「点了没反应」。手机上（sw < 600dp）看不出问题，所以很容易漏掉。
+
+原因：`targetSdk = 36` 时 Android 16 在最小宽度 ≥ 600dp 的屏幕上忽略
+`screenOrientation` / `setRequestedOrientation()`（全屏与多窗口都一样），这条 property 是
+唯一的临时解法。上游没有它（`upstream/master` 同样受影响），所以每次 rebase 都会被覆盖。
+
+预期值：`app/src/main/AndroidManifest.xml` 的 `MainActivity` 内有一条
+`android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY`，且值是 `true`。
+
+```bash
+grep -n 'PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY' app/src/main/AndroidManifest.xml   # 期望 1 行
+grep -n 'targetSdk = ' app/build.gradle.kts                                                # 若已是 37，见下方时限
+```
+
+**时限**：Android 17（API 37）删除了这个 opt-out，字段在 `sw≥600dp` 上永久失效。抬
+`targetSdk` 到 37 时必须**同时**改掉大屏上的方向 UI（隐藏 chip 或换成应用内提示），
+不能留着这行假装还能用。
+
+站内标记：`app/src/main/AndroidManifest.xml` 的 `<property>` 上方有 `<!-- fork: rebase-critical -->`
+注释；`ReaderOrientationManifestTest`（2 个用例）会在缺少 property 或 `ReaderScreen` 不再写
+`requestedOrientation` 时直接失败。
+
+---
+
 ---
 
 ## 做完检查之后

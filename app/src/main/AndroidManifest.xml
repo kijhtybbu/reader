@@ -58,6 +58,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- fork: rebase-critical — Android 16 起，targetSdk 36 的应用在最小宽度≥600dp 的屏幕上
+                 会被忽略 screenOrientation / setRequestedOrientation()，即阅读页「屏幕方向」六个选项
+                 （含锁定竖屏）在平板上全部失效。这条 opt-out 让它们恢复生效；Android 17（API 37）
+                 已删除该 opt-out，抬 targetSdk 前必须先换掉大屏上的方向 UI。详见 PROGRESS.md §3.17、
+                 REBASE.md §4，ReaderOrientationManifestTest 钉住。 -->
+            <property
+                android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+                android:value="true" />
         </activity>
 
         <!-- Crash activity -->

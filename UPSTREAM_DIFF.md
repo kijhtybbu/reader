@@ -69,6 +69,31 @@ Known fields are [... e, ... f, ... g, ... h]
 
 **修复**：仓库层记录异常；`TxtContentParser` 区分「文件真的没有节点」与「节点写不进缓存」（后者报 `error_could_not_save_file`）。这条改动是定位 §2.1 的前提。
 
+### 2.3 大屏上「屏幕方向」设置静默失效（Android 16 / targetSdk 36）
+
+**现象**：平板上阅读页「屏幕方向」六个选项（默认 / 自由 / 竖屏 / 横屏 / 锁定竖屏 / 锁定横屏）
+点了全部没反应；手机正常。不崩溃、不报错、日志干净。
+
+**根因**：上游 `1772d9e7` 把 `targetSdk` 35 → **36**。Android 16 起，targetSdk 36 的应用在
+最小宽度 ≥ `600dp` 的屏幕上被忽略 `screenOrientation` / `setRequestedOrientation()` /
+`getRequestedOrientation()` / `resizeableActivity` / 宽高比限制（**全屏与多窗口都一样**）。
+测试机 Lenovo TB322FC：1904×3040 @440dpi → sw ≈ **692dp**，正好踩中；官方例外只有游戏
+（`appCategory`）、用户在系统「应用宽高比」里手动选按应用默认行为、以及 `sw < 600dp` 的屏幕。
+
+代码链路本身是通的（`SettingsManager` 持久化 → `ReaderScreen.kt:445`
+`activity.requestedOrientation = …code` → `lastValue` 不是滞后值），所以只能从 manifest 复现，
+纯 JVM 单测与 debug 构建都看不出来。
+
+**上游状态**：`upstream/master` 的 `AndroidManifest.xml` 里没有任何 `<property>`，
+所以这不是 fork 引入的问题，上游同样有这个缺陷。
+
+**修复**：`MainActivity` 声明
+`<property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />`。
+
+**时限**：Android 17（API 37）**删除了这个 opt-out**（"removes the temporary developer opt-out"），
+`sw≥600dp` 上永久失效。抬 `targetSdk` 到 37 时必须换成别的形态（大屏隐藏这组 chip /
+改成应用内提示），不能指望这行继续有效。
+
 ---
 
 ## 3. 新增功能
