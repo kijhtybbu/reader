@@ -77,6 +77,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -129,10 +130,10 @@ internal const val PopupMaxHeightFraction = 0.45f
 private val CardShape = RoundedCornerShape(18.dp)
 
 /**
- * 富媒体正文在量出内容高度之前的高度。和 Loading 卡片（头部 + 一行提示）差不多高：正文一
- * 到位就直接长到最终高度，中间不会再有一次「先撑满/先塌一下」。
+ * 富媒体正文在量出内容高度之前的最小高度。必须非 0：WebView 在高度 0 的约束下不排版，
+ * `contentHeight` 会一直是 0（量不出来）。
  */
-private val MediaBodyPlaceholderHeight = 56.dp
+private val MediaBodyMinHeight = 56.dp
 
 /**
  * 富媒体正文量不出高度时的兜底：超过这个时间还没量到，就让正文吃满剩余高度（回到旧的
@@ -251,6 +252,34 @@ fun ReaderLookupPopup(
 
     // 链接样式与回调给正文的每一行共用一份：`remember` 里捕获的是稳定的 State 对象，
     // 行内容不变时不会因为父级重组而重新解析 HTML。
+    // 词条解析结果提到这一层：卡片「什么时候可以改尺寸」要由「内容是否就绪」决定
+    // （富媒体词条要先量正文高度），而冻结尺寸的是外层容器。
+    val success = state as? LookupState.Success
+    val successDictId = success?.let { s ->
+        s.entries.getOrNull(s.selectedIndex)?.dictId.orEmpty()
+    }.orEmpty()
+    val successBody = remember(success?.html, success?.word, success?.hasResources, successDictId) {
+        success?.let {
+            parseLookupBody(
+                html = it.html,
+                word = it.word,
+                hasResources = it.hasResources,
+                dictId = successDictId
+            )
+        }
+    }
+    val mediaEntry = successBody is LookupBody.Media
+    // 富媒体正文量出的高度（px）与「量不出来」的兜底标记。换词/换命中就重来一次。
+    val mediaBodyHeight = remember(currentWord, selectedIndex) { mutableStateOf(0) }
+    val mediaBodyUnmeasured = remember(currentWord, selectedIndex) { mutableStateOf(false) }
+    LaunchedEffect(currentWord, selectedIndex, mediaEntry) {
+        if (!mediaEntry) return@LaunchedEffect
+        mediaBodyUnmeasured.value = false
+        delay(MediaBodyMeasureTimeoutMillis)
+        // 一直没量到（WebView 没排版/加载失败）：放行，让卡片按上限吃满，而不是卡在旧高度。
+        if (mediaBodyHeight.value <= 0) mediaBodyUnmeasured.value = true
+    }
+
     val currentOnLookupLink = rememberUpdatedState(onLookupLink)
     val linkStyles = remember(palette.accent) {
         TextLinkStyles(SpanStyle(color = palette.accent, textDecoration = TextDecoration.Underline))
@@ -263,6 +292,9 @@ fun ReaderLookupPopup(
     // 位置在 **layout 阶段**算（`Modifier.offset { }` 的 lambda 版）：动画期间尺寸每帧都在变，
     // 走 state 会每帧重组整张卡片（里面还有 WebView），lambda 版只触发重排。
     val cardSize = remember { mutableStateOf(IntSize.Zero) }
+    // 最近一次「内容已确定」时的卡片尺寸。富媒体词条在正文量出来之前，卡片先冻在这里 ——
+    // 换词典命中时用户不希望看到卡片先缩成一行再长回来（要的是内容确定后一次性变）。
+    val settledCardSize = remember { mutableStateOf(IntSize.Zero) }
     // 第一帧还没量到尺寸，没法算位置，先透明；量到之后再淡入，避免卡片先在左上角闪一下。
     var measured by remember { mutableStateOf(false) }
 
@@ -315,6 +347,26 @@ fun ReaderLookupPopup(
                         }
                     }
                     .heightIn(max = maxHeight)
+                    // 内容还没就绪（富媒体正文还在量高度）时，先把高度冻在「上一次内容确定的
+                    // 尺寸」上：这段时间卡片尺寸完全不动，正文在卡片内部自己排版/滚动。
+                    // 读取都在布局阶段，不会引起重组。
+                    .layout { measurable, constraints ->
+                        val pending = mediaEntry &&
+                            mediaBodyHeight.value == 0 &&
+                            !mediaBodyUnmeasured.value
+                        // 冻结 = 把内容也用冻结高度测量（不能只改上报高度：内容会照旧撑大、
+                        // 裁剪区也跟着内容走，等于没冻）。
+                        val frozen = if (pending) settledCardSize.value.height else 0
+                        val maxHeight = if (frozen > 0) minOf(frozen, constraints.maxHeight) else constraints.maxHeight
+                        val placeable = measurable.measure(
+                            constraints.copy(maxHeight = maxHeight)
+                        )
+                        val height = if (frozen > 0) maxHeight else placeable.height
+                        layout(placeable.width, height) {
+                            // 内容贴词那一侧：朝上弹出时内容沉底，否则靠顶；空余部分留在远侧。
+                            placeable.place(0, if (placement.below) 0 else height - placeable.height)
+                        }
+                    }
                     // 阴影必须画在 clip 之外：Material 的 elevation 是圆角轮廓**外面**的一圈，
                     // 与卡片同尺寸的 clip 会把它整圈剪掉（只剩一张没有投影的平面）。
                     .shadow(elevation = 10.dp, shape = CardShape)
@@ -322,6 +374,10 @@ fun ReaderLookupPopup(
                     .onSizeChanged {
                         cardSize.value = it
                         measured = true
+                        // 内容就绪时的尺寸才是「下一次冻结」的基准：待测量的中间态不覆盖它。
+                        if (!mediaEntry || mediaBodyHeight.value > 0 || mediaBodyUnmeasured.value) {
+                            settledCardSize.value = it
+                        }
                     }
                     // 吞掉点击的节点必须和可见卡片同尺寸，否则卡片外的空白会吃掉本该关闭卡片的点击。
                     .pointerInput(Unit) {
@@ -342,12 +398,16 @@ fun ReaderLookupPopup(
                         is LookupState.Loading -> LoadingCard(state, onSpeak)
                         is LookupState.Success -> SuccessCard(
                             state = state,
+                            body = requireNotNull(successBody),
                             linkStyles = linkStyles,
                             onLookupLink = currentOnLookupLink,
                             onSelect = onSelect,
                             accent = accent,
                             audio = audio,
-                            audioFile = { dictId, path -> currentOnAudioFile.value(dictId, path) }
+                            audioFile = { dictId, path -> currentOnAudioFile.value(dictId, path) },
+                            mediaBodyHeightPx = mediaBodyHeight.value,
+                            mediaBodyUnmeasured = mediaBodyUnmeasured.value,
+                            onMediaContentHeight = { px -> if (px > 0) mediaBodyHeight.value = px }
                         )
 
                         is LookupState.NotFound -> NotFoundCard(
@@ -437,39 +497,28 @@ private fun LoadingCard(state: LookupState.Loading, onSpeak: () -> Unit) {
     )
 }
 
+/**
+ * @param body 已解析好的正文（弹窗层解析，因为它还要用「是不是富媒体词条」来决定卡片能否改尺寸）。
+ * @param mediaBodyHeightPx 富媒体正文量出的高度（px）；0 表示还没量到。
+ * @param mediaBodyUnmeasured 量不出来的兜底标记（见 [MediaBodyMeasureTimeoutMillis]）。
+ * @param onMediaContentHeight WebView 量到正文高度时回调。
+ */
 @Composable
 private fun SuccessCard(
     state: LookupState.Success,
+    body: LookupBody,
     linkStyles: TextLinkStyles,
     onLookupLink: State<(String) -> Unit>,
     onSelect: (Int) -> Unit,
     accent: DictionaryAudioAccent,
     audio: DictionaryAudioController,
-    audioFile: suspend (dictId: String, path: String) -> File?
+    audioFile: suspend (dictId: String, path: String) -> File?,
+    mediaBodyHeightPx: Int,
+    mediaBodyUnmeasured: Boolean,
+    onMediaContentHeight: (Int) -> Unit
 ) {
     val selected = state.entries.getOrNull(state.selectedIndex)
-    // 解析结果只跟词条 HTML、词头、词典有无资源包有关；切 chip 时才重新解析一次。
-    val body = remember(state.html, state.word, state.hasResources, selected?.dictId) {
-        parseLookupBody(
-            html = state.html,
-            word = state.word,
-            hasResources = state.hasResources,
-            dictId = selected?.dictId.orEmpty()
-        )
-    }
     val media = body as? LookupBody.Media
-    // 富媒体正文的高度：WebView 加载完成后用 `contentHeight` 量一次（见 DictionaryArticleWebView
-    // 的 onContentHeight），量到之前先按占位高度显示。
-    // 只跟词走、不跟命中的词典走：切 chip 时上一条的高度先留一会儿，比「先塌下去再长起来」稳。
-    var mediaBodyHeightPx by remember(state.word) { mutableStateOf(0) }
-    // 量不出来的兜底（见 MediaBodyMeasureTimeoutMillis）：正文吃满剩余高度，而不是停在占位高度。
-    var mediaBodyUnmeasured by remember(state.word) { mutableStateOf(false) }
-    LaunchedEffect(state.word, media != null) {
-        if (media == null) return@LaunchedEffect
-        mediaBodyUnmeasured = false
-        delay(MediaBodyMeasureTimeoutMillis)
-        mediaBodyUnmeasured = mediaBodyHeightPx <= 0
-    }
     // 口音偏好只决定「先试哪一条」，其余候选跟在后面：单条失败不等于要立刻回落 TTS。
     val playbackOrder = remember(media?.audio, accent) {
         media?.let { audioPlaybackOrder(it.audio, accent) }.orEmpty()
@@ -532,20 +581,21 @@ private fun SuccessCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(
-                            when {
-                                mediaBodyHeightPx > 0 -> Modifier.height(
-                                    with(LocalDensity.current) { mediaBodyHeightPx.toDp() }
-                                )
-                                // 量不出来：吃满剩余高度（旧的「宁可全高」行为）。
-                                mediaBodyUnmeasured -> Modifier.fillMaxHeight()
-                                else -> Modifier.height(MediaBodyPlaceholderHeight)
+                            if (mediaBodyHeightPx > 0) {
+                                Modifier.height(with(LocalDensity.current) { mediaBodyHeightPx.toDp() })
+                            } else {
+                                // 还没量到（或量不出来）：吃满剩余空间，至少保证一行高 ——
+                                // 高度为 0 的 WebView 不排版，`contentHeight` 永远是 0。
+                                Modifier
+                                    .fillMaxHeight()
+                                    .heightIn(min = MediaBodyMinHeight)
                             }
                         ),
                     html = body.html,
                     dictId = selected?.dictId.orEmpty(),
                     onLookupLink = { word -> onLookupLink.value(word) },
                     onPlayAudio = playAudio,
-                    onContentHeight = { px -> if (px > 0) mediaBodyHeightPx = px }
+                    onContentHeight = onMediaContentHeight
                 )
             }
         }
