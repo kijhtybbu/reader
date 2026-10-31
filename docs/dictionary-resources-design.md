@@ -124,7 +124,7 @@
 - 卡片：`LookupCard` 增加 `fixedHeightBody`；WebView 分支 `weight(1f)` 且**不**套 `verticalScroll`（避免嵌套滚动），头尾仍固定。
 - 验收：JVM 钉住分流函数（`shouldUseMediaRenderer`）；真机验证嵌套滚动、暗色、字号缩放。
 
-**落地情况**：`LookupBody.Media` + `shouldUseMediaRenderer` + `DictionaryArticleWebView`（8 例 `DictionaryArticleWebViewTest`，钉 base URL、路径语义、MIME、注入样式、`textZoom`、`dict-audio://` 解码、锚点放行；分流函数本身由 `ReaderLookupArticleTest` 钉）。
+**落地情况**：卡片方向改为用「卡片最高高度」判定（`lookupPopupPosition(placementHeight = maxHeight)`），Loading→成功之间不会先在下方闪一下再翻到上方；`LookupBody.Media` + `shouldUseMediaRenderer` + `DictionaryArticleWebView`（8 例 `DictionaryArticleWebViewTest`，钉 base URL、路径语义、MIME、注入样式、`textZoom`、`dict-audio://` 解码、锚点放行；分流函数本身由 `ReaderLookupArticleTest` 钉）。
 被真机与实现修正的三点：
 
 | 计划 | 现实 |

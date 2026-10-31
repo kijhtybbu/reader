@@ -108,8 +108,9 @@ class ReaderLookupPopupPositionTest {
     }
 
     @Test
-    fun `a card flipped above a word near the top stays below the status bar`() {
-        // 卡片几乎占满安全区：只能翻到上方，而上方已经越过状态栏 —— 必须夹回来。
+    fun `a card taller than the safe area is clamped inside it`() {
+        // 卡片 1800 高、词在顶部：下方（1550）比上方（260）宽，按规则贴在下方，
+        // 但整张卡放不下 —— 必须夹进安全区，不能把状态栏盖住。
         val safe = IntRect(left = 0, top = 120, right = window.width, bottom = window.height)
         val tall = IntSize(600, 1800)
 
@@ -119,7 +120,56 @@ class ReaderLookupPopupPositionTest {
             size = tall
         )
 
-        assertEquals(120 + margin, offset.y)
-        assertTrue(offset.y >= safe.top)
+        assertEquals(safe.bottom - margin - tall.height, offset.y)
+        assertTrue(offset.y >= safe.top + margin)
+    }
+
+    @Test
+    fun `the direction is decided before the content is measured`() {
+        // Loading 卡片只有 300 高，下方够放；但完整词条可能长到 900。按「当前高度」判方向
+        // 会让卡片先在下方闪一下再翻上去 —— 所以方向要用最大高度（reservedHeight）来定。
+        val anchor = Rect(left = 300f, top = 1100f, right = 400f, bottom = 1130f)
+
+        val below = lookupPopupPosition(anchor, screen, popup, margin, gap, placementHeight = 300)
+        val reserved = lookupPopupPosition(anchor, screen, popup, margin, gap, placementHeight = 900)
+
+        // 只有当前高度够放时贴在下方
+        assertEquals(1138, below.y)
+        // 按最高卡片算，下方放不下 → 一开始就翻到上方（卡片只占 300 高，底边贴词头）
+        assertEquals(1100 - gap - popup.height, reserved.y)
+        assertTrue(reserved.y + popup.height <= 1100 - gap)
+    }
+
+    @Test
+    fun `when neither side fits the taller card the larger side wins`() {
+        // 词在窗口中间偏下：上方 980、下方 950，都放不下 1800 高的卡片 —— 选上方。
+        val anchor = Rect(left = 300f, top = 1000f, right = 400f, bottom = 1030f)
+        val tall = IntSize(600, 900)
+
+        val offset = lookupPopupPosition(
+            anchor = anchor,
+            safeBounds = screen,
+            popupSize = tall,
+            margin = margin,
+            gap = gap,
+            placementHeight = 1800
+        )
+
+        // 上方空间更大 → 翻到上方，并以底边对齐词头
+        assertEquals(1000 - gap - tall.height, offset.y)
+        assertTrue(offset.y >= margin)
+    }
+
+    @Test
+    fun `a card flipped above grows upwards without changing the anchor edge`() {
+        // 同一方向下卡片变高，底边位置保持不变（内容向上长），不会横向/纵向跳来跳去。
+        val anchor = Rect(left = 300f, top = 1700f, right = 400f, bottom = 1730f)
+        val short = IntSize(600, 200)
+        val grown = IntSize(600, 600)
+
+        val a = lookupPopupPosition(anchor, screen, short, margin, gap, placementHeight = 900)
+        val b = lookupPopupPosition(anchor, screen, grown, margin, gap, placementHeight = 900)
+
+        assertEquals(a.y + short.height, b.y + grown.height)
     }
 }
