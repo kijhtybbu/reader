@@ -4,6 +4,7 @@ import com.qiuminal.juicedict.engine.mdict.MdxDictionary
 import com.qiuminal.juicedict.engine.mdict.MdxLog
 import com.qiuminal.juicedict.engine.mdict.MdxProbe
 import com.qiuminal.juicedict.engine.mdict.MdxResourceFiles
+import com.qiuminal.juicedict.engine.mdict.MdxResourcePack
 import java.io.File
 import java.io.InputStream
 import java.util.zip.GZIPInputStream
@@ -20,6 +21,64 @@ data class MdxProbeInfo(
     /** Entry count from the key-section preamble; 0 when unreadable. */
     val entryCount: Long,
 )
+
+/**
+ * Read-only access to the `.mdd` resource packs that belong to one MDX dictionary:
+ * images, stylesheets, fonts and pronunciation audio, addressed by MDD path.
+ *
+ * Kept separate from [DictionaryEngine] on purpose: a renderer fetches resources while
+ * resolving a stylesheet or an image, and that must not contend for the lock the lookup
+ * path holds.
+ *
+ * ## Threading
+ *
+ * Instances are **not** thread-safe. Behind `read` sits a shared `MdxFileReader` whose
+ * `seek` + `readFully` is non-atomic, plus LRU caches over key and record blocks, so two
+ * threads reading at once can interleave the seek of one with the read of the other.
+ * Callers must serialize per instance — one lock per `MdxResources` — rather than
+ * serializing all resource reads globally; separate dictionaries are independent.
+ *
+ * `close` releases the file handles; using the instance afterwards is undefined.
+ */
+interface MdxResources : AutoCloseable {
+    /** File names of the packs that opened, in the order [read] searches them. */
+    val names: List<String>
+
+    /**
+     * The bytes stored at MDD [path], or null when no pack carries it.
+     *
+     * `path` may be written either way the referring HTML writes it: with or without
+     * leading `\`, with `/` or `\` separators, and in any case. Missing resources are
+     * routine (the HTML names files the pack does not ship), so null is not an error.
+     */
+    fun read(path: String): ByteArray?
+}
+
+/**
+ * What [DictionaryEngines.checkMdxResourcePack] found in a `.mdd` file.
+ *
+ * [DictionaryEngines.openMdxResources] deliberately swallows per-pack failures (one broken
+ * pack must not make the others unreadable), which is the wrong answer for an import: the
+ * user needs to know whether the pack is encrypted or simply corrupt. This type carries
+ * that distinction without exposing the parser's exception types.
+ */
+sealed interface MdxPackCheck {
+    /** The file opened as a resource pack; [resourceCount] is its key count. */
+    data class Ok(val resourceCount: Int) : MdxPackCheck
+
+    /** A password is required (the header's `Encrypted` bit). */
+    data object Encrypted : MdxPackCheck
+
+    /** An MDict container of the other kind — a `.mdx` article dictionary, most likely. */
+    data object NotResourcePack : MdxPackCheck
+
+    /**
+     * The pack is an MDict resource container but its key/record sections cannot be read
+     * (truncated, or a failure whose message the constructor did not label). A file that is
+     * not an MDict container at all is [NotResourcePack] instead.
+     */
+    data class Corrupt(val message: String?) : MdxPackCheck
+}
 
 /**
  * The app-facing way into the vendored engine.
@@ -131,6 +190,59 @@ object DictionaryEngines {
      */
     fun mddFilesFor(dir: File, baseName: String): List<File> = MdxResourceFiles.pairsFor(dir, baseName)
 
+    /**
+     * Opens [mddFiles] as one resource set, searched in the given order — the order
+     * [mddFilesFor] returns, so `<base>.mdd` wins over `<base>.1.mdd`.
+     *
+     * A pack that cannot be opened (not an MDict file, an `.mdx` by mistake, password
+     * protected, truncated) is reported through [logSink] and skipped: one broken pack
+     * must not make the others unreadable, because MDict splits a dictionary's resources
+     * across numbered packs (《字源 (2012)》 keeps 43MB of scans in `.1.mdd`). Returns
+     * null only when [mddFiles] is empty or nothing opened.
+     */
+    fun openMdxResources(mddFiles: List<File>): MdxResources? {
+        val packs = ArrayList<MdxResourcePack>(mddFiles.size)
+        for (file in mddFiles) {
+            try {
+                packs.add(MdxResourcePack(file))
+            } catch (e: Exception) {
+                // Deliberately not `Throwable`: a pack whose declared size is nonsense can
+                // throw OOM while decompressing a key block, and swallowing that would keep
+                // the process running in a state where every later allocation is a coin flip.
+                // The parsers themselves only throw IllegalArgumentException/IllegalStateException.
+                MdxLog.warn(TAG, "could not open MDict resource pack ${file.name}", e)
+            }
+        }
+        return if (packs.isEmpty()) null else MdxResourcePacks(packs)
+    }
+
+    /**
+     * Opens and immediately closes [file] as a resource pack, reporting what it is.
+     *
+     * The import path copies `.mdd` files one at a time and has to say *why* a pack is
+     * unusable: [MdxPackCheck.Encrypted] is a different user action (find an unencrypted
+     * dictionary) than [MdxPackCheck.Corrupt] (the copy or the source file is broken).
+     * Classification follows [MdxResourcePack]'s constructor failures, whose messages are
+     * the only thing the vendored parser exposes; an unrecognised failure is reported as
+     * [MdxPackCheck.Corrupt] with the original message.
+     */
+    fun checkMdxResourcePack(file: File): MdxPackCheck {
+        return try {
+            MdxResourcePack(file).use { MdxPackCheck.Ok(it.resourceCount) }
+        } catch (e: Exception) {
+            // Same reasoning as `openMdxResources`: not `Throwable`. A pack whose declared
+            // size is nonsense can throw OOM while inflating a key block, and reporting
+            // that as "corrupt file" would leave the process in a fragile state.
+            when {
+                e.message?.contains("password", ignoreCase = true) == true -> MdxPackCheck.Encrypted
+                e.message?.contains("resource pack", ignoreCase = true) == true ->
+                    MdxPackCheck.NotResourcePack
+
+                else -> MdxPackCheck.Corrupt(e.message)
+            }
+        }
+    }
+
     /** Header-only read of an MDX file on disk; null when it is not an MDict file. */
     fun probeMdx(file: File): MdxProbeInfo? = MdxProbe.read(file)?.toInfo()
 
@@ -145,4 +257,27 @@ object DictionaryEngines {
     private fun MdxProbe.Info.toInfo() = MdxProbeInfo(title, description, entryCount)
 
     private const val TAG = "DictionaryEngines"
+}
+
+/** First pack that carries a path answers; the rest are never touched for that read. */
+private class MdxResourcePacks(
+    private val packs: List<MdxResourcePack>,
+) : MdxResources {
+
+    override val names: List<String> = packs.map { it.name }
+
+    override fun read(path: String): ByteArray? {
+        for (pack in packs) {
+            // An empty record (size 0 in the pack) must not mask a real one further down:
+            // "this pack does not have the bytes" is the same answer as "no such path".
+            val bytes = pack.read(path)?.takeIf { it.isNotEmpty() } ?: continue
+            return bytes
+        }
+        return null
+    }
+
+    override fun close() {
+        // A pack failing to close is not worth failing the caller's release path over.
+        for (pack in packs) runCatching { pack.close() }
+    }
 }

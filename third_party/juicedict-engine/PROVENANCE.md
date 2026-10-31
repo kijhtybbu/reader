@@ -95,6 +95,35 @@ mdict/MdxKeyOrderTest.kt  mdict/MdxLinkRewriteTest.kt  mdict/Ripemd128Test.kt
      `E:\dictionary\MDict`，没有该目录时直接 `return`，所以容器布局必须由合成 fixture 钉住。
      S3 追加：同一条 fixture 也断言 `probeMdxHead` 的 `entryCount`，因为 S4 导入时
      只读头部（不拷整个文件）就要拿到条目数。
+   - `src/test/kotlin/com/qiuminal/juicedict/engine/MdxResourcesFixtureTest.kt`：
+     `openMdxResources`（见第 4 条）的合成 MDD 回归。运行时用 `java.util.zip.Deflater`
+     造一个合法 MDD 2.0（根标签 `Library_Data`、key 恒为 UTF-16、`StripKey="No"`、
+     record 无尾 NUL），钉住四类命中（前导 `\` / 无前导 `\` / `/` 分隔 / 大小写）、
+     未知名与空路径返回 `null`、多包按顺序回退（同键取前一个）、坏包跳过且其余可用
+     （同时断言 `logSink` 上报）、空列表与全部失败返回 `null`。不依赖本机语料。
+
+4. **新增** `MdxResources` / `openMdxResources`（2026-10，词典资源第 1 步）：
+   同一个 `DictionaryEngines.kt` 里的 public 包装，**没有改动任何解析文件**。上游的
+   `MdxResourcePack` 是 `internal`，而且只在 `MdxDictionary.resource()` 后面，app 层要
+   自己按词典取 CSS / 图片 / 发音就没有入口：
+   - `interface MdxResources : AutoCloseable`：`names`（按搜索顺序的包文件名）与
+     `read(path)`（未命中返回 `null`；路径容错仍是 `MdxResourcePack.candidatesFor` 那一套，
+     不在这里重写）。KDoc 写明实例**非线程安全**：`seek` + `readFully` 非原子，调用方需按
+     实例串行。
+   - `openMdxResources(mddFiles)`：按传入顺序开各包；单个包打不开（不是 MDict、误传 `.mdx`、
+     加密、截断）只经 `logSink` 上报并跳过，其余照常可用（《字源 (2012)》的 43MB 扫描件分在
+     两个包里，丢一个不能让另一个不可读）；空列表或全部失败返回 `null`；`read` 按顺序回退。
+   - 已知缺口：包打开失败时该包的 `MdxFileReader` 不会被关掉（句柄在 `MdxResourcePack.init`
+     里先建、后解析，解析抛异常时没有关闭路径；补它就得改解析文件）。失败只发生在损坏文件上，
+     导入路径会先校验再落盘，所以正常使用碰不到；只有反复拿同一个坏文件重试才会累积句柄。
+   - `checkMdxResourcePack(file)`（导入用）：打开一个 `.mdd` 再立刻关掉，把结果分成
+     `MdxPackCheck.Ok(resourceCount)` / `Encrypted` / `NotResourcePack` / `Corrupt(message)`。
+     为什么需要它：`openMdxResources` 按设计吞掉每个包的失败（分卷资源丢一个不能让其余的不可读），
+     但导入必须告诉用户「这个包加密了」还是「这个包坏了」——两者的下一步操作完全不同。分类照搬
+     `MdxResourcePack.init` 的 `require` 消息（含 `password` → `Encrypted`，含 `resource pack` →
+     `NotResourcePack`，其余 → `Corrupt`），仍然**没有改动任何解析文件**。
+     `MdxResourcesFixtureTest` 钉住三个分类（`Encrypted` 在 fixture 里没有构造，只能靠 `MdxResourcePack` 的固定消息分支覆盖）：合法包 → `Ok`、`Dictionary` 根标签（即误选 `.mdx`）
+     → `NotResourcePack`、省略 record section 的截断包 → `Corrupt`。
 
 ## 未复制的上游测试及原因
 
