@@ -698,7 +698,6 @@ S9 的测试增量：
 | 词条发音 | 点喇叭 → `cache/dict-audio/481c698b060e03e7.mp3`（含 dictId hash 的文件名），MediaPlayer/NuPlayer 播放，`requestAudioFocus` 由 `DictionaryAudioPlayer` 发起 |
 | 暗色预设下的 WebView | 阅读配色切到暗色预设后重查 `nightmare` 并切 OALD9：卡片深底、正文浅字、蓝色词头/NOUN 徽标正常，没有出现「算法暗化把注入的浅色字反成深色」的双反转 |
 | 系统字号缩放（fontScale） | `settings put system font_scale 1.3` 后重查 OALD9：WebView 正文（词头/IPA/NOUN/释义）与卡片标题同步放大，`textZoom` 乘了 `LocalDensity.current.fontScale` |
-| 取词卡片方向稳定 | 底部词（`abandoned`，y≈2335）与中部词（`But`，y≈1380）：前者一次就出现在上方、后者贴下方，Loading→结果之间不再翻面（方向按卡片最高高度预先定好） |
 | 词条正文与 ECDICT 同字号 | 阅读预设为「大字」（22pt）时，修前 WebView 正文 `textZoom=137%` 明显大于 ECDICT 释义；改成「词典 16px 基准 → 卡片正文 14sp」固定映射后两者视觉一致，同一条 `nightmare` 能完整显示两条例项 |
 
 ### 未在真机验证 ❌（只做过单测或模拟器）

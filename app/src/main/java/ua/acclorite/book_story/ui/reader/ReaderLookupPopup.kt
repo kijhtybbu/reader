@@ -235,23 +235,11 @@ fun ReaderLookupPopup(
     // 卡片尺寸要自己量：弹窗是全屏的（见下面的说明），`PopupPositionProvider` 拿到的
     // `popupContentSize` 是全屏尺寸，不能再用来算卡片位置。
     var cardSize by remember { mutableStateOf(IntSize.Zero) }
-    // 判方向时按卡片**最高可能高度**算，而不是当前量到的高度：Loading 状态的卡片只有
-    // 一行「正在查询…」，词条回来后会突然长到 maxHeight 附近。用当前高度判方向的话，
-    // 下方只够放下 Loading 卡片、放不下完整词条 —— 卡片会先在下方闪一下再翻到上方。
-    // 先按最高高度定好方向，之后内容怎么长都只在那一侧生长，位置不再跳。
-    val reservedHeight = with(density) { maxHeight.roundToPx() }
-    val cardOffset = remember(anchor, safeBounds, cardSize, margin, gap, reservedHeight) {
+    val cardOffset = remember(anchor, safeBounds, cardSize, margin, gap) {
         if (cardSize == IntSize.Zero) {
             IntOffset.Zero
         } else {
-            lookupPopupPosition(
-                anchor = anchor,
-                safeBounds = safeBounds,
-                popupSize = cardSize,
-                margin = margin,
-                gap = gap,
-                placementHeight = reservedHeight
-            )
+            lookupPopupPosition(anchor, safeBounds, cardSize, margin, gap)
         }
     }
 
@@ -934,15 +922,7 @@ internal fun lookupPopupPosition(
     safeBounds: IntRect,
     popupSize: IntSize,
     margin: Int,
-    gap: Int,
-    /**
-     * 判「贴下还是翻上」时假设的卡片高度，默认等于当前尺寸。
-     *
-     * 调用方传卡片的最大高度（`PopupMaxHeightFraction`）：卡片从 Loading（一行）长到完整
-     * 词条时尺寸会变，用当前尺寸判方向会让它在下方闪一下再翻到上方。方向一旦按最高高度
-     * 定好，后续尺寸变化只在同一侧生长，位置不跳。
-     */
-    placementHeight: Int = popupSize.height
+    gap: Int
 ): IntOffset {
     val minX = safeBounds.left + margin
     val maxX = (safeBounds.right - popupSize.width - margin).coerceAtLeast(minX)
@@ -957,22 +937,12 @@ internal fun lookupPopupPosition(
     }
 
     val x = (anchor.center.x - popupSize.width / 2f).roundToInt().coerceIn(minX, maxX)
-    val top = anchor.top.roundToInt()
-    val bottom = anchor.bottom.roundToInt()
-    val spaceBelow = safeBounds.bottom - margin - (bottom + gap)
-    val spaceAbove = top - gap - (safeBounds.top + margin)
-    // 两边都放不下最高卡片时选空间大的一侧：宁可标签贴得近一点，也不要在下方挤成一截。
-    val placeBelow = when {
-        placementHeight <= spaceBelow -> true
-        placementHeight <= spaceAbove -> false
-        else -> spaceBelow >= spaceAbove
-    }
-    val y = if (placeBelow) {
-        (bottom + gap).coerceIn(minY, maxY)
+    val below = anchor.bottom.roundToInt() + gap
+    val y = if (below + popupSize.height <= safeBounds.bottom - margin) {
+        below.coerceIn(minY, maxY)
     } else {
-        // 翻到上方时以**底边**对齐词头：内容再长也是往上长，不会把卡片顶到别的方向去。
         // 上方也放不下时贴安全区顶，宁可盖住词本身也不要一半在屏幕外/状态栏下面。
-        (top - gap - popupSize.height).coerceIn(minY, maxY)
+        (anchor.top.roundToInt() - gap - popupSize.height).coerceIn(minY, maxY)
     }
     return IntOffset(x, y)
 }
