@@ -266,9 +266,10 @@ internal fun openDictionaryEngine(dictionary: InstalledDictionary): DictionaryEn
             DictionaryEngines.openMdx(
                 id = dictionary.id,
                 mdxFile = File(dictionary.directory, "${dictionary.baseName}.mdx"),
-                // 本期不导入 `.mdd`，所以导入词典这里永远是空列表；一旦将来支持资源包，
-                // 只要把 `.mdd` 复制进同一目录，这一行就会自动配对。
-                mddFiles = DictionaryEngines.mddFilesFor(dictionary.directory, dictionary.baseName),
+                // 资源包（`.mdd`）不归查询引擎：句柄由 `DictionaryResourceStore` 独立持有
+                // （设计 §2.2「资源句柄与查询引擎分离」），`MdxDictionary.resource()` 全仓无调用者。
+                // 传进来只会让每次打开词典都多解析几个 mdd 的 key index、常驻几个 fd。
+                mddFiles = emptyList(),
                 title = dictionary.name,
                 description = ""
             )

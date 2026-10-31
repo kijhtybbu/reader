@@ -388,7 +388,9 @@ fun ReaderContent(
                     lookupModel.dismiss()
                     openDictionary(ReaderEvent.OnOpenDictionary(word))
                 },
-                onTtsUnavailable = { ttsUnavailable = true }
+                onTtsUnavailable = { ttsUnavailable = true },
+                // 词条自带录音（`.mdd` 里的 `.mp3`）：落盘交给卡片的播放器，缺失/播不了时卡片回落 TTS。
+                onAudioFile = { dictId, path -> lookupModel.audioFile(context, dictId, path) }
             )
         }
 

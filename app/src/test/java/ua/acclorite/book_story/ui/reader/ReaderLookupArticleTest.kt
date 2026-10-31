@@ -9,6 +9,9 @@
  *  - 新内置 ECDICT：带 `<!--ecdict|…-->` 元信息与 `<!--def-->` 释义标记；
  *  - 旧内置 ECDICT：没有标记，靠启发式拆；
  *  - 导入的 MDX：简单行内标签会拆，带块级标签的整体交给 fromHtml。
+ *
+ * 另外钉住富媒体分流（设计 §3.6）：只有「词典带 `.mdd` 资源包」且正文引用了
+ * 图片/表格/样式表/发音时才走 `LookupBody.Media`（WebView），否则保持原来的卡片。
  */
 
 package ua.acclorite.book_story.ui.reader
@@ -215,5 +218,97 @@ class ReaderLookupArticleTest {
     @Test
     fun `plain text strips tags and common entities`() {
         assertEquals("apple 'n' pear", plainText("<b>apple</b> &#x27;n&#x27; pear"))
+    }
+
+    /* ------ 富媒体分流（设计 §3.6）------ */
+
+    @Test
+    fun `media routing needs both a resource pack and a media marker`() {
+        // 有资源包 + 命中标记 → WebView
+        assertTrue(shouldUseMediaRenderer("<img src=\"thumb_apple.png\">", hasResources = true))
+        assertTrue(shouldUseMediaRenderer("<TABLE><tr><td>x</td></tr></TABLE>", hasResources = true))
+        assertTrue(shouldUseMediaRenderer("<link REL=\"stylesheet\" href=\"oalecd9.css\">", true))
+        assertTrue(shouldUseMediaRenderer("<a href=\"sound://apple__gb_1.mp3\">x</a>", true))
+        // 没有资源包：断链只会把能读的卡片变成空白，保持结构化卡片
+        assertFalse(shouldUseMediaRenderer("<img src=\"thumb_apple.png\">", hasResources = false))
+        // 有资源包但正文没有媒体标记：纯文本词条继续走卡片
+        assertFalse(shouldUseMediaRenderer("<b>apple</b><br>n. 苹果", hasResources = true))
+        // 不是样式表的 link 不算
+        assertFalse(shouldUseMediaRenderer("<link rel=\"icon\" href=\"a.ico\">", true))
+    }
+
+    @Test
+    fun `entries with resource packs and a stylesheet link render as media`() {
+        // 真实牛津高阶 9 的形态：`<link>`（fragment 解析后落在 body）+ `sound://` 发音 + 图片。
+        val html = "<link rel=\"stylesheet\" href=\"oalecd9.css\">" +
+            "<h-g><pron>/ˈæpl/</pron></h-g>" +
+            "<div class=\"entry\"><img src=\"thumb_apple.png\">" +
+            "<xhtml:a data-sound=\"sound://\\oald9\\_apple__uss_2.mp3\">play</xhtml:a></div>"
+
+        val body = parseLookupBody(html, "apple", hasResources = true, dictId = "oald")
+
+        assertTrue(body is LookupBody.Media)
+        body as LookupBody.Media
+        assertEquals("/ˈæpl/", body.phonetic)
+        assertEquals(listOf("\\oald9\\_apple__uss_2.mp3"), body.audio.map { it.path })
+        // sound:// 已换成自定义 scheme（路径整体编码，避免反斜杠被拆成多段）
+        assertEquals(
+            "dict-audio://oald/%5Coald9%5C_apple__uss_2.mp3",
+            body.audio.single().url
+        )
+        assertFalse(body.html.contains("sound://"))
+        assertTrue(body.html.contains("dict-audio://oald/"))
+        // 样式表链接与图片原样保留，交给 base URL 解析
+        assertTrue(body.html.contains("oalecd9.css"))
+        assertTrue(body.html.contains("thumb_apple.png"))
+    }
+
+    @Test
+    fun `media entries without resource packs keep the fallback card`() {
+        val html = "<div class=\"entry\"><pron>/ˈæpl/</pron><img src=\"thumb_apple.png\"></div>"
+
+        // 默认 hasResources = false：现有调用（与没有 .mdd 的词典）不受影响
+        val body = parseLookupBody(html, "apple")
+
+        assertTrue(body is LookupBody.Rich)
+        assertFalse((body as LookupBody.Rich).html.contains("dict-audio://"))
+        // 块级回退也要带上音标（旧实现这里写的是 phonetic = null）
+        assertEquals("/ˈæpl/", body.phonetic)
+    }
+
+    @Test
+    fun `block level fallback keeps the phonetic`() {
+        val html = "<div class=\"head\"><span class=\"phon\">/ˈæpl/</span></div>" +
+            "<div class=\"entry\"><p>apple</p><ul><li>a fruit</li></ul></div>"
+
+        val body = parseLookupBody(html, "apple") as LookupBody.Rich
+
+        assertEquals("/ˈæpl/", body.phonetic)
+        // 正文原样保留（只是改成 Rich 渲染）
+        assertTrue(body.html.contains("<li>a fruit</li>"))
+    }
+
+    @Test
+    fun `bracket labels are not mistaken for phonetics`() {
+        // 真实语料里块级/富媒体词条会出现 <span>[U]</span>、<div>[1]</div>、[sing.]
+        for (label in listOf("[U]", "[C]", "[1]", "[sing.]", "[pl.]", "[ 12 ]")) {
+            val html = "<div class=\"cf\"><span>$label</span></div><div>apple</div>"
+            val body = parseLookupBody(html, "apple") as LookupBody.Rich
+            assertNull("$label must not become the phonetic", body.phonetic)
+        }
+    }
+
+    @Test
+    fun `bracket phonetics survive the label filter`() {
+        val html = "<div class=\"head\"><span class=\"phon\">[ˈæpl]</span></div>" +
+            "<div class=\"entry\"><p>apple</p></div>"
+
+        val body = parseLookupBody(html, "apple") as LookupBody.Rich
+
+        assertEquals("[ˈæpl]", body.phonetic)
+
+        // 老式 DJ 音标没有 IPA 附标也不能被过滤掉
+        val djs = "<div class=\"head\"><span class=\"phon\">[ei]</span></div><div>x</div>"
+        assertEquals("[ei]", (parseLookupBody(djs, "a") as LookupBody.Rich).phonetic)
     }
 }

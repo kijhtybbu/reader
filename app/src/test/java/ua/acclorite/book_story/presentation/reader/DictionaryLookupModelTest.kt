@@ -10,6 +10,9 @@
  *  - Success 一定带第一条命中的正文；
  *  - 切词条会重新取正文，而不是复用第一条；
  *  - 取消是「真的取消」：dismiss 之后迟到的结果不能再写回状态（否则卡片关了又自己弹出来）。
+ *
+ * 另外钉住 `hasResources`（设计 §3.6）：它决定正文走 WebView 还是结构化卡片，所以必须在
+ * 每次查询与切词条时从当前词典快照重算（不用旧结论、不写死）。
  */
 
 package ua.acclorite.book_story.presentation.reader
@@ -27,11 +30,15 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import ua.acclorite.book_story.data.dictionary.DictionaryHit
 import ua.acclorite.book_story.data.dictionary.DictionaryRepository
+import ua.acclorite.book_story.data.dictionary.DictionaryType
+import ua.acclorite.book_story.data.dictionary.InstalledDictionary
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DictionaryLookupModelTest {
@@ -205,6 +212,85 @@ class DictionaryLookupModelTest {
         model.lookup("—", anchor = null)
         advanceUntilIdle()
 
+        assertEquals(LookupState.Idle, model.state.value)
+    }
+
+    /* ------ hasResources：正文分流（设计 §3.6）------ */
+
+    private fun dictionary(id: String, hasResources: Boolean) = InstalledDictionary(
+        id = id,
+        type = DictionaryType.MDX,
+        name = id,
+        baseName = id,
+        directory = File("/tmp/$id"),
+        wordCount = 1,
+        sizeBytes = 0L,
+        enabled = true,
+        importedAt = 0L,
+        builtIn = false,
+        hasResources = hasResources
+    )
+
+    @Test
+    fun `success carries the resource flag of the hit dictionary`() = runTest(dispatcher) {
+        coEvery { repository.lookup("apple") } returns listOf(appleImported)
+        coEvery { repository.article("imported", appleImported) } returns "<img src=\"a.png\">"
+        val model = DictionaryLookupModel(repository) {
+            listOf(dictionary("builtin", hasResources = false), dictionary("imported", true))
+        }
+
+        model.lookup("apple", anchor = null)
+        advanceUntilIdle()
+
+        assertTrue((model.state.value as LookupState.Success).hasResources)
+    }
+
+    @Test
+    fun `builtin dictionaries never report resource packs`() = runTest(dispatcher) {
+        coEvery { repository.lookup("apple") } returns listOf(apple)
+        coEvery { repository.article("builtin", apple) } returns "<b>apple</b>"
+        val model = DictionaryLookupModel(repository) {
+            listOf(dictionary("builtin", hasResources = false))
+        }
+
+        model.lookup("apple", anchor = null)
+        advanceUntilIdle()
+
+        assertFalse((model.state.value as LookupState.Success).hasResources)
+    }
+
+    @Test
+    fun `selecting another dictionary recomputes the resource flag`() = runTest(dispatcher) {
+        coEvery { repository.lookup("apple") } returns listOf(apple, appleImported)
+        coEvery { repository.article("builtin", apple) } returns "<b>apple</b>"
+        coEvery { repository.article("imported", appleImported) } returns "<img src=\"a.png\">"
+        val model = DictionaryLookupModel(repository) {
+            listOf(dictionary("builtin", hasResources = false), dictionary("imported", true))
+        }
+        model.lookup("apple", anchor = null)
+        advanceUntilIdle()
+        assertFalse((model.state.value as LookupState.Success).hasResources)
+
+        model.select(1)
+        advanceUntilIdle()
+
+        val state = model.state.value as LookupState.Success
+        assertEquals(1, state.selectedIndex)
+        assertTrue(state.hasResources)
+    }
+
+    @Test
+    fun `dismiss drops the success state and its resource flag`() = runTest(dispatcher) {
+        coEvery { repository.lookup("apple") } returns listOf(appleImported)
+        coEvery { repository.article("imported", appleImported) } returns "<img src=\"a.png\">"
+        val model = DictionaryLookupModel(repository) { listOf(dictionary("imported", true)) }
+        model.lookup("apple", anchor = null)
+        advanceUntilIdle()
+        assertTrue(model.state.value is LookupState.Success)
+
+        model.dismiss()
+
+        // 卡片已关：不能还留着一个带 hasResources 的 Success 给下一次重组拿到
         assertEquals(LookupState.Idle, model.state.value)
     }
 }

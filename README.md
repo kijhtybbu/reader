@@ -77,7 +77,7 @@ open-source, offering you a personalized, ad-free journey through your favorite 
 - **Offline dictionary lookup** — the full ECDICT database (770,611 entries, MIT) is bundled and
   installed on first launch; tap or long-press a word for a card anchored to it. No network needed.
 - **MDX / StarDict import** — import your own `.mdx` file or a StarDict folder, enable/disable
-  dictionaries and pick a preferred one. `.mdd` resource packs are not imported yet.
+  dictionaries and pick a preferred one. An MDX dictionary can be imported together with its `.mdd` resource packs (images, stylesheets, fonts, recorded pronunciation) through the folder entry.
 - **AI paragraph translation and grammar** — double-tap a paragraph for a centered dialog with
   streaming translation and structured grammar analysis. Results are persisted in Room
   (keyed by prompt version, model, target language and endpoint host), so opening the same

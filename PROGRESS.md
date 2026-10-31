@@ -3,7 +3,7 @@
 > 快照时间：2026-10-31
 > 基线：tag `upstream-base` = `464891ec`（Acclorite/book-story 的 `master`，GPL-3.0-only）
 > 仓库：独立仓库 `kijhtybbu/reader`，分支 `main`（2026-10-31 起独立发展，上游只作只读参考）
-> §1/§2 为第一阶段 `ui-redesign` 快照，该分支已并入 `main` 并删除；当前进度见 §3.1–§3.17
+> §1/§2 为第一阶段 `ui-redesign` 快照，该分支已并入 `main` 并删除；当前进度见 §3.1–§3.18
 
 ---
 
@@ -656,6 +656,26 @@ S9 的测试增量：
 | 验证 | `:app:assembleDebug` / `:app:assembleRelease-debug`（R8 + lintVital）通过；`:app:testDebugUnitTest` **402 个用例 / 59 类 / 0 失败** |
 | 未验证 | 真机行为未复测（当前无连接设备）。设备复测时建议同时跑：`adb shell dumpsys activity top \| grep -i requestedOrientation`（`SCREEN_ORIENTATION_PORTRAIT` 的常量值是 1）、`adb shell dumpsys window \| grep -i mLastOrientation`（加 opt-out 前后应发生变化） |
 
+### 3.18 词典资源（MDD / CSS / 图片 / 发音）
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 导入的 MDX 词典只能看裸文字：排版（CSS/字体/表格）、图片、真人发音全在 `.mdd` 里，而导入入口是单文件 `OpenDocument`，拿不到同目录兄弟文件；引擎的 `MdxResourcePack` 是 `internal`，app 层没有读资源的出口。结果是牛津高阶这类词典的喇叭图标是空 `<img>` |
+| 方案 | 三段：①引擎 public 包装 `MdxResources` / `openMdxResources` / `checkMdxResourcePack`；②新「导入 MDX 文件夹」（`OpenDocumentTree`，自动配对 `.mdd` 分卷）与 `DictionaryResourceStore`；③混合渲染——`hasResources && 命中 (img\|table\|stylesheet\|sound://)` 的词条切 WebView，其余继续走 Compose 结构化卡片 |
+| 关键决策 | 混合而不是全量 WebView（ECDICT/StarDict 观感与性能不变）；资源句柄与查询引擎分离（拦截器在后台线程阻塞取资源，不能共锁）；`hasResources` 运行时由 `mddFilesFor` 推导，`index.json` 格式不变；发音优先级：词条自带音频 > 系统 TTS；安全基线：JS/DOM storage/`file://` 关闭、网络全封、只服务 `https://dict.local/<dictId>/`、剥 `<script>`/`on*`/`javascript:` |
+| 导入 | 目录内恰好 1 个 `.mdx`；`.mdd` 编号必须连续（缺号 → `RESOURCE_PARTS_MISSING`）；单个 `.mdx` ≤ 512MB（`MAX_IMPORT_BYTES`），**总量 ≤ 2 GiB**（`MAX_IMPORT_TOTAL_BYTES`）；每个 `.mdd` 导入前 `checkMdxResourcePack` 校验（加密 → `ENCRYPTED`，损坏 → `RESOURCE_CORRUPT`）；UI 三个入口（MDX 文件 / MDX 文件夹 / StarDict 文件夹），带资源条目显示「含资源」 |
+| 资源读取 | `DictionaryResourceStore`：阻塞 `read`（供 `shouldInterceptRequest`）按词典串行；内存缓存单条 256KB / 总量 8MB；句柄 LRU 2；发音落盘 `cache/dict-audio/` 上限 32MB（文件名是 dictId + 路径的 SHA-256 前缀 + 原扩展名）；打开失败负缓存；禁用/删除/重装即 `evictUnavailable()` |
+| 渲染 | `LookupBody.Media` + `shouldUseMediaRenderer` + `DictionaryArticleWebView`；`LookupHtmlRewriter` 把 `sound://` 改成 `dict-audio://<dictId>/<encoded>`、`file:///…` 改成相对路径，剥 `<script>`/`on*`/`javascript:`/`vbscript:`（按属性名清，OALD9 有 158 个 `xhtml:a`），删 `<base>`/`<meta refresh>`/`<iframe>`/`<object>`/`<embed>`，`<style>` 只去 `@import`；卡片体内滚动，外层不套 `verticalScroll` |
+| 发音 | `DictionaryAudioPlayer`（`MediaPlayer` + `AUDIOFOCUS_GAIN_TRANSIENT`，失焦即停）+ `DictionaryAudioController`（`AudioOutput`/`SpeechOutput` 状态机）：播文件前先停 TTS，点 TTS 前先停文件；多候选依次试，全失败才回落 TTS + toast；关卡片 `release()`，切词/换命中词典 `stop()`。口音：`DictionaryAudioAccent`（AUTO/US/UK，DataStore `dictionary_audio_accent`）+ 路径 token 分类器 |
+| 口音校准 | 真实 OALD9：词条音 `apple__gb_1.mp3` / `apple__us_1.mp3`，例句音 `_apple__brs_2.mp3`（英）/ `_apple__uss_2.mp3`（美）/ `_apple__gbs_2.mp3`（英）/ `_apple__ams_2.mp3`（美）→ **`uss`/`ams` = 美、`gbs`/`brs` = 英**。匹配单位是完整 token（`business`/`usage`/`fuss` 不误判）；`AUTO` 不猜口音，取候选第一条 |
+| 测试 | 新增 7 个文件 / 99 例：`MdxResourcesFixtureTest` 14（合成 MDD，含 `MdxPackCheck` 三分类）、`DictionaryImportPlanTest` 16、`DictionaryResourceStoreTest` 25、`DictionaryArticleWebViewTest` 8、`DictionaryAudioAccentTest` 16、`DictionaryAudioStateTest` 6、`LookupHtmlRewriterTest` 14；另补 `DictionaryImportErrorTest`（资源包分类映射）、`DictionaryLookupModelTest`、`ReaderLookupArticleTest`（媒体分流） |
+| 门禁 | `:dict-engine:test`、`:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:assembleRelease-debug`（R8 + lintVital）全绿 |
+| 真机验证 | 见 §4 「已验证 ✅」新增的五条：1.85GB 文件夹导入、OALD9 WebView 渲染、词条发音、暗色预设下的 WebView、系统字号缩放 |
+| 真机 bug（已修） | `loadDataWithBaseURL` 会把 base URL 本身送进 `shouldInterceptRequest`；根路径回 404 → 整篇变 `net::ERR_HTTP_RESPONSE_CODE_FAILED`。改为：根路径 / 非 `dict.local` 返回 `null`，只有「路径存在但包里没有」才 404 |
+| 已知限制 | `.spx`（Speex）播不了，只能回落 TTS + toast；`<iframe>/<object>/<embed>` 直接移除而不是降级渲染；CSS 里 `url()` 不改写（根相对路径靠拦截器兜）；逐词典覆盖口音、图片点击放大、WebView 内长按选词未做 |
+| 偏差 | ①计划外多了一个 `MdxPackCheck`/`checkMdxResourcePack`（导入需区分加密与损坏，`openMdxResources` 按设计吞包内失败）；②`textZoom` 不跟阅读正文字号，改为「词典 16px 基准 → 卡片正文 14sp」的固定映射（真机反馈跟阅读字号走时比 ECDICT 正文大一圈，已成为一条独立修复）并乘系统 `fontScale`；③WebView 销毁必须 `stopLoading()` → 换回默认 `WebViewClient` → `about:blank` → `destroy()`（直接销毁还在加载的实例会在内部线程 NPE）；④「加密 mdd」只做到分类 + 映射单测，没做端到端文件用例 |
+| 文档 | `docs/dictionary-resources-design.md`（已实施）、`docs/phase-2-design.md` §1.2/§2/§4.3/§15、`UPSTREAM_DIFF.md` §3.10、`PROVENANCE.md` 第 4 条 |
+
 ## 4. 真机验证结果
 
 设备：Lenovo TB322FC（Android 16 / API 36 / 1904×3040 / 440dpi）
@@ -673,6 +693,12 @@ S9 的测试增量：
 | 系统语言为中文时的界面 | 全中文，无英文残留 |
 | 字体导入 | 导入 Noto Sans SC（17.8MB 可变）→ 显示 Chinese glyphs / Variable + 三行预览；纯拉丁 Garamond → 显示 No Chinese glyphs，预览如实反映回退 |
 | 用户字体在阅读页生效 | 选中 Noto Sans SC 后打开中文 EPUB，字形确为该字体 |
+| 导入 1.85GB 词典文件夹 | 从设备 `Download/词典/` 目录用「导入 MDX 文件夹」走完整 SAF 流程：1,864,845,709 字节（54MB mdx + 154MB `.mdd` + 518MB `.1.mdd` + 1.14GB `.2.mdd`）复制+校验成功，索引 `wordCount=246,787`、`sizeBytes=1,864,845,709`；条目显示「含资源」 |
+| OALD9 WebView 渲染 | 查 `nightmare` 切到 OALD9 chip：`oalecd9.css` 生效（蓝色词头 `night·mare`、IPA、蓝底 NOUN 徽标、中文释义、斜体例句），喇叭 `<img>` 从 `.mdd` 取到；卡片体内滚动而阅读页不跟着滚 |
+| 词条发音 | 点喇叭 → `cache/dict-audio/481c698b060e03e7.mp3`（含 dictId hash 的文件名），MediaPlayer/NuPlayer 播放，`requestAudioFocus` 由 `DictionaryAudioPlayer` 发起 |
+| 暗色预设下的 WebView | 阅读配色切到暗色预设后重查 `nightmare` 并切 OALD9：卡片深底、正文浅字、蓝色词头/NOUN 徽标正常，没有出现「算法暗化把注入的浅色字反成深色」的双反转 |
+| 系统字号缩放（fontScale） | `settings put system font_scale 1.3` 后重查 OALD9：WebView 正文（词头/IPA/NOUN/释义）与卡片标题同步放大，`textZoom` 乘了 `LocalDensity.current.fontScale` |
+| 词条正文与 ECDICT 同字号 | 阅读预设为「大字」（22pt）时，修前 WebView 正文 `textZoom=137%` 明显大于 ECDICT 释义；改成「词典 16px 基准 → 卡片正文 14sp」固定映射后两者视觉一致，同一条 `nightmare` 能完整显示两条例项 |
 
 ### 未在真机验证 ❌（只做过单测或模拟器）
 
@@ -685,8 +711,10 @@ S9 的测试增量：
 - 阅读配色在纯黑/羊皮纸预设下的对比度观感
 - 列表布局（书架网格已验，列表未验）
 - 用户字体的删除流程（代码里先回落默认字体再删文件，未在设备上走过）
+- `.spx` 发音回落 TTS 的 toast（真实语料里未点过 Speex 词条）
+- 内置 ECDICT 之外的无资源 MDX 的观感回归（本轮只验过 OALD9 与 ECDICT）
 
-**建议下一步就在真机上把这 8 项过一遍**，尤其是书签跳转——那是本 fork 唯一修过两次 blocker 的功能。
+**建议下一步就在真机上把这 11 项过一遍**，尤其是书签跳转——那是本 fork 唯一修过两次 blocker 的功能。
 
 ---
 
@@ -768,6 +796,7 @@ R8 把 `text_` 改名成 `e` 后 `parseFrom` 抛异常，而异常被 `runCatchi
 | `REBASE.md` | 从上游同步时必须检查的三处静默失效点 |
 | `docs/motion-migration.md` | 41 处动画时长/缓动的逐值对照表 |
 | `docs/typography-lab/` | 中文排版实测原始输出 |
+| `docs/dictionary-resources-design.md` | 词典资源（MDD / CSS / 发音 / 图片）设计与实施记录（已实施；真机数据见 §3.18） |
 | `app/schemas/.../19.json`、`20.json` | Room 迁移的 schema 快照 |
 
 ---

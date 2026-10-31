@@ -155,6 +155,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
     implementation("androidx.activity:activity-compose:1.11.0")
 
+    // WebView compatibility (fork: phase 2, dictionary article rendering)
+    // 词条里的图片/CSS/表格交给 WebView（设计 §3.6）；WebSettingsCompat 的
+    // setAlgorithmicDarkeningAllowed 只有 androidx.webkit 提供，裸 WebSettings 没有对应 API。
+    implementation("androidx.webkit:webkit:1.14.0")
+
     // Compose BOM libraries
     // Compose BOM was eliminated - it is recognized as Closed Source in AboutLibraries..
     // although it is not.

@@ -8,6 +8,9 @@
  * 只在用户第一次点喇叭时创建 TextToSpeech，避免每个进程启动都拉起 TTS 服务；
  * 卡片关闭时 shutdown，不在阅读页常驻。发音语言优先美音，系统没有英语语音包时
  * 通过 onUnavailable 给用户一个提示，而不是静默失败。
+ *
+ * 实现 [SpeechOutput]：词条自带录音与 TTS 由 [DictionaryAudioController] 串行化，
+ * 两边都要能被对方停掉（[stop] 只停当前朗读，不销毁引擎 —— 下一句不用重新初始化）。
  */
 
 package ua.acclorite.book_story.ui.reader
@@ -18,7 +21,7 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import java.util.Locale
 
-internal class WordSpeaker(context: Context) {
+internal class WordSpeaker(context: Context) : SpeechOutput {
 
     private val appContext = context.applicationContext
     private var engine: TextToSpeech? = null
@@ -29,7 +32,7 @@ internal class WordSpeaker(context: Context) {
     private var failureTimeout: Runnable? = null
 
     /** 第一次调用会异步初始化；初始化中的重复点击只保留最后一个词。 */
-    fun speak(word: String, onUnavailable: () -> Unit) {
+    override fun speak(word: String, onUnavailable: () -> Unit) {
         val normalized = word.trim()
         if (normalized.isEmpty()) return
 
@@ -96,6 +99,19 @@ internal class WordSpeaker(context: Context) {
 
     private fun play(tts: TextToSpeech, word: String) {
         tts.speak(word, TextToSpeech.QUEUE_FLUSH, null, "lookup-word")
+    }
+
+    /**
+     * 停掉当前朗读，**不销毁引擎**（下一次点喇叭不必等初始化）。
+     * 初始化中的待播词也一起丢掉：否则「点 TTS → 立刻改播词条录音」时，TTS 会在初始化
+     * 完成后把已经作废的那句读出来，与录音叠在一起。
+     */
+    override fun stop() {
+        failureTimeout?.let { handler.removeCallbacks(it) }
+        failureTimeout = null
+        pendingWord = null
+        pendingFailure = null
+        engine?.stop()
     }
 
     fun shutdown() {

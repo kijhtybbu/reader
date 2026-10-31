@@ -17,6 +17,10 @@
  * 整行 `<i>` 当形态注、`n. …` 这类纯英文行当英文释义）。带块级标签（div/table/ul…）或未知
  * 标签的复杂词条不拆，原样交给 `fromHtml`，避免把排版拆坏。
  *
+ * 富媒体词条（词典带 `.mdd` 资源包，且正文引用了图片/表格/样式表/发音）不分拆，而是走
+ * [LookupBody.Media] 交给 WebView（设计 §3.6）：`fromHtml` 画不出 `img`、也拿不到 CSS。
+ * 分流条件就是纯函数 [shouldUseMediaRenderer]。
+ *
  * 纯函数、无 `android.*`：JVM 单测覆盖（ReaderLookupArticleTest）。
  */
 
@@ -85,6 +89,21 @@ internal sealed interface LookupBody {
         override val meta: LookupMeta?,
         val html: String
     ) : LookupBody
+
+    /**
+     * 词条引用了资源（CSS / 图片 / 表格 / 字体 / 发音），正文交给 WebView 渲染（设计 §3.6）。
+     *
+     * [html] 已经过 [rewriteArticleHtml]：`<script>` / `on*` / `javascript:` 都剥掉了，
+     * `sound://` 也换成了 `dict-audio://…`，可以直接交给封闭的 WebView。
+     * [audio] 是词条自带的发音候选（按 HTML 里出现的顺序去重），头部喇叭与正文里的
+     * `dict-audio://` 点击都从这里取。
+     */
+    data class Media(
+        override val phonetic: String?,
+        override val meta: LookupMeta?,
+        val html: String,
+        val audio: List<AudioCandidate>
+    ) : LookupBody
 }
 
 /** ECDICT 资产里英文释义的起始标记，见 `tools/dict/prepare_ecdict.py`。 */
@@ -104,6 +123,16 @@ private val TAG_REGEX = Regex("""<\s*/?\s*([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>""")
 /** 出现这些标签说明词条有块级结构，拆行会破坏排版。 */
 private val BLOCK_TAG_REGEX = Regex(
     """</?\s*(div|p|ul|ol|li|dl|dt|dd|table|thead|tbody|tfoot|tr|td|th|h[1-6]|img|section|article|blockquote|hr|pre|code|style|script)\b""",
+    RegexOption.IGNORE_CASE
+)
+
+/**
+ * 走 WebView 渲染的信号（大小写不敏感）：图片、表格、外链样式表、发音引用。
+ * 只认这四类 —— 它们在 `fromHtml` 里要么不显示（`img`），要么丢掉排版（`table` / `link`）。
+ * 真实牛津高阶 9 的词条就是挂在 `<link rel="stylesheet">` 上（fragment 解析后它落在 body）。
+ */
+private val MEDIA_MARKER_REGEX = Regex(
+    """<img\b|<table\b|<link\b[^>]*\brel\s*=\s*["']?stylesheet|sound://""",
     RegexOption.IGNORE_CASE
 )
 
@@ -213,17 +242,34 @@ private fun humanizeExchange(raw: String): String? {
 }
 
 /**
+ * 词条是否要交给 WebView 渲染：**词典带资源包**且正文引用了需要资源的元素
+ * （`img` / `table` / `link[rel=stylesheet]` / `sound://`，大小写不敏感）。
+ *
+ * 两个条件都要满足，这是混合渲染的核心取舍：
+ *  - 没有 `.mdd` 的词典（ECDICT、纯文本 MDX）里的 `img` / `<link>` 永远是断链，切到 WebView
+ *    只会把本来能读的卡片变成空白；它们继续走 `fromHtml`，观感不变。
+ *  - 有资源包但只用行内标签排版的词条（《字源》里也有纯文字条目）继续走结构化卡片。
+ */
+internal fun shouldUseMediaRenderer(html: String, hasResources: Boolean): Boolean =
+    hasResources && MEDIA_MARKER_REGEX.containsMatchIn(html)
+
+/**
  * 词条 HTML → 可直接分栏渲染的正文。
  *
  * @param word 卡片标题上的词；用来识别并丢掉重复的词头行。
+ * @param hasResources 词条所在词典是否有 `.mdd` 资源包（`InstalledDictionary.hasResources`）。
+ * @param dictId 当前词条所在词典的 id。[LookupBody.Media] 的资源 base URL 与
+ *   `dict-audio://<dictId>/…` 都用它；只有真的分流到 Media 时才被用到。
  */
-internal fun parseLookupBody(html: String, word: String): LookupBody {
+internal fun parseLookupBody(
+    html: String,
+    word: String,
+    hasResources: Boolean = false,
+    dictId: String = ""
+): LookupBody {
     val normalized = normalizeDictionaryHtml(html)
     val meta = parseLookupMeta(normalized)
     val body = normalized.replace(META_COMMENT_REGEX, "")
-    if (body.isBlank()) return LookupBody.Rich(null, meta, body)
-    // 块级结构的词条整段交给 fromHtml：标记注释不能漏进正文（HTML 注释不保证被解析器忽略）。
-    if (!hasOnlyInlineMarkup(body)) return LookupBody.Rich(null, meta, stripLookupMarkers(body))
 
     val lines = body.split(BR_REGEX).map { it.trim() }.filter { it.isNotEmpty() }
     var index = 0
@@ -232,7 +278,21 @@ internal fun parseLookupBody(html: String, word: String): LookupBody {
     if (lines.getOrNull(index)?.let { isDuplicateWordLine(it, word) } == true) index++
 
     // 2. 音标：提到标题下面，不再埋在正文第一行。
-    val phonetic = lines.getOrNull(index)?.let(::phoneticOf)?.also { index++ }
+    val inlinePhonetic = lines.getOrNull(index)?.let(::phoneticOf)
+    if (inlinePhonetic != null) index++
+    val inlineOnly = hasOnlyInlineMarkup(body)
+    // 行内词条只在行首找音标（不扫全文，避免把正文里的 `/a/b/` 当成音标）；块级/富媒体词条
+    // 的正文不是按行组织的，再按元素形状兜一次。两条回退路径都不能把音标丢掉。
+    val phonetic = inlinePhonetic ?: if (inlineOnly) null else phoneticOfMarkup(body)
+
+    if (body.isBlank()) return LookupBody.Rich(phonetic, meta, body)
+    // 富媒体词条：改写后交给 WebView（改写器负责剥脚本、把 sound:// 换成 dict-audio://）。
+    if (shouldUseMediaRenderer(body, hasResources)) {
+        val article = rewriteArticleHtml(stripLookupMarkers(body), dictId)
+        return LookupBody.Media(phonetic, meta, article.html, article.audio)
+    }
+    // 块级结构的词条整段交给 fromHtml：标记注释不能漏进正文（HTML 注释不保证被解析器忽略）。
+    if (!inlineOnly) return LookupBody.Rich(phonetic, meta, stripLookupMarkers(body))
 
     val senses = mutableListOf<LookupSense>()
     val definitions = mutableListOf<LookupDefinition>()
@@ -351,6 +411,29 @@ private fun isDuplicateWordLine(line: String, word: String): Boolean {
 /** 音标行（`<span style="color:#888">/ˈæpl/</span>` 或裸 `/…/`）。 */
 private fun phoneticOf(line: String): String? {
     val inner = PHONETIC_SPAN_REGEX.matchEntire(line)?.groupValues?.get(1) ?: line
+    return phoneticText(inner)
+}
+
+/**
+ * 元素内容就是一批音标的形状：`<pron>/ˈæpl/</pron>`、`<span class="phon">/…/</span>`。
+ *
+ * 只匹配**元素内容**（`>` 之后紧跟斜杠/方括号，再以 `<` 收尾），不会误读属性值：
+ * `url(/font/Optima_LT_Medium.ttf)` 在 `<style>` 的文本节点里，前面不是 `>`，而 `src="/a/b.png"`
+ * 整个在 `<` 与 `>` 之间。
+ */
+private val PHONETIC_ELEMENT_REGEX = Regex(""">\s*(/[^<>]{1,38}/|\[[^<>]{1,38}\])\s*<""")
+
+/**
+ * 块级与富媒体词条的音标：它们不是按 `<br>` 组织的（OALD9 的词头连着 `<h-g>` / `<pron>` /
+ * `<xhtml:br>`），行内那条路拆不出来，只能按元素的形状找第一条。命中不了返回 null —— 不猜。
+ */
+private fun phoneticOfMarkup(html: String): String? =
+    PHONETIC_ELEMENT_REGEX.findAll(html).firstNotNullOfOrNull { match ->
+        phoneticText(match.groupValues[1])
+    }
+
+/** 音标文本的校验：长度、斜杠/方括号包裹、不含 CJK 与残留标签。 */
+private fun phoneticText(inner: String): String? {
     val phonetic = plainText(inner)
     if (phonetic.length !in 2..40) return null
     if (phonetic.any(::isCjk)) return null
@@ -358,7 +441,27 @@ private fun phoneticOf(line: String): String? {
     val wrappedInBrackets = phonetic.startsWith("[") && phonetic.endsWith("]")
     if (!wrappedInSlashes && !wrappedInBrackets) return null
     if (phonetic.contains('<') || phonetic.contains('>')) return null
+    // 方括号要再验一道：真实词典里 `<span>[U]</span>`、`<div>[1]</div>`、`[sing.]`
+    // 是词性/编号标签，不是音标（块级与富媒体词条的音标回退会扫到它们）。
+    if (wrappedInBrackets && !isPlausibleBracketPhonetic(phonetic.substring(1, phonetic.length - 1))) {
+        return null
+    }
     return phonetic
+}
+
+/**
+ * 方括号里的内容像不像音标。真实语料里带方括号的「假音标」只有三类：
+ * 编号（`[1]`）、单个语法标记（`[U]` / `[C]`）、缩写（`[sing.]` / `[pl.]`）。
+ * 只要命中其中一类就不当音标；`[ˈæpl]`、`[ei]`、`[ɪ]` 这类真的音标都能通过。
+ */
+private fun isPlausibleBracketPhonetic(inner: String): Boolean {
+    val text = inner.trim()
+    if (text.isEmpty()) return false
+    if (text.all { it.isDigit() }) return false
+    // 只拒 ASCII 单字母（`[U]` / `[C]`）：`[ɪ]`、`[ə]` 这类单字符音标要留下
+    if (text.length == 1 && (text[0] in 'a'..'z' || text[0] in 'A'..'Z')) return false
+    if (text.all { it in 'a'..'z' || it in 'A'..'Z' || it == '.' } && text.endsWith('.')) return false
+    return true
 }
 
 /** 词条是否只由行内标签组成（拆行不会破坏结构）。 */

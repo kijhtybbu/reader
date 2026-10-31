@@ -181,7 +181,7 @@ Known fields are [... e, ... f, ... g, ... h]
 | 能力 | 实现 |
 | --- | --- |
 | 内置词典 | 随包 ECDICT（MIT，77 万词条）：官方 `ecdict.csv` → StarDict → LZMA2 7z（21MB）→ 首次启动解压到 `filesDir/dictionaries/builtin/`；`version` 标记保证重启不重复解压，失败保留旧目录。 |
-| 自定义词典 | 导入 `.mdx`（单文件）或 StarDict 文件夹（`.ifo` + `.idx(.gz)` + `.dict(.dz)` + 可选 `.syn`）；`index.json` 持久化，启用/禁用/优先词典；`.mdd` 暂不导入。 |
+| 自定义词典 | 导入 `.mdx`（单文件）或 StarDict 文件夹（`.ifo` + `.idx(.gz)` + `.dict(.dz)` + 可选 `.syn`）；`index.json` 持久化，启用/禁用/优先词典；`.mdd` 资源包经「导入 MDX 文件夹」一起导入（§3.10）。 |
 | 取词 | 单击（默认）/长按可选；两种布局都用单一手势检测器 + `TextLayoutResult` 命中，浮动卡片贴词、安全区避让、夜间配色；未命中可去导入词典或用外部应用。 |
 | AI 段落翻译 | 双击整段（`NodeContent.Paragraph.text`，非分页切片）→ 居中对话框；翻译标签流式输出，可复制/分享/重新生成/取消；外部应用翻译只保留为错误回退。 |
 | 语法分析 | 整段切句后逐句分析：多句时列出句子，点哪句分析哪句、再点一次收起，单句切到标签即分析（无“开始分析”按钮）；结果是模型写的 Markdown，用 commonmark 渲染（标题/列表/粗体/行内代码），逐句缓存；语法关闭时标签不出现。 |
@@ -191,6 +191,58 @@ Known fields are [... e, ... f, ... g, ... h]
 | 体积 | debug APK ~155MB；release-debug ~55.9MB（含 21MB 词典资产）；首次安装数据目录 ~123MB。 |
 
 实现细节、缓存键、已知限制与未执行的设备矩阵见 `docs/phase-2-design.md` 与 `PROGRESS.md` §3.1–§3.11。
+
+### 3.10 MDD 资源 / CSS / 图片 / 发音 + 混合渲染
+
+上游与本 fork 的前一阶段都只能看纯文本词条：MDict 词典的排版（CSS/字体/表格）、图片和真人发音全在 `.mdd` 资源包里，而导入入口是单文件 `OpenDocument`，拿不到同目录兄弟文件的授权。结果是牛津高阶这类词典拉开全是裸文字，音标后的喇叭图标是个空 `<img>`。本 fork 把这层接上，并且**只对引用资源的词条切渲染器**。
+
+**为什么绕不开引擎改动**：上游的 `MdxResourcePack` 是 `internal`，而且只躲在 `MdxDictionary.resource()` 后面，模块外拿不到。这是 vendored 引擎的第 4 条本地扩展（`PROVENANCE.md`）：
+
+| 新增 | 作用 |
+| --- | --- |
+| `MdxResources` / `openMdxResources(mddFiles)` | public 只读包装：`names` + `read(path)`；单包坏掉只进 `logSink` 并跳过（分卷资源丢一个不能让其余的不可读），`read` 按传入顺序回退 |
+| `checkMdxResourcePack(file)` → `MdxPackCheck` | 导入用：`Ok(resourceCount)` / `Encrypted` / `NotResourcePack` / `Corrupt`。`openMdxResources` 按设计吞包内失败，导入却必须区分「加密」与「损坏」（下一步动作不同） |
+
+两个都是 public 包装，**没有改动任何解析文件**；KDoc 明写实例非线程安全（`seek`+`readFully` 非原子），调用方按实例串行。
+
+**导入形态**：
+
+| 项 | 行为 |
+| --- | --- |
+| 入口 | 词典管理页第三行「导入 MDX 文件夹（含图片、发音）」，`OpenDocumentTree` 选目录；单文件 `.mdx` 入口保留给纯文本词典 |
+| 配对 | 目录内恰好 1 个 `.mdx`，自动配对 `<base>.mdd` / `<base>.1.mdd`…；**编号必须连续**（缺号 → `RESOURCE_PARTS_MISSING`），`.images.mdd` 这类非数字后缀忽略（与引擎 `pairsFor` 一致） |
+| 体积 | mdx 仍走 1 MiB 头预检；单个 `.mdx` ≤ 512MB（`MAX_IMPORT_BYTES`），**总量 ≤ 2 GiB**（`MAX_IMPORT_TOTAL_BYTES`）—— 真实 OALD9 是 54MB mdx + 154MB + 518MB + 1.14GB 三个 mdd |
+| 校验 | 每个 `.mdd` 复制后 `checkMdxResourcePack` 独立校验（加密 → `ENCRYPTED`，损坏 → `RESOURCE_CORRUPT`）；之后复用现有 `install()`（rename + 写索引） |
+| 索引 | `index.json` 格式不变：`hasResources` 由 `mddFilesFor` 运行时推导；`sizeBytes` 本来就按整目录求和 |
+
+**读取与缓存**（`DictionaryResourceStore`）：WebView 的 `shouldInterceptRequest` 在后台线程阻塞取资源，所以 `read` 是阻塞的、按词典串行，和取词引擎各持一把锁；内存缓存单条 256KB / 总量 8MB（大图与音频不进内存）、句柄 LRU 2、发音落盘 `cache/dict-audio/` 上限 32MB、打开失败按 `dictId` 负缓存，禁用/删除/重装即关句柄。
+
+**安全基线**（词条 HTML 来自第三方，不能当可信内容）：
+
+| 层面 | 做法 |
+| --- | --- |
+| WebView | JS 关闭、DOM storage 关闭、`file://` 访问关闭、`blockNetworkLoads` 全封 |
+| HTML | `LookupHtmlRewriter` 剥 `<script>` / `on*` / `javascript:` / `vbscript:`（按**属性名**清，OALD9 里有 158 个 `xhtml:a` 命名空间标签，按元素名会漏），删 `<base>` / `<meta refresh>` / `<iframe>` / `<object>` / `<embed>`，`<style>` 保留但去 `@import` |
+| 资源 | 只服务 `https://dict.local/<dictId>/…`；根路径与其它 host 返回 `null`。**根路径必须放行**：`loadDataWithBaseURL` 会把 base URL 本身送进拦截器，回 404 会让整篇变 `net::ERR_HTTP_RESPONSE_CODE_FAILED`；只有「路径存在但包里没有」才 404（子资源缺失不影响主文档） |
+| 链接 | `sound://` → `dict-audio://<dictId>/<encoded>`（交给音频播放器），`file:///…` → 相对路径；`juice://lookup/…` 与同词条 `#frag` 原样放行 |
+
+**分流规则**：`hasResources && html 命中 (img|table|link[rel=stylesheet]|sound://)` 才换成 `LookupBody.Media` + WebView；其余词条继续走 Compose 结构化卡片。ECDICT/StarDict 的观感与性能不变，富媒体词条要的是保真。卡片布局：WebView 分支 `weight(1f)` 且**不**套 `verticalScroll`（否则嵌套滚动），头尾仍固定；`textZoom = 14 × fontScale × 100 / 16`（把词典 CSS 的 16px 基准缩到卡片正文 14sp，1.0 时 88%；刻意不跟阅读正文字号走，否则「大字」预设下比 ECDICT 卡片大一圈）。销毁顺序 `stopLoading()` → 换回默认 `WebViewClient` → `about:blank` → `destroy()`，直接把还在加载的 WebView `destroy()` 会在内部线程抛 NPE。
+
+**发音**：`DictionaryAudioPlayer`（`MediaPlayer` + `AUDIOFOCUS_GAIN_TRANSIENT`，失焦即停）与系统 TTS（`WordSpeaker`）由 `DictionaryAudioController` 状态机串行化——播文件前先停 TTS，点 TTS 前先停文件；一个词条的多条候选依次试，全部播不了才回落 TTS 并 toast（静默换机器音会让人以为点错了按钮）。口音靠路径 token 分类：真实 OALD9 里词条音是 `apple__gb_1.mp3` / `apple__us_1.mp3`，例句音却是 `_apple__brs_2.mp3`（英）/ `_apple__uss_2.mp3`（美）/ `_apple__gbs_2.mp3`（英）/ `_apple__ams_2.mp3`（美），所以 `uss`/`ams` = 美、`gbs`/`brs` = 英；匹配单位是完整 token，`business`/`usage` 不会被误判。设置项「发音口音 自动 / 美音 / 英音」（DataStore `dictionary_audio_accent`），chip 在词典管理页；`AUTO` 不猜口音，取候选第一条。
+
+**真机证据**（Lenovo TB322FC / Android 16 / 1904×3040，debug 包）：
+
+| 项 | 结果 |
+| --- | --- |
+| 导入 1.85GB 词典 | 1,864,845,709 字节（54MB mdx + 154MB + 518MB + 1.14GB mdd）完整 SAF 复制+校验成功；索引 `wordCount=246,787`、`sizeBytes=1,864,845,709` |
+| 渲染 | 查 `nightmare`：ECDICT 卡片照旧；切到 OALD9 chip 后 `oalecd9.css` 生效（蓝色词头 `night·mare`、IPA、蓝底 NOUN 徽标、中文释义、斜体例句），喇叭 `<img>` 从 `.mdd` 取到 |
+| 滚动 | 卡片体内可滚动，阅读页不跟着滚（无嵌套滚动冲突） |
+| 发音 | 点词条喇叭 → `cache/dict-audio/481c698b060e03e7.mp3`，MediaPlayer/NuPlayer 播放，`requestAudioFocus` 由 `DictionaryAudioPlayer` 发起 |
+| 管理页 | 口音 chip 与三个导入入口都在；导入后条目带「含资源」 |
+
+**已知限制**：`.spx`（Speex）系统播不了，只能回落 TTS 并提示；`<iframe>/<object>/<embed>` 是直接移除而不是降级渲染；CSS 里 `url()` 不改写（根相对路径靠拦截器兜）；暗色预设只在 OALD9 上验过（深底浅字、无双反转），其余词典 CSS 未逐个看；逐词典覆盖口音、图片点击放大、WebView 内长按选词再查都没做。
+
+实现细节与测试清单见 `docs/dictionary-resources-design.md`、`PROGRESS.md` §3.18。
 
 ---
 

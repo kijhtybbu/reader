@@ -14,9 +14,14 @@
  *
  * 卡片分三层，只有中间那层滚动：
  *  1. 固定头部：词头 + 音标 + 来源 + 词典元信息（柯林斯星级/牛津/考试标签/词频）+ 多词典 chip；
- *  2. 可滚动正文：义项 / 英文释义 / 词形附注；
+ *  2. 可滚动正文：义项 / 英文释义 / 词形附注；**富媒体词条不同**：正文是 WebView，自己不滚，
+ *     改用 `weight(1f)` 占满剩余高度（见 `LookupCard(fixedHeightBody = true)`）——
+ *     外面再套一个 `verticalScroll` 就会变成嵌套滚动，两者会抢手势；
  *  3. 固定按钮区（未找到、错误两种状态）：以前的实现把按钮放在同一个 `verticalScroll` 里，
  *     词条一长按钮就被滚出可见区，用户以为卡片没有按钮。
+ *
+ * 发音（设计 §3.7）：头部喇叭优先播词条自带录音，全部失败/没有录音才用系统 TTS；
+ * 两条路的互斥、候选回落与「连点不叠加」都在 [DictionaryAudioController] 里。
  */
 
 package ua.acclorite.book_story.ui.reader
@@ -56,10 +61,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -94,7 +101,10 @@ import ua.acclorite.book_story.presentation.reader.LookupState
 import ua.acclorite.book_story.presentation.reader.anchor
 import ua.acclorite.book_story.ui.common.components.common.IconButton
 import ua.acclorite.book_story.ui.common.components.common.StyledText
+import ua.acclorite.book_story.ui.common.helpers.LocalSettings
+import ua.acclorite.book_story.ui.common.helpers.showToast
 import ua.acclorite.book_story.ui.theme.LocalReaderPalette
+import java.io.File
 import java.text.NumberFormat
 import kotlin.math.roundToInt
 
@@ -128,6 +138,8 @@ private val SenseSpacing = 4.dp
  * @param onImportDictionary 未找到时去导入词典。
  * @param onExternalLookup 未找到时回退到外部词典应用（S4 之前的行为）。
  * @param onAiExplain S6 的 AI 解释；为 null 时按钮显示为禁用态。
+ * @param onAudioFile 把词条自带的发音资源落成文件（`DictionaryResourceStore.audioFile`）。
+ *   默认实现恒返回 null（没有录音，一直走 TTS），单测与预览不必造资源仓库。
  */
 @Composable
 fun ReaderLookupPopup(
@@ -139,7 +151,8 @@ fun ReaderLookupPopup(
     onImportDictionary: () -> Unit,
     onExternalLookup: (String) -> Unit,
     onAiExplain: ((String) -> Unit)? = null,
-    onTtsUnavailable: () -> Unit = {}
+    onTtsUnavailable: () -> Unit = {},
+    onAudioFile: suspend (dictId: String, path: String) -> File? = { _, _ -> null }
 ) {
     val palette = LocalReaderPalette.current
     val density = LocalDensity.current
@@ -171,9 +184,32 @@ fun ReaderLookupPopup(
     }
     val anchor = state.anchor
     val context = LocalContext.current
-    val speaker = remember { WordSpeaker(context) }
-    DisposableEffect(speaker) {
-        onDispose { speaker.shutdown() }
+    val scope = rememberCoroutineScope()
+    val settings = LocalSettings.current
+    val accent = settings.dictionaryAudioAccent.value
+    val speaker = remember(context) { WordSpeaker(context) }
+    val audioPlayer = remember(context) { DictionaryAudioPlayer(context) }
+    val audioUnavailableMessage = stringResource(id = R.string.lookup_popup_audio_unavailable)
+    // 回调每帧都可能是新实例（卡片跟着阅读进度重组），用 State 包一层，控制器只建一次。
+    val currentOnTtsUnavailable = rememberUpdatedState(onTtsUnavailable)
+    val currentOnAudioFile = rememberUpdatedState(onAudioFile)
+    val audio = remember(scope, speaker, audioPlayer, audioUnavailableMessage, context) {
+        DictionaryAudioController(
+            scope = scope,
+            audio = audioPlayer,
+            speech = speaker,
+            onSpeechUnavailable = { currentOnTtsUnavailable.value() },
+            onAudioUnavailable = {
+                audioUnavailableMessage.showToast(context, longToast = false)
+            }
+        )
+    }
+    // 卡片一关（或换词/换命中的词典）就停：继续播上一张卡片的录音是明确的 bug。
+    DisposableEffect(audio) {
+        onDispose {
+            audio.release()
+            speaker.shutdown()
+        }
     }
     val currentWord = when (state) {
         is LookupState.Loading -> state.word
@@ -182,8 +218,11 @@ fun ReaderLookupPopup(
         is LookupState.Error -> state.word
         LookupState.Idle -> ""
     }
+    val selectedIndex = (state as? LookupState.Success)?.selectedIndex ?: -1
+    LaunchedEffect(currentWord, selectedIndex) { audio.stop() }
+    // 非高亮词条（加载中/未找到/错误）的喇叭：直接走 TTS，与旧行为一致。
     val onSpeak = {
-        speaker.speak(currentWord) { onTtsUnavailable() }
+        audio.speak(currentWord)
     }
 
     // 链接样式与回调给正文的每一行共用一份：`remember` 里捕获的是稳定的 State 对象，
@@ -262,7 +301,9 @@ fun ReaderLookupPopup(
                         linkStyles = linkStyles,
                         onLookupLink = currentOnLookupLink,
                         onSelect = onSelect,
-                        onSpeak = onSpeak
+                        accent = accent,
+                        audio = audio,
+                        audioFile = { dictId, path -> currentOnAudioFile.value(dictId, path) }
                     )
 
                     is LookupState.NotFound -> NotFoundCard(
@@ -282,17 +323,23 @@ fun ReaderLookupPopup(
 }
 
 /**
- * 卡片骨架：固定头部 + 可滚动正文 + 固定按钮区。
+ * 卡片骨架：固定头部 + 正文 + 固定按钮区。
  *
- * 正文用 `weight(1f, fill = false)`：内容短时卡片跟着内容收缩，内容超过最大高度时
+ * 正文默认用 `weight(1f, fill = false)`：内容短时卡片跟着内容收缩，内容超过最大高度时
  * 只有正文滚动，头部与按钮始终留在原位。`fill = false` 是关键 —— 默认的 `fill = true`
  * 会把卡片永远撑到最大高度。
+ *
+ * @param fixedHeightBody 正文自己负责滚动（富媒体词条的 WebView）。此时：
+ *  - 正文吃满剩余高度（`weight(1f)`，卡片就是最大高度 —— 媒体词条没法预测高度，宁可全高）；
+ *  - **不**套 `verticalScroll`：WebView 内部已经在滚，外面再套一层就变成嵌套滚动，
+ *    两层会抢手势（滑一下跳两屏）。头尾仍然固定。
  */
 @Composable
 private fun LookupCard(
     header: @Composable ColumnScope.() -> Unit,
     body: @Composable ColumnScope.() -> Unit,
-    footer: (@Composable ColumnScope.() -> Unit)? = null
+    footer: (@Composable ColumnScope.() -> Unit)? = null,
+    fixedHeightBody: Boolean = false
 ) {
     val palette = LocalReaderPalette.current
     Column(Modifier.fillMaxWidth()) {
@@ -303,9 +350,15 @@ private fun LookupCard(
         HorizontalDivider(color = palette.onBar.copy(alpha = 0.10f))
         Column(
             modifier = Modifier
-                .weight(1f, fill = false)
+                .then(
+                    if (fixedHeightBody) Modifier.weight(1f)
+                    else Modifier.weight(1f, fill = false)
+                )
                 .padding(horizontal = 18.dp, vertical = 12.dp)
-                .verticalScroll(rememberScrollState()),
+                .then(
+                    if (fixedHeightBody) Modifier
+                    else Modifier.verticalScroll(rememberScrollState())
+                ),
             content = body
         )
         if (footer != null) {
@@ -344,22 +397,50 @@ private fun SuccessCard(
     linkStyles: TextLinkStyles,
     onLookupLink: State<(String) -> Unit>,
     onSelect: (Int) -> Unit,
-    onSpeak: () -> Unit
+    accent: DictionaryAudioAccent,
+    audio: DictionaryAudioController,
+    audioFile: suspend (dictId: String, path: String) -> File?
 ) {
     val selected = state.entries.getOrNull(state.selectedIndex)
-    // 解析结果只跟词条 HTML 与词头有关；切 chip 时才重新解析一次。
-    val body = remember(state.html, state.word) {
-        parseLookupBody(state.html, state.word)
+    // 解析结果只跟词条 HTML、词头、词典有无资源包有关；切 chip 时才重新解析一次。
+    val body = remember(state.html, state.word, state.hasResources, selected?.dictId) {
+        parseLookupBody(
+            html = state.html,
+            word = state.word,
+            hasResources = state.hasResources,
+            dictId = selected?.dictId.orEmpty()
+        )
+    }
+    val media = body as? LookupBody.Media
+    // 口音偏好只决定「先试哪一条」，其余候选跟在后面：单条失败不等于要立刻回落 TTS。
+    val playbackOrder = remember(media?.audio, accent) {
+        media?.let { audioPlaybackOrder(it.audio, accent) }.orEmpty()
+    }
+    val speak = {
+        if (playbackOrder.isEmpty()) {
+            audio.speak(state.word)
+        } else {
+            audio.play(state.word, playbackOrder) { path ->
+                audioFile(selected?.dictId.orEmpty(), path)
+            }
+        }
+    }
+    // 正文里点了 `dict-audio://…`：播**点的那一条**，不是头部喇叭按口音选的那条。
+    val playAudio = { path: String ->
+        audio.play(state.word, listOf(path)) { candidate ->
+            audioFile(selected?.dictId.orEmpty(), candidate)
+        }
     }
 
     LookupCard(
+        fixedHeightBody = media != null,
         header = {
             WordHeader(
                 word = state.word,
                 phonetic = body.phonetic,
                 source = selected?.dictName,
                 meta = body.meta,
-                onSpeak = onSpeak
+                onSpeak = speak
             )
             if (state.entries.size > 1) {
                 // 候选词条和上方的词典元信息都是胶囊，挤在一起会混成一片：
@@ -385,6 +466,15 @@ private fun SuccessCard(
                     ),
                     linkStyles = linkStyles,
                     onLookupLink = onLookupLink
+                )
+
+                is LookupBody.Media -> DictionaryArticleWebView(
+                    // WebView 自己吃满剩余高度并自己滚（`fixedHeightBody = true` 已去掉外层滚动）。
+                    modifier = Modifier.fillMaxSize(),
+                    html = body.html,
+                    dictId = selected?.dictId.orEmpty(),
+                    onLookupLink = { word -> onLookupLink.value(word) },
+                    onPlayAudio = playAudio
                 )
             }
         }

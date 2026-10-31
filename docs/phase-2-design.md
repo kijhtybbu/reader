@@ -12,7 +12,7 @@
 | 取词手势 | 单击与长按都支持，设置项 `SINGLE_TAP / LONG_PRESS / OFF`，默认 `SINGLE_TAP` |
 | 内置词库 | 完整 ECDICT，官方 StarDict 数据（MIT） |
 | 词库分发 | 仓库提交官方 `stardict.7z`（约 51MB），首次启动解压到应用私有目录 |
-| 自定义词库 | 支持导入 `.mdx`，复用同一引擎（`.mdd` 资源包随资源渲染一起接，见 §4.3） |
+| 自定义词库 | 支持导入 `.mdx`，复用同一引擎；`.mdd` 资源包随「导入 MDX 文件夹」一起导入并参与渲染（见 §4.3） |
 | AI 接口 | OpenAI 兼容：Base URL + Model + Key，兼容 OpenAI / DeepSeek / Gemini(OpenAI 兼容) / OpenRouter / Ollama |
 | 取词框 | 浮动卡片贴词，自动避让屏幕边缘 |
 | 翻译框 | 居中大对话框，标签页：翻译 / 语法分析 |
@@ -37,9 +37,10 @@
 - 自研 OpenAI HTTP / SSE / JSON 客户端。
 - 自研 Keystore 加密存储。
 - 整本书翻译、翻译历史浏览页、云同步、生词本。
-- `.mdd` 图片/音频在正文中的渲染（引擎可读，UI 后续接）。
 - 加密词典的密码输入。
-- 在 WebView 中执行词典 HTML/JS。
+- 在 WebView 中**执行**词典 HTML 里的脚本：`<script>` / `on*` / `javascript:` 全部剥离，JS 与 DOM storage 关闭、网络全封；WebView 只**渲染** HTML/CSS/图片。
+
+> `.mdd` 图片/音频的渲染已不再是非目标：已按 `docs/dictionary-resources-design.md` 实施（导入+资源仓库+混合渲染，见 §4.3）。
 
 ## 2. 社区组件选型
 
@@ -51,7 +52,8 @@
 | HTTP 引擎 | `io.ktor:ktor-client-okhttp` | Ktor 3.x（与 openai-client 对齐） | Apache-2.0 | Android 上使用 OkHttp |
 | API Key 加密 | `com.google.crypto.tink:tink-android` | `1.18.0` | Apache-2.0 | `AndroidKeysetManager` + DataStore |
 | 7z 解压 | `org.apache.commons:commons-compress` + `org.tukaani:xz` | 最新稳定版 | Apache-2.0 / Public Domain | 首次启动解压 ECDICT |
-| 词典 HTML | 引擎 `Article.toHtml()` + Compose `AnnotatedString.fromHtml` | 随引擎 / Compose 1.9.3 | GPL-3.0 / Apache-2.0 | 不写自定义 HTML 解析器 |
+| 词典 HTML | 引擎 `Article.toHtml()` + Compose `AnnotatedString.fromHtml` / WebView（仅含资源的词条） | 随引擎 / Compose 1.9.3 | GPL-3.0 / Apache-2.0 | 不写自定义 HTML 解析器；富媒体词条走 WebView（JS 关闭、外网封死） |
+| WebView 暗色 | `androidx.webkit:webkit` | `1.14.0` | Apache-2.0 | `WebSettingsCompat.setAlgorithmicDarkeningAllowed` 只有它提供，裸 `WebSettings` 没有对应 API |
 | 词形/模糊 | 引擎 `Morphology` / `EditDistance` | 随引擎 | GPL-3.0 | 不手写后缀规则 |
 | 分词边界 | `android.icu.text.BreakIterator` | Android 平台 | 平台 | 取词定位 |
 | 持久化 | Room（项目已有） | 2.7.2 | Apache-2.0 | 翻译缓存表 |
@@ -141,11 +143,17 @@ ReaderLayout (Paged/Continuous)
 - 导入 `.mdx`：先读前 1 MiB 用 `DictionaryEngines.probeMdxHead`（内部 `MdxProbe.readFromHead`）预检
   是否为 MDict，不是就立即拒绝（不把误选的大文件完整复制一遍）；通过后流式复制到暂存目录，
   再用 `probeMdx` + `openMdx` 校验版本/加密位/资源包/截断与条目数。
-- **`.mdd` 资源包本期不导入（已确认的欠账，S4 实施时记录）**：MDX 入口是单文件
-  `OpenDocument`，拿不到同目录兄弟文件的授权；`DictionaryEngines.mddFilesFor`
-  （`<base>.mdd` / `<base>.1.mdd` …）的调用点已留在 `openDictionaryEngine`，等资源渲染
-  阶段把 `.mdd` 复制进同一目录即可自动配对。在此之前，引用 `entry://` 图片/音频的词条
-  会缺图 —— 这是本期的已知限制，不是缺陷。
+- **`.mdd` 资源包已落地（原 S4 欠账，2026-10 实现）**：新增「导入 MDX 文件夹」（`OpenDocumentTree`）——
+  目录里恰好 1 个 `.mdx`，自动配对 `<base>.mdd` / `<base>.1.mdd`…（编号必须连续），总上限 2 GiB
+  （`MAX_IMPORT_TOTAL_BYTES`；`MAX_IMPORT_BYTES` 只管单个 `.mdx`），逐个 `.mdd` 导入前用
+  `DictionaryEngines.checkMdxResourcePack` 校验（加密 → `ENCRYPTED`，损坏 → `RESOURCE_CORRUPT`）。
+  单文件 `.mdx` 入口保留给纯文本词典。
+- **资源读取**：`InstalledDictionary.hasResources` 由 `mddFilesFor` 运行时推导（不写 `index.json`，无迁移）；
+  资源由 `DictionaryResourceStore` 读 —— 阻塞 `read`（供 WebView 后台线程）、内存缓存 256KB/8MB、
+  句柄 LRU 2、发音落盘 32MB，禁用/删除即关句柄。导入后与已装词典自动配对（同一目录）。
+- **渲染分流**：`hasResources && html 命中 (img|table|stylesheet|sound://)` → `LookupBody.Media` + WebView
+  （CSS/字体/图片/真人发音）；其余继续走 Compose 结构化卡片。`sound://` / `file://` 由
+  `LookupHtmlRewriter` 改写成 `dict-audio://` / 相对路径。细节见 `docs/dictionary-resources-design.md`。
 - StarDict 导入：`OpenDocumentTree` 选目录，校验 `.ifo/.idx/.dict(.dz)` 后复制。
 - 元数据 `index.json`：id、type、baseName、name、directory、wordCount、sizeBytes、enabled、importedAt
   （只存元数据：词典文件名由 `type` + `baseName` 拼出，不再抄一份文件列表；`directory` 是相对
@@ -153,8 +161,8 @@ ReaderLayout (Paged/Continuous)
 - 引擎实例 LRU（内置 + 最近 2 个导入词典），删除/禁用时 `close()`。
 - 查询：`lookupExact` → 无结果 `lookupSmart(limit=5)`；多词典按“精确 > 前缀 > 模糊”排序，
   同级内先查「优先词典」（`activeDictionaryId`，单选只影响先后，不禁用其它词典），再按目录顺序。
-- 正文：`engine.article(hit).toHtml()` → Compose `AnnotatedString.fromHtml`；
-  拦截 `juice://lookup/` 做二次查询。
+- 正文：`engine.article(hit).toHtml()` → Compose `AnnotatedString.fromHtml`（纯文本词条）；
+  含资源词条改走 WebView 渲染（见上一条「渲染分流」）；两边都拦截 `juice://lookup/` 做二次查询。
 - 无结果：卡片显示“未找到”，提供“用 AI 解释这个词”（结果可缓存）与“去导入词典”。
 
 ## 5. 阅读页取词
@@ -580,7 +588,7 @@ cacheKey = SHA-256(
 - 最终校验：`:app:testDebugUnitTest` 379 / 55 类、`:dict-engine:test` 102、`:app:connectedDebugAndroidTest` 22（模拟器 API 34）、`:app:assembleRelease-debug` 通过；APK debug 155,192,122 B / release-debug 56,025,366 B。
 - 首次安装模拟器实测约 24.8s，词典目录约 122,800 KB（`.dict`/`.idx`/`.jidx`/`version`）。
 - 语法逐句分析（§8.2）只做过 JVM 状态机与渲染测试：句子列表的点击/收起、长列表滚动、Markdown 排版在设备上仍未走过；切句依赖平台 `BreakIterator`，缩写（`Dr.`）会多切一刀。
-- 已知限制：单词级 AI 解释未实现；`.mdd` 不导入/不渲染；需要密码的 MDX 不支持；长按自动取词只处理单行（工具栏翻译可翻多行选区）；缓存跨进程重建没有仪器测试；release-debug 上真实 AI/Tink/Room 路径只做构建级验证；默认双击翻译带来约 200ms 单击延迟（见附录 A.6）；S5/S8 手工 UI 矩阵未执行（项目无 Compose UI 测试依赖）。
+- 已知限制：单词级 AI 解释未实现；`.spx`（Speex）发音播不了（回落 TTS 并提示）；暗色预设下的 WebView 只在 OALD9 上验过（其余词典 CSS 未逐个看）；`<iframe>/<object>/<embed>` 直接移除、CSS 里 `url()` 不改写；需要密码的 MDX 不支持；长按自动取词只处理单行（工具栏翻译可翻多行选区）；缓存跨进程重建没有仪器测试；release-debug 上真实 AI/Tink/Room 路径只做构建级验证；默认双击翻译带来约 200ms 单击延迟（见附录 A.6）；S5/S8 手工 UI 矩阵未执行（项目无 Compose UI 测试依赖）。
 - 最终整体 review 按用户要求取消；S1–S9 每阶段均完成两轮 `reviewer`。
 
 ## 附录 A. 设备反馈迭代（S5/S8 后续，已落地）

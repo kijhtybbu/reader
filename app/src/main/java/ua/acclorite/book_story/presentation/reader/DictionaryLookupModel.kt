@@ -11,11 +11,15 @@
  *  - 每次查询先取消上一次的 Job。连点两个词时，先发出的那次查询可能后回来，
  *    不取消就会把卡片的内容换成上一个词（锚点却是新词的）。
  *  - 状态里带 [LookupState] 的锚点，UI 只负责画，不再自己算位置。
+ *  - [LookupState.Success.hasResources] 决定正文走 WebView 还是结构化卡片（设计 §3.6）：
+ *    它在查询与切词条时都从当前已安装词典重算，不在两次查询之间缓存 —— 词典刚被禁用/删掉就
+ *    不应该再对它的词条开 WebView。
  *  - AI 解释（S6）**没有**接：`onAiExplain` 由 UI 侧传 null，按钮是禁用态。
  */
 
 package ua.acclorite.book_story.presentation.reader
 
+import android.content.Context
 import androidx.compose.ui.geometry.Rect
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -29,9 +33,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ua.acclorite.book_story.core.log.logW
+import ua.acclorite.book_story.data.dictionary.DictionaryCatalog
 import ua.acclorite.book_story.data.dictionary.DictionaryHit
 import ua.acclorite.book_story.data.dictionary.DictionaryRepository
+import ua.acclorite.book_story.data.dictionary.DictionaryResourceStore
+import ua.acclorite.book_story.data.dictionary.InstalledDictionary
 import ua.acclorite.book_story.ui.reader.normalizeLookupWord
+import java.io.File
 import javax.inject.Inject
 
 private const val TAG = "DictionaryLookupModel"
@@ -46,6 +54,8 @@ sealed interface LookupState {
      * @param entries 全部命中（多词典时按「精确 > 前缀 > 模糊」+ 优先词典排序）。
      * @param selectedIndex 当前展示正文的那一条，[html] 是它的 `Article.toHtml()`。
      * @param fromCache S7 的缓存命中标记；S5 还没有缓存，恒为 false。
+     * @param hasResources 命中的那部词典是否有 `.mdd` 资源包（`InstalledDictionary.hasResources`）。
+     *   有资源且正文引用了图片/表格/样式表/发音时，卡片正文改走 WebView（设计 §3.6）。
      */
     data class Success(
         val word: String,
@@ -53,7 +63,8 @@ sealed interface LookupState {
         val entries: List<DictionaryHit>,
         val selectedIndex: Int,
         val html: String,
-        val fromCache: Boolean = false
+        val fromCache: Boolean = false,
+        val hasResources: Boolean = false
     ) : LookupState
 
     data class NotFound(val word: String, val anchor: Rect?) : LookupState
@@ -76,6 +87,23 @@ val LookupState.anchor: Rect?
 class DictionaryLookupModel @Inject constructor(
     private val repository: DictionaryRepository
 ) : ViewModel() {
+
+    /**
+     * 已安装词典快照：[LookupState.Success.hasResources] 由它推导。生产端读 [DictionaryCatalog]；
+     * 单测用 [DictionaryLookupModel] 的次要构造器替换。
+     */
+    private var dictionaries: () -> List<InstalledDictionary> =
+        { DictionaryCatalog.dictionaries.value }
+
+    /**
+     * 单测用构造器：[dictionaries] 注入词典快照。Hilt 只用带 `@Inject` 的那个，不受影响。
+     */
+    internal constructor(
+        repository: DictionaryRepository,
+        dictionaries: () -> List<InstalledDictionary>
+    ) : this(repository) {
+        this.dictionaries = dictionaries
+    }
 
     private val _state = MutableStateFlow<LookupState>(LookupState.Idle)
     val state: StateFlow<LookupState> = _state.asStateFlow()
@@ -134,11 +162,19 @@ class DictionaryLookupModel @Inject constructor(
                     anchor = anchor,
                     entries = hits,
                     selectedIndex = 0,
-                    html = html
+                    html = html,
+                    hasResources = hasResourcesFor(first.dictId)
                 )
             )
         }
     }
+
+    /**
+     * 把发音资源落成文件（设计 §3.7）。转发到 [DictionaryResourceStore]：卡片只拿到回调，
+     * 不直接持有资源仓库（关闭卡片就不会再多留一份句柄引用）。
+     */
+    suspend fun audioFile(context: Context, dictId: String, path: String): File? =
+        DictionaryResourceStore.shared.audioFile(context, dictId, path)
 
     /** 切换多词典命中里的第 [index] 条（词条选择器）。 */
     fun select(index: Int) {
@@ -151,7 +187,14 @@ class DictionaryLookupModel @Inject constructor(
             // 期间可能已经 dismiss 或发起了新的查询：只在状态还是这次命中时落地。
             val latest = _state.value as? LookupState.Success ?: return@launch
             if (latest.word != current.word) return@launch
-            publish(latest.copy(selectedIndex = index, html = html))
+            publish(
+                latest.copy(
+                    selectedIndex = index,
+                    html = html,
+                    // 换到另一部词典就换了资源包：按新命中重算，否则会拿旧词典的结论开/关 WebView。
+                    hasResources = hasResourcesFor(hit.dictId)
+                )
+            )
         }
     }
 
@@ -185,4 +228,8 @@ class DictionaryLookupModel @Inject constructor(
     private fun CoroutineScope.publish(state: LookupState) {
         if (isActive) _state.value = state
     }
+
+    /** 词典不在快照里（已删除）或没有 `.mdd` 时都是 false：不开 WebView。 */
+    private fun hasResourcesFor(dictId: String): Boolean =
+        dictionaries().firstOrNull { it.id == dictId }?.hasResources == true
 }
