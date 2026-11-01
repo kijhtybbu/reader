@@ -14,6 +14,7 @@
  *
  * 卡片分三层，只有中间那层滚动：
  *  1. 固定头部：词头 + 音标 + 来源 + 词典元信息（柯林斯星级/牛津/考试标签/词频）+ 多词典 chip；
+ *     （多词典/多候选存在时，候选 chips 栏在正文向上滚动阅读后文时自动收起以释放空间，向下滚动或触顶时自动展开）；
  *  2. 可滚动正文：义项 / 英文释义 / 词形附注；**富媒体词条不同**：正文是 WebView，自己不滚，
  *     改用 `weight(1f)` 占满剩余高度（见 `LookupCard(fixedHeightBody = true)`）——
  *     外面再套一个 `verticalScroll` 就会变成嵌套滚动，两者会抢手势；
@@ -28,6 +29,14 @@ package ua.acclorite.book_story.ui.reader
 
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -70,12 +79,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
@@ -439,13 +453,17 @@ fun ReaderLookupPopup(
  *    `onContentHeight`），放不下时才被剩余空间夹住；
  *  - **不**套 `verticalScroll`：WebView 内部已经在滚，外面再套一层就变成嵌套滚动，
  *    两层会抢手势（滑一下跳两屏）。头尾仍然固定。
+ * @param scrollState Compose 正文的滚动状态（非富媒体词条）。
+ * @param nestedScrollConnection 滚动手势拦截连接器，用于监听用户真实手势并折叠/恢复候选 chips。
  */
 @Composable
 private fun LookupCard(
     header: @Composable ColumnScope.() -> Unit,
     body: @Composable ColumnScope.() -> Unit,
     footer: (@Composable ColumnScope.() -> Unit)? = null,
-    fixedHeightBody: Boolean = false
+    fixedHeightBody: Boolean = false,
+    scrollState: ScrollState = rememberScrollState(),
+    nestedScrollConnection: NestedScrollConnection? = null
 ) {
     val palette = LocalReaderPalette.current
     Column(Modifier.fillMaxWidth()) {
@@ -462,8 +480,12 @@ private fun LookupCard(
                 .weight(1f, fill = false)
                 .padding(horizontal = 18.dp, vertical = 12.dp)
                 .then(
+                    if (nestedScrollConnection != null) Modifier.nestedScroll(nestedScrollConnection)
+                    else Modifier
+                )
+                .then(
                     if (fixedHeightBody) Modifier
-                    else Modifier.verticalScroll(rememberScrollState())
+                    else Modifier.verticalScroll(scrollState)
                 ),
             content = body
         )
@@ -475,6 +497,94 @@ private fun LookupCard(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 content = footer
             )
+        }
+    }
+}
+
+/**
+ * 滚动方向追踪与双向防回弹累计器：
+ * 截获向上滚动的动作隐藏候选 chips；向下滚动时仅当页面滚动到头（`current <= 0`）时才展开候选 chips，
+ * 中段滚动保持收起以最大化正文阅读面积。
+ *
+ * 采用死区阈值（[thresholdPx]）与方向切换清零机制，防止手指轻微抖动/微小位移引起 chips 闪烁；
+ * 采用双向冷却期机制（[cooldownDurationMillis]）：
+ *  - 折叠后进入折叠冷却期，屏蔽视口变大引发的滚动回夹（clamp）产生的虚假触顶事件；
+ *  - 展开后进入展开冷却期，屏蔽触顶弹性回弹（overscroll spring-back）及布局重排产生的虚假正向位移，
+ *    防止向下展开后立即发生闪烁缩回（弹跳）。
+ *
+ * @param thresholdPx 判定为有效滚动的阈值（px）。
+ * @param cooldownDurationMillis 动画过渡期间的防回弹冷却时间（ms），默认 300ms（覆盖 200ms 动画及回弹）。
+ */
+internal class ScrollDirectionTracker(
+    val thresholdPx: Int,
+    val cooldownDurationMillis: Long = 300L
+) {
+    var accumulatedDelta: Int = 0
+        private set
+
+    /** 折叠后防回夹冷却截止时间戳（ms）。 */
+    var collapseCooldownUntilMillis: Long = 0L
+        private set
+
+    /** 展开后防弹跳冷却截止时间戳（ms）。 */
+    var expandCooldownUntilMillis: Long = 0L
+        private set
+
+    fun reset() {
+        accumulatedDelta = 0
+        collapseCooldownUntilMillis = 0L
+        expandCooldownUntilMillis = 0L
+    }
+
+    /**
+     * @param delta 垂直滚动增量：> 0 表示内容向上滚/手指向上推（看后面内容），< 0 表示内容向下滚/手指向下拉（返回顶部）。
+     * @param current 当前绝对垂直滚动位置（px）。
+     * @param isVisible 当前 chips 是否可见。
+     * @param nowMillis 当前时间戳（ms），用于防抖冷却计算。
+     * @param onVisibilityChanged 仅在可见性需要改变时回调。
+     */
+    fun onScroll(
+        delta: Int,
+        current: Int,
+        isVisible: Boolean,
+        nowMillis: Long = System.currentTimeMillis(),
+        onVisibilityChanged: (Boolean) -> Unit
+    ) {
+        // 折叠冷却期（视口变大）：屏蔽 ScrollState/WebView 回夹产生的虚假触顶
+        if (!isVisible && nowMillis < collapseCooldownUntilMillis) {
+            accumulatedDelta = 0
+            return
+        }
+
+        // 展开冷却期（视口变小）：屏蔽 overscroll spring-back / 布局下移产生的虚假 delta > 0，防止弹跳
+        if (isVisible && delta > 0 && nowMillis < expandCooldownUntilMillis) {
+            accumulatedDelta = 0
+            return
+        }
+
+        if (delta > 0) {
+            // 内容向上滚（阅读后文）：若已隐藏则无需累计
+            if (!isVisible) {
+                accumulatedDelta = 0
+            } else {
+                if (accumulatedDelta < 0) accumulatedDelta = 0
+                accumulatedDelta += delta
+                if (accumulatedDelta >= thresholdPx) {
+                    accumulatedDelta = 0
+                    collapseCooldownUntilMillis = nowMillis + cooldownDurationMillis
+                    onVisibilityChanged(false)
+                }
+            }
+        } else if (current <= 0) {
+            // 向下滚且页面滚动到头（current <= 0）：触发 chips 展开
+            accumulatedDelta = 0
+            if (!isVisible) {
+                expandCooldownUntilMillis = nowMillis + cooldownDurationMillis
+                onVisibilityChanged(true)
+            }
+        } else {
+            // 向下滚但在中段（current > 0）：保持收起状态不展开，正文阅读面积最大化
+            accumulatedDelta = 0
         }
     }
 }
@@ -539,8 +649,62 @@ private fun SuccessCard(
         }
     }
 
+    val composeScrollState = remember(state.word, state.selectedIndex) { ScrollState(0) }
+    val density = LocalDensity.current
+    val thresholdPx = remember(density) { with(density) { 12.dp.roundToPx() } }
+    var chipsVisible by remember(state.word, state.selectedIndex) { mutableStateOf(true) }
+    val tracker = remember(state.word, state.selectedIndex, thresholdPx) {
+        ScrollDirectionTracker(thresholdPx)
+    }
+
+    LaunchedEffect(state.word, state.selectedIndex, state.entries.size) {
+        tracker.reset()
+    }
+
+    val onScrollDelta: (Int, Int) -> Unit = remember(tracker, state.entries.size) {
+        { delta, current ->
+            if (state.entries.size > 1) {
+                tracker.onScroll(delta, current, chipsVisible) { visible ->
+                    chipsVisible = visible
+                }
+            }
+        }
+    }
+
+    val nestedScrollConnection = remember(onScrollDelta, composeScrollState, state.entries.size) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (state.entries.size > 1) {
+                    val delta = (-available.y).roundToInt()
+                    if (delta != 0) {
+                        // 向上滑收起 chips 仅响应用户直接拖动手势（UserInput），
+                        // 忽略弹性回弹（SideEffect）带来的正向位移，彻底消除手势释放时的弹跳
+                        if (delta < 0 || source == NestedScrollSource.UserInput) {
+                            onScrollDelta(delta, composeScrollState.value)
+                        }
+                    }
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                // 向下拉到顶部溢出时（available.y > 0），确保必定触发展开
+                if (state.entries.size > 1 && available.y > 0 && composeScrollState.value <= 0) {
+                    onScrollDelta(-available.y.roundToInt(), 0)
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
     LookupCard(
         fixedHeightBody = media != null,
+        scrollState = composeScrollState,
+        nestedScrollConnection = nestedScrollConnection,
         header = {
             WordHeader(
                 word = state.word,
@@ -550,12 +714,24 @@ private fun SuccessCard(
                 onSpeak = speak
             )
             if (state.entries.size > 1) {
-                // 候选词条和上方的词典元信息都是胶囊，挤在一起会混成一片：
-                // 拉开间距并用一条发丝线分组。
-                Spacer(Modifier.height(10.dp))
-                HorizontalDivider(color = LocalReaderPalette.current.onBar.copy(alpha = 0.06f))
-                Spacer(Modifier.height(10.dp))
-                EntryChips(state = state, onSelect = onSelect)
+                AnimatedVisibility(
+                    visible = chipsVisible,
+                    enter = expandVertically(
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                    ) + fadeIn(animationSpec = tween(durationMillis = 150)),
+                    exit = shrinkVertically(
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                    ) + fadeOut(animationSpec = tween(durationMillis = 150))
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        // 候选词条和上方的词典元信息都是胶囊，挤在一起会混成一片：
+                        // 拉开间距并用一条发丝线分组。
+                        Spacer(Modifier.height(10.dp))
+                        HorizontalDivider(color = LocalReaderPalette.current.onBar.copy(alpha = 0.06f))
+                        Spacer(Modifier.height(10.dp))
+                        EntryChips(state = state, onSelect = onSelect)
+                    }
+                }
             }
         },
         body = {
@@ -595,7 +771,8 @@ private fun SuccessCard(
                     dictId = selected?.dictId.orEmpty(),
                     onLookupLink = { word -> onLookupLink.value(word) },
                     onPlayAudio = playAudio,
-                    onContentHeight = onMediaContentHeight
+                    onContentHeight = onMediaContentHeight,
+                    onScrollDelta = onScrollDelta
                 )
             }
         }

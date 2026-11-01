@@ -33,6 +33,7 @@ package ua.acclorite.book_story.ui.reader
 
 import android.annotation.SuppressLint
 import android.net.Uri
+import android.view.MotionEvent
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -226,6 +227,7 @@ private fun Color.toCssColor(): String {
  * @param onContentHeight 加载完成后量到的正文高度（View 像素，`contentHeight × scale`）。
  *   卡片拿它当正文高度，好让卡片是「内容多高就多高」而不是一上来撑满上限。**只回调一次**：
  *   之后的图片懒加载/异步字体不再重测 —— 反复重测会让卡片一直抖。
+ * @param onScrollDelta 滚动增量与当前绝对垂直位置（px）回调，用于卡片顶栏候选 chips 的折叠显隐。
  */
 @Composable
 internal fun DictionaryArticleWebView(
@@ -234,7 +236,8 @@ internal fun DictionaryArticleWebView(
     onLookupLink: (String) -> Unit,
     onPlayAudio: (String) -> Unit,
     modifier: Modifier = Modifier,
-    onContentHeight: (Int) -> Unit = {}
+    onContentHeight: (Int) -> Unit = {},
+    onScrollDelta: (delta: Int, scrollY: Int) -> Unit = { _, _ -> }
 ) {
     val palette = LocalReaderPalette.current
     // 系统字号缩放：Compose 的 sp 自动吃它，WebView 的 textZoom 不会，得自己乘上去。
@@ -248,6 +251,7 @@ internal fun DictionaryArticleWebView(
     val currentOnLookupLink = rememberUpdatedState(onLookupLink)
     val currentOnPlayAudio = rememberUpdatedState(onPlayAudio)
     val currentOnContentHeight = rememberUpdatedState(onContentHeight)
+    val currentOnScrollDelta = rememberUpdatedState(onScrollDelta)
 
     key(dictId) {
         // 非 State 的容器：View 不需要参与快照，只有 onDispose 读它。
@@ -258,6 +262,30 @@ internal fun DictionaryArticleWebView(
                 WebView(context).apply {
                     holder.webView = this
                     configureForArticle()
+                    setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+                        currentOnScrollDelta.value(scrollY - oldScrollY, scrollY)
+                    }
+                    var touchStartY = 0f
+                    setOnTouchListener { v, event ->
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                touchStartY = event.rawY
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                val totalDy = event.rawY - touchStartY
+                                // 在顶部（scrollY <= 0）手指向下拉动时：WebView 自身不会触发 onScrollChange，
+                                // 借助 touch 手势直接驱动 chips 展开
+                                if (totalDy > 20f && v.scrollY <= 0) {
+                                    currentOnScrollDelta.value(-totalDy.roundToInt(), 0)
+                                    touchStartY = event.rawY
+                                }
+                            }
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                touchStartY = 0f
+                            }
+                        }
+                        false // 必须返回 false，确保 WebView 正常响应内部链接点击与滚动
+                    }
                     val client = DictionaryArticleClient(
                         dictId = dictId,
                         onLookupLink = { word -> currentOnLookupLink.value(word) },
@@ -291,6 +319,8 @@ internal fun DictionaryArticleWebView(
             onDispose {
                 holder.client?.cancelPendingMeasurements()
                 holder.client = null
+                holder.webView?.setOnScrollChangeListener(null)
+                holder.webView?.setOnTouchListener(null)
                 holder.webView?.let(::destroyWebView)
                 holder.webView = null
             }
