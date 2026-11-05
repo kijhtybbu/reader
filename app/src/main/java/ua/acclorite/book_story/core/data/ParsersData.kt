@@ -7,7 +7,11 @@
 package ua.acclorite.book_story.core.data
 
 object ParsersData {
-    private const val JSOUP_PARSER = 2
+    // fork: 2 → 3。Jsoup 文档解析器修了「标题内嵌 <b>/<i>/<a> 时把格式标记原样显示出来」
+    // （例如 <h1><b>20</b></h1> 显示成 {{B-START}}20{{B-END}}）。提版本号让所有
+    // EPUB/HTML/XML 的已缓存内容失效，用户重新打开书时自动按修复后的解析器重建，
+    // 不必删书重导。
+    private const val JSOUP_PARSER = 3
     private const val EPUB_PARSER = 1
     private const val PDF_PARSER = 1
     private const val HTML_PARSER = 1

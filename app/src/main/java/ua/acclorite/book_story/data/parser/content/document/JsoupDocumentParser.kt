@@ -408,7 +408,12 @@ class JsoupDocumentParser @Inject constructor() {
             if (line.containsVisibleText()) {
                 when {
                     DocumentContent.Header.isHeader(line) -> {
+                        // fork: 标题里如果嵌套了 <b>/<i>/<a>，processDocument 会把段落格式标记
+                        // 也插进来，而 Header 只存纯文本、不解析样式。不清掉标记的话，
+                        // 标题会原样显示成「{{B-START}}20{{B-END}}」。
                         val title = DocumentContent.Header.getHeaderTitle(line)
+                            .let { DocumentContent.Paragraph.clearMarkers(it) }
+                            .trim()
                         val level = DocumentContent.Header.getHeaderLevel(line)
                         if (title.isBlank() || level == null) return@forEach
 
