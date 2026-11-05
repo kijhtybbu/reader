@@ -11,15 +11,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.common.components.settings.ChipsWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.model.ListItem
 import ua.acclorite.book_story.ui.reader.data.FontRegistry
 import ua.acclorite.book_story.ui.reader.rememberFontFamily
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
 
 @Composable
 fun FontFamilyOption() {
-    val settings = LocalSettings.current
-    val selectedId = settings.fontFamily.value.id
+    val typography = LocalReaderTypography.current
+    val selectedId = typography.values.fontFamily.id
 
     ChipsWithTitle(
         title = stringResource(id = R.string.font_family_option),
@@ -42,7 +42,7 @@ fun FontFamilyOption() {
             )
         },
         onClick = { item ->
-            settings.fontFamily.update(item)
+            typography.actions.setFontFamily(item)
         }
     )
 }

@@ -440,7 +440,7 @@
     <string name="lookup_gesture_single_tap">单击</string>
     <string name="lookup_gesture_long_press">长按</string>
     <string name="lookup_gesture_off">关闭</string>
-    <string name="lookup_gesture_note">单击：点到单词就弹出词典卡片；点到空白区仍然是翻页/呼出菜单，长按仍可选中文本复制、翻译或查词。长按：单击保持翻页，按住不动就直接取出那个词；该模式下长按不再选中文本，需要选文本时请切回「单击」。</string>
+    <string name="lookup_gesture_note">单击：点词弹出词典，空白区仍翻页/呼菜单。长按：单击保持翻页，按住取词（此模式下长按不能选文本）。</string>
     <string name="dictionary_priority_note">单选 = 优先词典：先查它，再查其余已启用的词典；它不会屏蔽其它词典。</string>
     <string name="dictionary_audio_accent_title">发音口音</string>
     <string name="dictionary_audio_accent_auto">自动</string>
@@ -553,4 +553,21 @@
     <string name="translation_dialog_meta">模型 %1$s · %2$s</string>
     <string name="translation_dialog_sentence_pick">选择一句开始分析</string>
     <string name="translation_dialog_reanalyze">重新分析</string>
+
+    <!-- fork: 按书排版 -->
+    <string name="typography_scope_global">全局</string>
+    <string name="typography_scope_book">本书</string>
+    <string name="typography_scope_global_note">正在编辑全局排版 · 影响所有书</string>
+    <string name="typography_scope_book_note">正在编辑本书排版 · 与全局一致</string>
+    <string name="typography_scope_book_modified_note">正在编辑本书排版 · 与全局有 %1$d 项不同</string>
+    <string name="typography_modified_from_global_desc">与全局不同</string>
+    <string name="typography_reset_to_global">恢复全局默认</string>
+    <string name="typography_reset_to_global_dialog_title">恢复全局设置？</string>
+    <string name="typography_reset_to_global_dialog_text">本书保存的排版设置将被删除，之后重新跟随全局设置。此操作无法撤销。</string>
+
+    <!-- fork: 按书翻译器 -->
+    <string name="translator_book_section">本书设置</string>
+    <string name="translator_global_section">全局词典与 AI</string>
+    <string name="translator_book_scope_note">取词与双击翻译只对本书生效，默认关闭。</string>
+    <string name="translator_global_config_note">词典与 API Key 由所有书共享，点击下方条目管理。</string>
 </resources>

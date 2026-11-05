@@ -9,6 +9,8 @@ package ua.acclorite.book_story.domain.use_case.book
 import ua.acclorite.book_story.core.log.logE
 import ua.acclorite.book_story.core.log.logI
 import ua.acclorite.book_story.core.log.logW
+import ua.acclorite.book_story.data.translator.BookTranslatorStore
+import ua.acclorite.book_story.data.typography.ReaderTypographyStore
 import ua.acclorite.book_story.domain.model.book.Book
 import ua.acclorite.book_story.domain.repository.BookRepository
 import ua.acclorite.book_story.domain.repository.BookmarkRepository
@@ -22,7 +24,9 @@ class DeleteBookUseCase @Inject constructor(
     private val bookRepository: BookRepository,
     private val historyRepository: HistoryRepository,
     private val bookmarkRepository: BookmarkRepository,
-    private val imageHandler: ImageHandler
+    private val imageHandler: ImageHandler,
+    private val readerTypographyStore: ReaderTypographyStore,
+    private val bookTranslatorStore: BookTranslatorStore
 ) {
 
     suspend operator fun invoke(book: Book) {
@@ -48,6 +52,11 @@ class DeleteBookUseCase @Inject constructor(
         // Deleting book
         bookRepository.deleteBook(book).fold(
             onSuccess = {
+                // fork: 按书排版记录跟着书一起删。不删的话 uuid 永远不会再被打开，
+                // 记录会随删书数量无限堆积。
+                readerTypographyStore.remove(book.uuid)
+                // fork: 按书翻译器行为同样跟着书删。
+                bookTranslatorStore.remove(book.uuid)
                 logI(TAG, "Successfully deleted [${book.title}].")
             },
             onFailure = {

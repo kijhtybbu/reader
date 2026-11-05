@@ -53,7 +53,7 @@ fun ReaderSettingsBottomSheet(
     dismissBottomSheet: (ReaderEvent.OnDismissBottomSheet) -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(initialPage) { 3 }
+    val pagerState = rememberPagerState(initialPage) { 4 }
     DisposableEffect(Unit) { onDispose { initialPage = pagerState.currentPage } }
 
     val animatedScrimColor by animateColorAsState(
@@ -67,8 +67,13 @@ fun ReaderSettingsBottomSheet(
         animationSpec = Motion.long()
     )
     val animatedHeight by animateFloatAsState(
-        // fork: 排版页压到 0.62，多露出一点上方正文（真正的预览在面板顶部固定）
-        targetValue = if (pagerState.currentPage == 2) 0.6f else 0.62f,
+        // fork: 排版页顶部固定了「全局/本书」选择器 + 样例预览，实测 0.62 会把
+        // 下方的滑块列表压到只剩一行；提到 0.74 后上方仍能看到正文，列表也可用。
+        targetValue = when (pagerState.currentPage) {
+            0 -> 0.74f
+            2 -> 0.6f
+            else -> 0.62f
+        },
         animationSpec = Motion.long()
     )
 
@@ -108,6 +113,9 @@ fun ReaderSettingsBottomSheet(
                     // 预览固定在顶部：否则滚到字距/缩进/对齐时预览已经滚出屏幕，
                     // 调这些项就完全没有反馈
                     Column(Modifier.fillMaxSize()) {
+                        // fork: 作用域切换也固定在顶部（滚动不消失），并且要在预览上方 ——
+                        // 切到「本书」后预览必须展示本书的值，用户才能确认切换生效。
+                        ReaderTypographyScopeSelector()
                         ReaderTypographyPreview()
                         LazyColumnWithScrollbar(Modifier.fillMaxSize()) {
                         // 常驻高频区：字号/行距/段距/字距/缩进/对齐/字体
@@ -128,9 +136,6 @@ fun ReaderSettingsBottomSheet(
                             backgroundColor = { MaterialTheme.colorScheme.surfaceContainer }
                         )
                         ProgressSubcategory(
-                            titleColor = { MaterialTheme.colorScheme.onSurface }
-                        )
-                        TranslatorSubcategory(
                             titleColor = { MaterialTheme.colorScheme.onSurface },
                             showDivider = false
                         )
@@ -143,6 +148,11 @@ fun ReaderSettingsBottomSheet(
                         ReadingModeSubcategory(
                             titleColor = { MaterialTheme.colorScheme.onSurface }
                         )
+                        // fork: 左右/上下边距属于按书覆盖的 12 项，选择器紧贴在边距组上方。
+                        // 放在 Tab 1 最顶部会让人误以为上面的阅读模式/系统项也按书生效。
+                        item {
+                            ReaderTypographyScopeSelector(compact = true)
+                        }
                         PaddingSubcategory(
                             titleColor = { MaterialTheme.colorScheme.onSurface }
                         )
@@ -173,6 +183,19 @@ fun ReaderSettingsBottomSheet(
                             showTitle = false,
                             showDivider = false,
                             backgroundColor = { MaterialTheme.colorScheme.surfaceContainer }
+                        )
+                    }
+                }
+
+                3 -> {
+                    // fork: 翻译与词典从排版 Tab 独立出来，放在最后一个 Tab。
+                    // Tab 名已经说明内容，不再重复渲染子分类标题。
+                    LazyColumnWithScrollbar(Modifier.fillMaxSize()) {
+                        TranslatorSubcategory(
+                            titleColor = { MaterialTheme.colorScheme.onSurface },
+                            showTitle = false,
+                            showDivider = false,
+                            bookScoped = true
                         )
                     }
                 }

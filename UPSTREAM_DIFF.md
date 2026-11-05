@@ -95,6 +95,21 @@ Known fields are [... e, ... f, ... g, ... h]
 `sw≥600dp` 上永久失效。抬 `targetSdk` 到 37 时必须换成别的形态（大屏隐藏这组 chip /
 改成应用内提示），不能指望这行继续有效。
 
+### 2.4 标题内嵌粗体时，格式标记被原样显示
+
+**现象**：EPUB 第 20 章标题显示成 `{{B-START}}20{{B-END}}`（而不是「20」）。只有标题里
+含 `<b>`/`<i>`/`<a>` 的章节会中招，纯文本标题正常。
+
+**根因**：`JsoupDocumentParser.processDocument` 对 `strong, b, emphasis / em, i, cite, dfn, address / a`
+统一插入段落格式标记（`{{B-START}}` 等），但 `processMarkedDocument` 的 Header 分支
+直接取 `getHeaderTitle(line)`，没有像 Paragraph 分支那样调用 `clearMarkers`。
+`NodeContent.Header` 只存纯文本、不解析样式，于是标记被当成标题正文渲染。
+
+**上游状态**：`upstream-base`（`464891ec`）的 `JsoupDocumentParser` 是上游代码，同样存在。
+
+**修复**：Header 标题先 `Paragraph.clearMarkers(...)` 再 `trim()`；`JSOUP_PARSER` 2 → 3，
+让 EPUB/HTML/XML 的已缓存内容失效，用户重开书时自动重建（已读位置保留）。
+
 ---
 
 ## 3. 新增功能
@@ -149,10 +164,10 @@ Known fields are [... e, ... f, ... g, ... h]
 
 上游改一次字号要：点正文 → 底部面板 → 切「阅读器」Tab → 进「字体」子页 → 拖滑块，且拖动时面板遮住正文。
 
-- Tab 顺序改为 **排版 / 更多 / 颜色**，第一个 Tab 前七行就是高频项：字号、行距、段距、字距、缩进、对齐、字体
+- Tab 顺序改为 **排版 / 更多 / 颜色 / 翻译器**，第一个 Tab 前七行就是高频项：字号、行距、段距、字距、缩进、对齐、字体；翻译与词典设置独立为最后一个 Tab
 - **4 个排版预设**：紧凑 / 标准 / 大字 / 护眼，一次写入 5 个设置
 - **面板内样例预览**：分页模式下任何排版参数变化都会把正文淡出到 alpha 0 重新分页，所以"拖动时看面板上方的正文"不成立。改为在面板里渲染一段固定文字，与阅读布局无关
-- 面板高度 0.7 → 0.62，排版页 scrim 透明（露出上方正文）
+- 面板高度：排版页 0.74（顶部固定「全局/本书」选择器 + 样例预览），其余 0.62、颜色页 0.6；排版/颜色页 scrim 透明（露出上方正文）
 
 ### 3.7 用户导入字体（中文字体问题的正解）
 
@@ -182,13 +197,15 @@ Known fields are [... e, ... f, ... g, ... h]
 | --- | --- |
 | 内置词典 | 随包 ECDICT（MIT，77 万词条）：官方 `ecdict.csv` → StarDict → LZMA2 7z（21MB）→ 首次启动解压到 `filesDir/dictionaries/builtin/`；`version` 标记保证重启不重复解压，失败保留旧目录。 |
 | 自定义词典 | 导入 `.mdx`（单文件）或 StarDict 文件夹（`.ifo` + `.idx(.gz)` + `.dict(.dz)` + 可选 `.syn`）；`index.json` 持久化，启用/禁用/优先词典；`.mdd` 资源包经「导入 MDX 文件夹」一起导入（§3.10）。 |
-| 取词 | 单击（默认）/长按可选；两种布局都用单一手势检测器 + `TextLayoutResult` 命中，浮动卡片贴词、安全区避让、夜间配色；未命中可去导入词典或用外部应用。 |
-| AI 段落翻译 | 双击整段（`NodeContent.Paragraph.text`，非分页切片）→ 居中对话框；翻译标签流式输出，可复制/分享/重新生成/取消；外部应用翻译只保留为错误回退。 |
+| 取词 | 单击/长按可选，**按书保存、默认关闭**；两种布局都用单一手势检测器 + `TextLayoutResult` 命中，浮动卡片贴词、安全区避让、夜间配色；未命中可去导入词典或用外部应用。 |
+| AI 段落翻译 | 双击整段（`NodeContent.Paragraph.text`，非分页切片）→ 居中对话框；**按书开关、默认关闭**；翻译标签流式输出，可复制/分享/重新生成/取消；外部应用翻译只保留为错误回退。 |
 | 语法分析 | 整段切句后逐句分析：多句时列出句子，点哪句分析哪句、再点一次收起，单句切到标签即分析（无“开始分析”按钮）；结果是模型写的 Markdown，用 commonmark 渲染（标题/列表/粗体/行内代码），逐句缓存；语法关闭时标签不出现。 |
 | 持久化缓存 | `translationcacheentity`（Room 20 → 21，`AutoMigration`）：键 = promptVersion/kind/目标语言/model/BaseURL host/规范化正文的 SHA-256；只写完整结果，命中不请求；20,000 条 / 200MB LRU；设置页显示占用并可清除。 |
 | 配置/安全 | OpenAI 兼容 Base URL/Model/Key/目标语言；Key 使用 Tink `AndroidKeysetManager` AES-GCM 加密后存 DataStore；loopback（localhost/127.0.0.1/10.0.2.2）允许空 Key；网络明文只放行这三个回环地址。 |
 | 许可 | ECDICT MIT；juicedict 引擎 GPL-3.0（vendored `:dict-engine`，`LICENSE`/`PROVENANCE.md`）；openai-kotlin MIT、Ktor/Tink/commons-compress Apache-2.0、xz Public Domain；AboutLibraries/Credits 与 README 已列。 |
 | 体积 | debug APK ~155MB；release-debug ~55.9MB（含 21MB 词典资产）；首次安装数据目录 ~123MB。 |
+
+**配置拆分**：取词手势与双击翻译按书保存、默认关闭（每本书单独开启）；词典与 AI 凭据/目标语言/语法仍是全局共享。全局设置页只保留「词典管理」「AI 翻译设置」两个入口，书内翻译器 Tab 分「本书设置 / 全局词典与 AI」两段，后段提供词典管理与 AI 设置的直达条目。详见 `docs/per-book-translator-design.md`、`PROGRESS.md` §3.22。
 
 实现细节、缓存键、已知限制与未执行的设备矩阵见 `docs/phase-2-design.md` 与 `PROGRESS.md` §3.1–§3.11。
 
@@ -244,6 +261,19 @@ Known fields are [... e, ... f, ... g, ... h]
 
 实现细节与测试清单见 `docs/dictionary-resources-design.md`、`PROGRESS.md` §3.18。
 
+### 3.11 按书排版（全局 / 本书）
+
+上游只有一套全局排版。本 fork 在阅读器底部面板的排版 Tab 顶部加了「全局 / 本书」选择器：
+每本书可以拥有独立的 12 项排版（字体家族、字重、粗体字重、斜体、字号、行距、段距、
+字距、缩进、对齐、左右/上下边距）。第一次切到「本书」会快照当时的全局值，之后整组独立；
+切回全局只停用、记录保留，再切回来恢复记忆值；与全局不同的项显示圆点标记；
+「恢复全局默认」删除本书记录并回到全局。
+
+- 存储：DataStore 单键 `reader_typography_by_book`，JSON 以书 `uuid` 为键，写入 200ms 合并。
+- 解析：`ReaderTypographyResolver` 纯函数；字体 id 失效回落全局字体。
+- 边界：页眉/图片/进度条/系统项仍只走全局。
+- 详情：`docs/per-book-typography-design.md`、`PROGRESS.md` §3.19。
+
 ---
 
 ## 4. 设计系统（上游没有这一层）
@@ -297,6 +327,8 @@ Known fields are [... e, ... f, ... g, ... h]
 | 书架进度 | 文字胶囊 | 环形进度 + 百分比 |
 | 书架排序 | 不说明 | 「最近阅读」时顶栏显示说明 |
 | 排版面板 | 字号在二级子页 | 7 项高频项在第一 Tab，含 4 个预设与实时样例预览 |
+| 按书排版 | 只有全局 | 每本书独立 12 项，可切回全局、恢复默认、差异标记 |
+| 翻译器行为 | 全局设置，默认开启 | 每本书单独开启（取词/双击，默认关闭）；词典与 AI 配置仍全局 |
 | 单位标签 | 三个滑块都写 pt | 改为真实单位 |
 | 大字号标题 | M3 默认字距 | 收紧字距 + 加重 |
 | 动画时长 | 散落字面量 | 收敛为 8 档 token（观感不变） |

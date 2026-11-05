@@ -22,14 +22,5 @@ import ua.acclorite.book_story.R
 enum class ReaderLookupGesture(@StringRes val title: Int) {
     SINGLE_TAP(R.string.lookup_gesture_single_tap),
     LONG_PRESS(R.string.lookup_gesture_long_press),
-    OFF(R.string.lookup_gesture_off);
-
-    companion object {
-        /**
-         * 解析设置里存的字符串。旧值/被删掉的取值一律回落 [SINGLE_TAP]：
-         * 取词是默认行为，存了个认不出的值不该静默把功能关掉。
-         */
-        fun fromName(name: String?): ReaderLookupGesture =
-            entries.firstOrNull { it.name == name } ?: SINGLE_TAP
-    }
+    OFF(R.string.lookup_gesture_off)
 }

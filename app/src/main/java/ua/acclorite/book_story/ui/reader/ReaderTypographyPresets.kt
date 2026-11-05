@@ -35,9 +35,9 @@ import androidx.compose.ui.unit.dp
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.components.settings.ChipsWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.model.ListItem
 import ua.acclorite.book_story.ui.reader.rememberFontFamily
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
 import ua.acclorite.book_story.ui.theme.Spacing
 
 /**
@@ -69,15 +69,16 @@ private val typographyPresets = listOf(
 
 @Composable
 fun ReaderTypographyPresets() {
-    val settings = LocalSettings.current
+    val typography = LocalReaderTypography.current
 
-    // 用 .value 订阅：预设被应用后 chip 要立刻变成选中态
+    // 用解析后的值订阅：预设被应用后 chip 要立刻变成选中态；本书模式下
+    // 预设写入的是本书记录，不是全局。
     val current = listOf(
-        settings.fontSize.value,
-        settings.lineHeight.value,
-        settings.paragraphHeight.value,
-        settings.letterSpacing.value,
-        settings.paragraphIndentation.value
+        typography.values.fontSize,
+        typography.values.lineHeight,
+        typography.values.paragraphHeight,
+        typography.values.letterSpacing,
+        typography.values.paragraphIndentation
     )
 
     ChipsWithTitle(
@@ -105,11 +106,11 @@ fun ReaderTypographyPresets() {
                 preset.paragraphIndentation
             )
             if (current != target) {
-                settings.fontSize.update(preset.fontSize)
-                settings.lineHeight.update(preset.lineHeight)
-                settings.paragraphHeight.update(preset.paragraphHeight)
-                settings.letterSpacing.update(preset.letterSpacing)
-                settings.paragraphIndentation.update(preset.paragraphIndentation)
+                typography.actions.setFontSize(preset.fontSize)
+                typography.actions.setLineHeight(preset.lineHeight)
+                typography.actions.setParagraphHeight(preset.paragraphHeight)
+                typography.actions.setLetterSpacing(preset.letterSpacing)
+                typography.actions.setParagraphIndentation(preset.paragraphIndentation)
             }
         }
     )
@@ -125,32 +126,32 @@ fun ReaderTypographyPresets() {
  */
 @Composable
 fun ReaderTypographyPreview() {
-    val settings = LocalSettings.current
+    val typography = LocalReaderTypography.current
 
-    // 全部用 .value：这些是 @Composable getter，读它们才会在拖动滑块时触发重组
+    // 全部用解析后的值：这些值随模式/滑块变化，预览必须跟着重组
     // fork: 用户字体需要按当前字重/斜体解析 Typeface，内置字体直接返回
     val fontFamily = rememberFontFamily(
-        font = settings.fontFamily.value,
-        fontWeight = settings.fontThickness.value,
-        italic = settings.italic.value
+        font = typography.values.fontFamily,
+        fontWeight = typography.values.fontThickness,
+        italic = typography.values.italic
     )
     val style = readerParagraphTextStyle(
         fontFamily = fontFamily,
-        fontWeight = FontWeight(settings.fontThickness.value),
-        fontSizeSp = settings.fontSize.value,
-        lineHeightDeltaSp = settings.lineHeight.value,
-        letterSpacingHundredths = settings.letterSpacing.value,
-        paragraphIndentationSetting = settings.paragraphIndentation.value,
-        textAlignment = settings.textAlignment.value,
-        italic = settings.italic.value,
-        synthesizeItalic = settings.fontFamily.value.userEntry != null,
+        fontWeight = FontWeight(typography.values.fontThickness),
+        fontSizeSp = typography.values.fontSize,
+        lineHeightDeltaSp = typography.values.lineHeight,
+        letterSpacingHundredths = typography.values.letterSpacing,
+        paragraphIndentationSetting = typography.values.paragraphIndentation,
+        textAlignment = typography.values.textAlignment,
+        italic = typography.values.italic,
+        synthesizeItalic = typography.values.fontFamily.userEntry != null,
         color = MaterialTheme.colorScheme.onSurface
     )
     val gapDp = readerParagraphGapDp(
-        paragraphHeightSetting = settings.paragraphHeight.value,
-        lineHeightDeltaSp = settings.lineHeight.value
+        paragraphHeightSetting = typography.values.paragraphHeight,
+        lineHeightDeltaSp = typography.values.lineHeight
     )
-    val sidePaddingDp = readerSidePaddingDp(settings.sidePadding.value)
+    val sidePaddingDp = readerSidePaddingDp(typography.values.sidePadding)
 
     Column(
         modifier = Modifier

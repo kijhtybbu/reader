@@ -10,18 +10,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.common.components.settings.SwitchWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
+import ua.acclorite.book_story.ui.reader.translator.LocalBookTranslator
 
 @Composable
 fun DoubleClickTranslationOption() {
-    val settings = LocalSettings.current
+    val translator = LocalBookTranslator.current
 
     SwitchWithTitle(
-        selected = settings.doubleClickTranslation.value,
+        selected = translator.values.doubleClickTranslation,
         title = stringResource(id = R.string.double_click_translation_option),
         description = stringResource(id = R.string.double_click_translation_option_desc),
         onClick = {
-            settings.doubleClickTranslation.update(!settings.doubleClickTranslation.lastValue)
+            translator.actions.setDoubleClickTranslation(
+                !translator.values.doubleClickTranslation
+            )
         }
     )
 }

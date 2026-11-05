@@ -11,12 +11,12 @@ import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.presentation.reader.model.ReaderTextAlignment
 import ua.acclorite.book_story.ui.common.components.settings.SegmentedButtonWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.model.ListItem
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
 
 @Composable
 fun TextAlignmentOption() {
-    val settings = LocalSettings.current
+    val typography = LocalReaderTypography.current
 
     SegmentedButtonWithTitle(
         title = stringResource(id = R.string.text_alignment_option),
@@ -24,11 +24,11 @@ fun TextAlignmentOption() {
             ListItem(
                 item = item,
                 title = stringResource(id = item.title),
-                selected = item == settings.textAlignment.value
+                selected = item == typography.values.textAlignment
             )
         },
         onClick = { item ->
-            settings.textAlignment.update(item)
+            typography.actions.setTextAlignment(item)
         }
     )
 }

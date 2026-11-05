@@ -10,19 +10,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.common.components.settings.SliderWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
 
 @Composable
 fun SidePaddingOption() {
-    val settings = LocalSettings.current
+    val typography = LocalReaderTypography.current
 
     SliderWithTitle(
-        value = settings.sidePadding.value to "pt",
+        value = typography.values.sidePadding to "pt",
         fromValue = 1,
         toValue = 20,
         title = stringResource(id = R.string.side_padding_option),
         onValueChange = {
-            settings.sidePadding.update(it)
+            typography.actions.setSidePadding(it)
         }
     )
 }

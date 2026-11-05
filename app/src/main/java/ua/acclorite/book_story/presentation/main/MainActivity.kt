@@ -24,6 +24,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.collections.immutable.persistentListOf
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.data.settings.SettingsManager
+import ua.acclorite.book_story.data.translator.BookTranslatorStore
+import ua.acclorite.book_story.data.typography.ReaderTypographyStore
 import ua.acclorite.book_story.presentation.browse.BrowseModel
 import ua.acclorite.book_story.presentation.browse.BrowseScreen
 import ua.acclorite.book_story.presentation.history.HistoryModel
@@ -53,11 +55,21 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var settings: SettingsManager
+
+    @Inject
+    lateinit var readerTypographyStore: ReaderTypographyStore
+
+    @Inject
+    lateinit var bookTranslatorStore: BookTranslatorStore
     private val settingsModel: SettingsModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen().setKeepOnScreenCondition {
-            !settings.initialized.value || !settingsModel.initialized.value
+            // fork: 按书排版必须在首帧前读完，否则会先按全局画一帧再跳到本书。
+            !settings.initialized.value ||
+                    !readerTypographyStore.initialized.value ||
+                    !bookTranslatorStore.initialized.value ||
+                    !settingsModel.initialized.value
         }
 
         super.onCreate(savedInstanceState)
@@ -85,7 +97,7 @@ class MainActivity : AppCompatActivity() {
                 effects = settingsModel.effects
             )
 
-            ProvideSettings(settings) {
+            ProvideSettings(settings, readerTypographyStore, bookTranslatorStore) {
                 val tabs = persistentListOf(
                     NavigatorItem(
                         screen = LibraryScreen,

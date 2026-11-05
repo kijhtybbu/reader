@@ -14,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
+import ua.acclorite.book_story.data.typography.ReaderTypographyField
+import ua.acclorite.book_story.ui.reader.ModifiedTypographyOption
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategory
 import ua.acclorite.book_story.ui.settings.reader.padding.components.BottomBarPaddingOption
 import ua.acclorite.book_story.ui.settings.reader.padding.components.CutoutPaddingOption
@@ -33,11 +35,15 @@ fun LazyListScope.PaddingSubcategory(
         showDivider = showDivider
     ) {
         item {
-            SidePaddingOption()
+            ModifiedTypographyOption(ReaderTypographyField.SIDE_PADDING) {
+                SidePaddingOption()
+            }
         }
 
         item {
-            VerticalPaddingOption()
+            ModifiedTypographyOption(ReaderTypographyField.VERTICAL_PADDING) {
+                VerticalPaddingOption()
+            }
         }
 
         item {

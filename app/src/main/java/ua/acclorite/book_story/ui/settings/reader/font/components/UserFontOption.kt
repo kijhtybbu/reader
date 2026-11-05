@@ -57,6 +57,7 @@ import ua.acclorite.book_story.ui.reader.data.UserFontRegistry
 import ua.acclorite.book_story.ui.reader.model.UserFontEntry
 import ua.acclorite.book_story.ui.reader.model.toFontWithName
 import ua.acclorite.book_story.ui.reader.rememberFontFamily
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypographyStore
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryNote
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryTitle
 import ua.acclorite.book_story.ui.theme.Spacing
@@ -64,6 +65,7 @@ import ua.acclorite.book_story.ui.theme.Spacing
 @Composable
 fun UserFontOption() {
     val settings = LocalSettings.current
+    val typographyStore = LocalReaderTypographyStore.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val fonts = UserFontRegistry.fonts
@@ -113,6 +115,9 @@ fun UserFontOption() {
                     if (settings.fontFamily.lastValue.id == entry.id) {
                         settings.fontFamily.update(ReaderData.fonts[0])
                     }
+                    // fork: 按书排版记录里可能还引用这个字体。只靠解析时回落默认字体不够：
+                    // 记录的 id 与全局不同，差异标记会一直亮着，与实际观感不符。
+                    typographyStore.removeFontReferences(entry.id)
                     scope.launch { UserFontRegistry.deleteFont(context, entry) }
                 }
             )

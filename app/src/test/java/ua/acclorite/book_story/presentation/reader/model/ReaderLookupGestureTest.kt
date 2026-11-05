@@ -3,36 +3,41 @@
  * Copyright (C) 2024-2026 Acclorite
  * SPDX-License-Identifier: GPL-3.0-only
  *
- * fork 新增：取词手势设置的取值与回落（第二阶段 S5）。
+ * fork 新增：取词手势的存储名往返与回落语义。
  *
- * 回落方向是刻意的：认不出的存量值回到 SINGLE_TAP（默认行为），而不是 OFF。
- * 一个脏值不该静默把取词功能关掉，用户会以为功能坏了。
+ * 语义变更（按书翻译器）：取词手势不再是全局设置，也没有「默认单击」——
+ * 每本书默认 OFF；认不出的存量值也回落 OFF，避免升级后悄悄打开取词。
  */
 
 package ua.acclorite.book_story.presentation.reader.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import ua.acclorite.book_story.data.translator.BookTranslatorRecord
+import ua.acclorite.book_story.data.translator.resolve
 
 class ReaderLookupGestureTest {
 
     @Test
     fun `every value round-trips through its stored name`() {
         ReaderLookupGesture.entries.forEach { gesture ->
-            assertEquals(gesture, ReaderLookupGesture.fromName(gesture.name))
+            val record = BookTranslatorRecord(lookupGesture = gesture.name)
+
+            assertEquals(gesture, record.resolve().lookupGesture)
         }
     }
 
     @Test
-    fun `the default is single tap`() {
-        assertEquals(ReaderLookupGesture.SINGLE_TAP, ReaderLookupGesture.fromName(null))
+    fun `a missing record defaults to off`() {
+        assertEquals(ReaderLookupGesture.OFF, (null as BookTranslatorRecord?).resolve().lookupGesture)
     }
 
     @Test
-    fun `an unknown stored value falls back to single tap`() {
-        assertEquals(ReaderLookupGesture.SINGLE_TAP, ReaderLookupGesture.fromName("DOUBLE_TAP"))
-        assertEquals(ReaderLookupGesture.SINGLE_TAP, ReaderLookupGesture.fromName(""))
-        // 大小写不匹配也算认不出（存的是 name，不是小写形式）
-        assertEquals(ReaderLookupGesture.SINGLE_TAP, ReaderLookupGesture.fromName("single_tap"))
+    fun `an unknown stored value falls back to off`() {
+        listOf("DOUBLE_TAP", "", "single_tap").forEach { name ->
+            val record = BookTranslatorRecord(lookupGesture = name)
+
+            assertEquals(ReaderLookupGesture.OFF, record.resolve().lookupGesture)
+        }
     }
 }

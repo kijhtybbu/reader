@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -32,14 +33,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -60,6 +58,10 @@ import ua.acclorite.book_story.ui.reader.ReaderContent
 import ua.acclorite.book_story.ui.reader.ReaderEffects
 import ua.acclorite.book_story.ui.reader.readerParagraphTextStyle
 import ua.acclorite.book_story.ui.reader.rememberFontFamily
+import ua.acclorite.book_story.ui.reader.translator.LocalBookTranslator
+import ua.acclorite.book_story.ui.reader.translator.rememberBookTranslator
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
+import ua.acclorite.book_story.ui.reader.typography.rememberBookReaderTypography
 
 @Parcelize
 data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
@@ -78,6 +80,12 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
 
         val state = screenModel.state.collectAsStateWithLifecycle()
         val settingsState = settingsModel.state.collectAsStateWithLifecycle()
+
+        // fork: 当前生效的排版（全局或本书）。12 个排版项从这里读，其余设置仍走全局。
+        // 包裹 ReaderContent 后，底部面板里的 12 个控件也自动编辑同一套值。
+        val typography = rememberBookReaderTypography(state.value.book.uuid)
+        // fork: 翻译器行为按书、默认关闭。旧全局设置不再参与。
+        val translator = rememberBookTranslator(state.value.book.uuid)
 
         val activity = LocalActivity.current
         val density = LocalDensity.current
@@ -114,44 +122,19 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
         val fontColor = animateColorAsState(
             targetValue = settingsState.value.selectedColorPreset.fontColor
         )
-        val lineHeight = remember(
-            settings.fontSize.value,
-            settings.lineHeight.value
-        ) {
-            (settings.fontSize.lastValue + settings.lineHeight.lastValue).sp
+        val sidePadding = remember(typography.values.sidePadding) {
+            (typography.values.sidePadding * 3).dp
         }
-        val letterSpacing = remember(settings.letterSpacing.value) {
-            (settings.letterSpacing.lastValue / 100f).em
-        }
-        val sidePadding = remember(settings.sidePadding.value) {
-            (settings.sidePadding.lastValue * 3).dp
-        }
-        val verticalPadding = remember(settings.verticalPadding.value) {
-            (settings.verticalPadding.lastValue * 4.5f).dp
+        val verticalPadding = remember(typography.values.verticalPadding) {
+            (typography.values.verticalPadding * 4.5f).dp
         }
         val paragraphHeight = remember(
-            settings.paragraphHeight.value,
-            settings.lineHeight.value
+            typography.values.paragraphHeight,
+            typography.values.lineHeight
         ) {
-            ((settings.paragraphHeight.lastValue * 3).dp).coerceAtLeast(
-                with(density) { settings.lineHeight.lastValue.sp.toDp().value * 0.5f }.dp
+            ((typography.values.paragraphHeight * 3).dp).coerceAtLeast(
+                with(density) { typography.values.lineHeight.sp.toDp().value * 0.5f }.dp
             )
-        }
-        val fontStyle = remember(settings.italic.value) {
-            when (settings.italic.lastValue) {
-                true -> FontStyle.Italic
-                false -> FontStyle.Normal
-            }
-        }
-        val paragraphIndentation = remember(
-            settings.paragraphIndentation.value,
-            settings.textAlignment.value
-        ) {
-            if (
-                settings.textAlignment.lastValue == ReaderTextAlignment.CENTER ||
-                settings.textAlignment.lastValue == ReaderTextAlignment.END
-            ) return@remember 0.sp
-            (settings.paragraphIndentation.lastValue * 6).sp
         }
         val perceptionExpanderPadding = remember(
             sidePadding,
@@ -174,8 +157,8 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
         ) {
             (settings.horizontalLimiterRulerThickness.lastValue * 0.25f).dp
         }
-        val horizontalAlignment = remember(settings.textAlignment.value) {
-            when (settings.textAlignment.lastValue) {
+        val horizontalAlignment = remember(typography.values.textAlignment) {
+            when (typography.values.textAlignment) {
                 ReaderTextAlignment.START, ReaderTextAlignment.JUSTIFY -> Alignment.Start
                 ReaderTextAlignment.CENTER -> Alignment.CenterHorizontally
                 ReaderTextAlignment.END -> Alignment.End
@@ -223,36 +206,29 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
         // fork: 用户字体的 FontFamily 由 (font, weight, italic) 在后台解析；内置字体直接返回。
         // 这里用它作为 remember 的 key，Typeface 建好后会触发一次重组（并重新分页）。
         val resolvedFontFamily = rememberFontFamily(
-            font = settings.fontFamily.value,
-            fontWeight = settings.fontThickness.value,
-            italic = settings.italic.value
+            font = typography.values.fontFamily,
+            fontWeight = typography.values.fontThickness,
+            italic = typography.values.italic
         )
 
         // fork: 正文样式抽到 readerParagraphTextStyle，与排版面板的样例预览共用同一份实现，
         // 避免预览显示书里并不存在的效果（曾漏掉斜体与「居中/右对齐取消缩进」）
         val paragraphTextStyle = remember(
-            settings.fontFamily.value,
-            settings.fontThickness.value,
-            settings.textAlignment.value,
-            settings.paragraphIndentation.value,
-            settings.italic.value,
-            settings.letterSpacing.value,
-            settings.fontSize.value,
-            settings.lineHeight.value,
+            typography.values,
             fontColor.value,
             resolvedFontFamily
         ) {
             readerParagraphTextStyle(
                 fontFamily = resolvedFontFamily,
-                fontWeight = FontWeight(settings.fontThickness.lastValue),
-                fontSizeSp = settings.fontSize.lastValue,
-                lineHeightDeltaSp = settings.lineHeight.lastValue,
-                letterSpacingHundredths = settings.letterSpacing.lastValue,
-                paragraphIndentationSetting = settings.paragraphIndentation.lastValue,
-                textAlignment = settings.textAlignment.lastValue,
-                italic = settings.italic.lastValue,
+                fontWeight = FontWeight(typography.values.fontThickness),
+                fontSizeSp = typography.values.fontSize,
+                lineHeightDeltaSp = typography.values.lineHeight,
+                letterSpacingHundredths = typography.values.letterSpacing,
+                paragraphIndentationSetting = typography.values.paragraphIndentation,
+                textAlignment = typography.values.textAlignment,
+                italic = typography.values.italic,
                 // fork: 用户字体没有 italic 字型，Android 也不做伪斜体，用几何倾斜合成
-                synthesizeItalic = settings.fontFamily.lastValue.userEntry != null,
+                synthesizeItalic = typography.values.fontFamily.userEntry != null,
                 color = fontColor.value
             )
         }
@@ -487,92 +463,98 @@ data class ReaderScreen(val bookId: Int) : Screen, Parcelable {
             fullscreen = settings.fullscreen.value
         )
 
-        ReaderContent(
-            layout = settings.readerLayout.value,
-            pagedDirection = settings.pagedDirection.value,
-            pagedAnimation = settings.pagedAnimation.value,
-            tapZones = settings.tapZones.value,
-            layoutState = state.value.layoutState,
-            nodes = state.value.nodes,
-            chapters = state.value.chapters,
-            book = state.value.book,
-            paginating = state.value.paginating,
-            scrollTarget = state.value.scrollTarget,
-            bottomSheet = state.value.bottomSheet,
-            drawer = state.value.drawer,
-            currentChapter = currentChapter.value,
-            currentChapterString = currentChapterString,
-            currentChapterProgress = currentChapterProgress,
-            chaptersEmpty = state.value.chapters.isEmpty(),
-            nestedScrollConnection = nestedScrollConnection.value,
-            fastColorPresetChange = settings.fastColorPresetChange.value,
-            perceptionExpander = settings.perceptionExpander.value,
-            perceptionExpanderPadding = perceptionExpanderPadding,
-            perceptionExpanderThickness = perceptionExpanderThickness,
-            horizontalLimiter = settings.horizontalLimiter.value,
-            horizontalLimiterHeight = horizontalLimiterHeight,
-            horizontalLimiterVerticalOffset = settings.horizontalLimiterVerticalOffset.value,
-            horizontalLimiterRuler = settings.horizontalLimiterRuler.value,
-            horizontalLimiterRulerThickness = horizontalLimiterRulerThickness,
-            horizontalLimiterDimming = settings.horizontalLimiterDimming.value,
-            checkpoints = state.value.checkpoints,
-            showMenu = state.value.showMenu,
-            lockMenu = state.value.lockMenu,
-            contentPadding = contentPadding,
-            verticalPadding = verticalPadding,
-            highlightedReading = settings.highlightedReading.value,
-            highlightedReadingThickness = settings.highlightedReadingThickness.value,
-            progress = progress,
-            progressBar = settings.progressBar.value,
-            progressBarPadding = progressBarPadding,
-            progressBarAlignment = settings.progressBarAlignment.value,
-            progressBarFontSize = progressBarFontSize,
-            paragraphTextStyle = paragraphTextStyle,
-            boldFontThickness = settings.boldFontThickness.value,
-            header1TextStyle = headerTextStyles[0],
-            header2TextStyle = headerTextStyles[1],
-            header3TextStyle = headerTextStyles[2],
-            header4TextStyle = headerTextStyles[3],
-            header5TextStyle = headerTextStyles[4],
-            header6TextStyle = headerTextStyles[5],
-            paragraphHeight = paragraphHeight,
-            sidePadding = sidePadding,
-            bottomBarPadding = bottomBarPadding,
-            backgroundColor = backgroundColor.value,
-            fontColor = fontColor.value,
-            images = settings.images.value,
-            imagesCaptions = settings.imagesCaptions.value,
-            imagesCornersRoundness = imagesCornersRoundness,
-            imagesAlignment = settings.imagesAlignment.value,
-            imagesWidth = imagesWidth,
-            imagesColorEffects = imagesColorEffects,
-            imagesOriginalSize = settings.imagesOriginalSize.value,
-            horizontalAlignment = horizontalAlignment,
-            doubleClickTranslation = settings.doubleClickTranslation.value,
-            lookupGesture = settings.lookupGesture.value,
-            switchColorPreset = settingsModel::onEvent,
-            leave = screenModel::onEvent,
-            restoreCheckpoint = screenModel::onEvent,
-            scroll = screenModel::onEvent,
-            menuVisibility = screenModel::onEvent,
-            retry = screenModel::onEvent,
-            openShareApp = screenModel::onEvent,
-            openWebBrowser = screenModel::onEvent,
-            openTranslator = screenModel::onEvent,
-            openDictionary = screenModel::onEvent,
-            scrollToChapter = screenModel::onEvent,
-            showSettingsBottomSheet = screenModel::onEvent,
-            changeCharset = screenModel::onEvent,
-            dismissBottomSheet = screenModel::onEvent,
-            showChaptersDrawer = screenModel::onEvent,
-            dismissDrawer = screenModel::onEvent,
-            updateProgress = screenModel::onEvent,
-            paginateForward = screenModel::onEvent,
-            paginateBackward = screenModel::onEvent,
-            scrollConsumed = screenModel::onEvent,
-            navigateBack = screenModel::onEvent,
-            navigateToBookInfo = screenModel::onEvent,
-            loadNodesBefore = screenModel::loadNodesBefore
-        )
+        // fork: 把当前生效排版覆盖到整个阅读内容（正文 + 字体/文本/边距控件 + 样例预览）。
+        CompositionLocalProvider(
+            LocalReaderTypography provides typography,
+            LocalBookTranslator provides translator
+        ) {
+            ReaderContent(
+                layout = settings.readerLayout.value,
+                pagedDirection = settings.pagedDirection.value,
+                pagedAnimation = settings.pagedAnimation.value,
+                tapZones = settings.tapZones.value,
+                layoutState = state.value.layoutState,
+                nodes = state.value.nodes,
+                chapters = state.value.chapters,
+                book = state.value.book,
+                paginating = state.value.paginating,
+                scrollTarget = state.value.scrollTarget,
+                bottomSheet = state.value.bottomSheet,
+                drawer = state.value.drawer,
+                currentChapter = currentChapter.value,
+                currentChapterString = currentChapterString,
+                currentChapterProgress = currentChapterProgress,
+                chaptersEmpty = state.value.chapters.isEmpty(),
+                nestedScrollConnection = nestedScrollConnection.value,
+                fastColorPresetChange = settings.fastColorPresetChange.value,
+                perceptionExpander = settings.perceptionExpander.value,
+                perceptionExpanderPadding = perceptionExpanderPadding,
+                perceptionExpanderThickness = perceptionExpanderThickness,
+                horizontalLimiter = settings.horizontalLimiter.value,
+                horizontalLimiterHeight = horizontalLimiterHeight,
+                horizontalLimiterVerticalOffset = settings.horizontalLimiterVerticalOffset.value,
+                horizontalLimiterRuler = settings.horizontalLimiterRuler.value,
+                horizontalLimiterRulerThickness = horizontalLimiterRulerThickness,
+                horizontalLimiterDimming = settings.horizontalLimiterDimming.value,
+                checkpoints = state.value.checkpoints,
+                showMenu = state.value.showMenu,
+                lockMenu = state.value.lockMenu,
+                contentPadding = contentPadding,
+                verticalPadding = verticalPadding,
+                highlightedReading = settings.highlightedReading.value,
+                highlightedReadingThickness = settings.highlightedReadingThickness.value,
+                progress = progress,
+                progressBar = settings.progressBar.value,
+                progressBarPadding = progressBarPadding,
+                progressBarAlignment = settings.progressBarAlignment.value,
+                progressBarFontSize = progressBarFontSize,
+                paragraphTextStyle = paragraphTextStyle,
+                boldFontThickness = typography.values.boldFontThickness,
+                header1TextStyle = headerTextStyles[0],
+                header2TextStyle = headerTextStyles[1],
+                header3TextStyle = headerTextStyles[2],
+                header4TextStyle = headerTextStyles[3],
+                header5TextStyle = headerTextStyles[4],
+                header6TextStyle = headerTextStyles[5],
+                paragraphHeight = paragraphHeight,
+                sidePadding = sidePadding,
+                bottomBarPadding = bottomBarPadding,
+                backgroundColor = backgroundColor.value,
+                fontColor = fontColor.value,
+                images = settings.images.value,
+                imagesCaptions = settings.imagesCaptions.value,
+                imagesCornersRoundness = imagesCornersRoundness,
+                imagesAlignment = settings.imagesAlignment.value,
+                imagesWidth = imagesWidth,
+                imagesColorEffects = imagesColorEffects,
+                imagesOriginalSize = settings.imagesOriginalSize.value,
+                horizontalAlignment = horizontalAlignment,
+                doubleClickTranslation = translator.values.doubleClickTranslation,
+                lookupGesture = translator.values.lookupGesture,
+                switchColorPreset = settingsModel::onEvent,
+                leave = screenModel::onEvent,
+                restoreCheckpoint = screenModel::onEvent,
+                scroll = screenModel::onEvent,
+                menuVisibility = screenModel::onEvent,
+                retry = screenModel::onEvent,
+                openShareApp = screenModel::onEvent,
+                openWebBrowser = screenModel::onEvent,
+                openTranslator = screenModel::onEvent,
+                openDictionary = screenModel::onEvent,
+                scrollToChapter = screenModel::onEvent,
+                showSettingsBottomSheet = screenModel::onEvent,
+                changeCharset = screenModel::onEvent,
+                dismissBottomSheet = screenModel::onEvent,
+                showChaptersDrawer = screenModel::onEvent,
+                dismissDrawer = screenModel::onEvent,
+                updateProgress = screenModel::onEvent,
+                paginateForward = screenModel::onEvent,
+                paginateBackward = screenModel::onEvent,
+                scrollConsumed = screenModel::onEvent,
+                navigateBack = screenModel::onEvent,
+                navigateToBookInfo = screenModel::onEvent,
+                loadNodesBefore = screenModel::loadNodesBefore
+            )
+        }
     }
 }

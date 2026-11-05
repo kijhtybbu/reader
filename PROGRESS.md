@@ -680,6 +680,78 @@ S9 的测试增量：
 | 偏差 | ①计划外多了一个 `MdxPackCheck`/`checkMdxResourcePack`（导入需区分加密与损坏，`openMdxResources` 按设计吞包内失败）；②`textZoom` 不跟阅读正文字号，改为「词典 16px 基准 → 卡片正文 14sp」的固定映射（真机反馈跟阅读字号走时比 ECDICT 正文大一圈，已成为一条独立修复）并乘系统 `fontScale`；③WebView 销毁必须 `stopLoading()` → 换回默认 `WebViewClient` → `about:blank` → `destroy()`（直接销毁还在加载的实例会在内部线程 NPE）；④「加密 mdd」只做到分类 + 映射单测，没做端到端文件用例 |
 | 文档 | `docs/dictionary-resources-design.md`（已实施）、`docs/phase-2-design.md` §1.2/§2/§4.3/§15、`UPSTREAM_DIFF.md` §3.10、`PROVENANCE.md` 第 4 条 |
 
+### 3.19 按书排版（全局 / 本书）
+
+| 项 | 内容 |
+| --- | --- |
+| 需求 | 每本书独立一套排版；没设置的书跟随全局。书内可显式切换「全局 / 本书」，两边各自记忆、可来回切；与全局不同的项给标记；一键恢复全局默认 |
+| 范围 | 12 项：字体家族、字重、粗体字重、斜体、字号、行距、段距、字距、缩进、对齐、左右/上下边距。页眉/图片/进度条/系统项不覆盖 |
+| 语义 | 整组覆盖：第一次切到「本书」时快照当前全局值（12 项完整）；切回全局只 `enabled=false`，记录保留；再切回恢复记忆值；恢复默认＝删除记录并回全局（二次确认） |
+| 存储 | DataStore 单键 `reader_typography_by_book`，JSON 对象以书 `uuid` 为键；可空字段、未知枚举、单条坏记录都逐项容错；整串损坏保留原始值、下次写入自愈 |
+| 并发 | 内存同步更新（避免切换作用域时滑块写到错误目标、reset 后残留回调复活记录）；磁盘 200ms 合并、锁外写盘、写失败只记日志；读取完成前的写入先排队，绝不先写空表 |
+| 解析层 | 纯函数 `ReaderTypographyResolver`（全局+记录→生效值、差异集合，字体 id 通过 `resolveFont` 注入）；`LocalReaderTypography` 统一 12 个控件的数据源，全局设置页注入全局态、阅读页注入本书态 |
+| 模式分流 | actions 按当前模式写：全局模式写 `SettingsManager`，本书模式写 Store。只按「有无记录」判断会让全局模式下的滑块静默把书切进本书模式，已规避 |
+| UI | 排版 Tab 顶部固定选择器（在样例预览上方）；Tab 1 顶部紧凑版；本书模式下与全局不同的项在左侧留白显示 6dp 圆点；「恢复全局默认」弹确认框 |
+| 清理 | 删书 → `DeleteBookUseCase` 调 `store.remove(uuid)`；删用户字体 → `UserFontOption` 调 `store.removeFontReferences(fontId)`（否则差异标记会一直亮着） |
+| 启动 | `ReaderTypographyStore.initialized` 加入 `MainActivity` splash 条件，避免首帧先按全局画再跳本书 |
+| 测试 | 新增 3 文件 / 25 例：`ReaderTypographyCodecTest` 6、`ReaderTypographyResolverTest` 8、`ReaderTypographyStoreTest` 11（含同字段顺序、合并写次数、reset 不可复活、坏 JSON 自愈） |
+| 门禁 | `:app:assembleDebug`、`:app:testDebugUnitTest`、`:app:assembleRelease-debug`（R8 + lintVital）全绿 |
+| 偏差 | ①「边距」不在排版 Tab，因此选择器在 Tab 1 的边距组上方放了一份紧凑版；②差异标记用包装层实现，不改 12 个控件与 3 个共享设置组件；③actions 在阅读页动态读模式写全局/本书，`BookTypographyActions` 只负责本书写入 |
+| 评审修复 | 两轮独立 review（数据层 + Compose）后重写 Store：内存同步更新、200ms 合并落盘、锁外写盘、读取前写入排队；动态 `isBookMode` 关闭切换竞态；`update` 不再复活 reset 后的记录；`compositionLocalOf` 限制重组范围；字体列表加入 remember key；选择器改两行布局；差异点补无障碍说明 |
+| 文档 | `docs/per-book-typography-design.md` |
+| 真机验证 | 联想 TB322FC（Android 16）：装 `release-debug` → 打开《测试书 EPUB》→ 面板顶部切到「本书」→ 拖动字号，状态变「与全局有 1 项不同」、行首圆点出现、预览与正文同步放大；杀进程重装后仍是本书的 29pt；「恢复全局默认」二次确认后回到全局、按钮消失、字号回落 22pt。全程无崩溃 |
+| 面板高度 | 实测 0.62 会把列表压到只剩一行（选择器 + 预览占掉约 200dp），排版 Tab 改为 0.74；「更多」保持 0.62、颜色 0.6 |
+
+### 3.20 阅读器面板：翻译器独立 Tab
+
+| 项 | 内容 |
+| --- | --- |
+| 需求 | 翻译器设置从排版 Tab 里拆出来，与排版并列，顺序放在最后 |
+| 改动 | 「排版」页移除末尾的 `TranslatorSubcategory`，并把 `ProgressSubcategory` 收尾为无分隔线；新增第 4 页渲染 `TranslatorSubcategory(showTitle=false, showDivider=false)`；`HorizontalPager` 页数 3→4；Tab 顺序 **排版 / 更多 / 颜色 / 翻译器** |
+| 行为 | 翻译器页沿用「更多」的遮罩与 0.62 高度；顶部菜单保持显示（仍只有颜色页隐藏菜单）；跨页滑动不受影响 |
+| 验证 | 真机装 `release-debug`：4 个 Tab 顺序正确；翻译器页显示取词手势 / 双击翻译 / 词典管理 / AI 翻译设置；三重门禁通过 |
+
+### 3.21 标题格式标记泄漏（第 20 章显示 {{B-START}}20{{B-END}}）
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 《One Way》第 20 章标题渲染成 `{{B-START}}20{{B-END}}`；只有标题内嵌 `<b>`/`<i>`/`<a>` 的章节会出现，纯文本标题正常 |
+| 根因 | `JsoupDocumentParser.processDocument` 给 `strong/b/em/i/a` 统一插入段落格式标记；`processMarkedDocument` 的 Header 分支直接取 `getHeaderTitle`，没有像 Paragraph 分支那样清标记。`NodeContent.Header` 只存纯文本，标记于是被当成标题正文 |
+| 修复 | Header 标题先 `Paragraph.clearMarkers(...)` 再 `trim()`；`ParsersData.JSOUP_PARSER` 2 → 3，使 EPUB/HTML/XML 的缓存内容失效，重开书时自动按新解析器重建，已读位置保留 |
+| 测试 | 新增 `JsoupDocumentParserHeaderTest` 3 例：标题内 bold 清理、italic + link 清理、段落 bold 仍生成 style range |
+| 真机验证 | 装 `release-debug` 后重开《One Way》：标题从 `{{B-START}}20{{B-END}}` 变为「20」，仍是标题样式；阅读位置保持 64.1% |
+| 门禁 | `:app:testDebugUnitTest`、`:app:assembleRelease-debug`、`:app:assembleDebug` 通过 |
+| 文档 | `UPSTREAM_DIFF.md` §2.4 |
+
+### 3.22 翻译器行为改为按书（默认关闭）
+
+| 项 | 内容 |
+| --- | --- |
+| 需求 | 翻译器行为不再作为全局设置，只能在书里开启，且只对本书生效 |
+| 边界 | 按书：取词手势、双击翻译；全局共享：词典、优先后口音、AI 的 Base URL/模型/Key/目标语言/语法/推理强度 |
+| 语义 | 所有书默认 `OFF` / `false`，不继承旧全局值；两者都关 = 本书不启用翻译器；选中文本后的复制/翻译工具栏保持原行为 |
+| 全局入口 | 「设置 → 阅读器 → 翻译器」只保留「词典管理」「AI 翻译设置」两行，行为开关移除 |
+| 书内入口 | 翻译器 Tab：分「本书设置」「全局词典与 AI」两段；说明 + 取词手势 + 双击翻译，分隔线后是全局说明与词典管理/AI 设置两个可点击条目 |
+| 存储 | DataStore 单键 `book_translator_by_book`，`uuid → {lookupGesture, doubleClickTranslation}`；同步内存 + 200ms 合并落盘；删书联动清理 |
+| 解析 | 缺失/类型错误/未知手势名一律回落 `OFF`（不复用旧的 `fromName` 的 `SINGLE_TAP` 回落） |
+| 测试 | `BookTranslatorCodecTest` 6、`BookTranslatorStoreTest` 11、`ReaderLookupGestureTest` 改写 3；全量 561 例 0 失败 |
+| 门禁 | `:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:assembleRelease-debug` 全绿 |
+| 真机验证 | 最后一轮改动后 USB 设备断开，书内 Tab / 提示跳转 / 跨书隔离尚未复验；已在 `docs/per-book-translator-design.md` §6 记录 |
+| 评审 | 两轮独立 review（数据/状态 + Compose/UI）：仅 3 条 P2；已修 `FlowRow` 垂直间距、空 uuid 写入防御、补读取前排队测试。快速连点提示按钮可能重复 push 页面，明确记为已知 minor |
+| 文档 | `docs/per-book-translator-design.md` |
+
+### 3.23 提示图标内联 + 翻译器页分组
+
+| 项 | 内容 |
+| --- | --- |
+| 问题 1 | 所有设置提示的图标被排成「图标一行、文字一行」，占一行空白且扫读时先看到大图标 |
+| 修复 1 | `SettingsSubcategoryNote` 改为「浅色容器 + 行首图标」：`secondaryContainer` 圆角块内放 20dp 图标 + 权重文字，文字/图标用 `onSecondaryContainer`；全 App 12 处提示统一生效 |
+| 问题 2 | 翻译器页把说明、开关、跳转入口混在一起，缺少层级 |
+| 修复 2 | 书内翻译器 Tab 分两段：「本书设置」（作用域说明 → 取词手势 → 双击翻译）与「全局词典与 AI」（分隔线 → 共享说明 → 词典管理 → AI 设置）；说明文案缩短；删除自定义 `TranslatorGlobalConfigHint`，改用现有可点击条目（带箭头） |
+| 验证 | 真机 `release-debug`：提示为带底色的圆角块、图标在行首；翻译器页两段标题清晰；默认「关闭」+ 双击翻译关闭；切到「单击」后关闭再打开面板仍是「单击」；词典管理与 AI 设置两个条目均能打开对应全局页 |
+| 门禁 | `:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:assembleRelease-debug` 通过（561 例 0 失败） |
+| 已知行为 | 从书内跳到全局页返回后，阅读器面板不自动恢复（与既有词典入口一致） |
+
 ## 4. 真机验证结果
 
 设备：Lenovo TB322FC（Android 16 / API 36 / 1904×3040 / 440dpi）
@@ -703,6 +775,8 @@ S9 的测试增量：
 | 暗色预设下的 WebView | 阅读配色切到暗色预设后重查 `nightmare` 并切 OALD9：卡片深底、正文浅字、蓝色词头/NOUN 徽标正常，没有出现「算法暗化把注入的浅色字反成深色」的双反转 |
 | 系统字号缩放（fontScale） | `settings put system font_scale 1.3` 后重查 OALD9：WebView 正文（词头/IPA/NOUN/释义）与卡片标题同步放大，`textZoom` 乘了 `LocalDensity.current.fontScale` |
 | 词条正文与 ECDICT 同字号 | 阅读预设为「大字」（22pt）时，修前 WebView 正文 `textZoom=137%` 明显大于 ECDICT 释义；改成「词典 16px 基准 → 卡片正文 14sp」固定映射后两者视觉一致，同一条 `nightmare` 能完整显示两条例项 |
+| 按书排版 | 《测试书 EPUB》切「本书」→ 字号拖到 29pt：状态「与全局有 1 项不同」、行首圆点出现、预览与正文同步变化；全局设置未被改动；重装 APK 后重开仍是 29pt；「恢复全局默认」确认后回全局、字号 22pt、按钮消失 |
+| 章标题格式标记 | 《One Way》第 20 章标题从 `{{B-START}}20{{B-END}}` 修复为「20」；解析器版本升级后自动重建缓存，64.1% 阅读位置未丢 |
 
 ### 未在真机验证 ❌（只做过单测或模拟器）
 
@@ -801,6 +875,8 @@ R8 把 `text_` 改名成 `e` 后 `parseFrom` 抛异常，而异常被 `runCatchi
 | `docs/motion-migration.md` | 41 处动画时长/缓动的逐值对照表 |
 | `docs/typography-lab/` | 中文排版实测原始输出 |
 | `docs/dictionary-resources-design.md` | 词典资源（MDD / CSS / 发音 / 图片）设计与实施记录（已实施；真机数据见 §3.18） |
+| `docs/per-book-typography-design.md` | 按书排版（全局 / 本书）的语义、存储、解析层与测试（已实施；见 §3.19） |
+| `docs/per-book-translator-design.md` | 按书翻译器行为、默认关闭、全局词典/Key 入口与测试（已实施；见 §3.22） |
 | `app/schemas/.../19.json`、`20.json` | Room 迁移的 schema 快照 |
 
 ---

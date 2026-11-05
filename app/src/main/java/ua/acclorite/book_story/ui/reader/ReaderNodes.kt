@@ -21,8 +21,8 @@ import androidx.compose.ui.text.style.TextGeometricTransform
 import ua.acclorite.book_story.domain.model.book.Node
 import ua.acclorite.book_story.domain.model.book.NodeContent
 import ua.acclorite.book_story.ui.common.components.common.getHighlightedText
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.reader.model.ReaderNode
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
 
 @Composable
 internal fun rememberReaderNodes(
@@ -49,8 +49,8 @@ internal fun rememberReaderNodes(
     // fork: 用户字体是单 face，SpanStyle(fontWeight/fontStyle) 对 LoadedFontFamily 不生效
     // （AndroidTypefaceWrapper 直接返回 typeface，不走 fontSynthesis）。正文里的 <b>/<i>
     // 必须自带粗体 family / 几何倾斜，否则导入字体后加粗与斜体段落会静默变成正常体。
-    val settings = LocalSettings.current
-    val selectedFont = settings.fontFamily.value
+    val typography = LocalReaderTypography.current
+    val selectedFont = typography.values.fontFamily
     val userFont = selectedFont.userEntry != null
     val boldFontFamily = rememberFontFamily(
         font = selectedFont,

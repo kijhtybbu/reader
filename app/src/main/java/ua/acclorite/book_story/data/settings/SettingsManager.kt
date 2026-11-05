@@ -41,7 +41,6 @@ import ua.acclorite.book_story.presentation.library.model.LibraryTitlePosition
 import ua.acclorite.book_story.presentation.reader.model.ReaderColorEffects
 import ua.acclorite.book_story.presentation.reader.model.ReaderFontThickness
 import ua.acclorite.book_story.presentation.reader.model.ReaderLayout
-import ua.acclorite.book_story.presentation.reader.model.ReaderLookupGesture
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedAnimation
 import ua.acclorite.book_story.presentation.reader.model.ReaderPagedDirection
 import ua.acclorite.book_story.presentation.reader.model.ReaderTapZones
@@ -186,12 +185,8 @@ class SettingsManager @Inject constructor(
     val verticalPadding = setting<Int, Int>(
         key = intPreferencesKey("vertical_padding"), default = 0
     )
-    // fork: 双击段落翻译（设计 §0/§8）。S5 时双击只是拉起外部翻译 Intent，默认关闭；
-    // S8 起它是应用内对话框（缓存优先），按设计改成**默认开启**，开关保留：
-    // 开启时单击翻页/呼菜单要等约 300ms 的双击判定，设置项说明里写明了这个取舍。
-    val doubleClickTranslation = setting<Boolean, Boolean>(
-        key = booleanPreferencesKey("double_click_translation"), default = true
-    )
+    // fork: 取词手势与双击翻译已改为按书（BookTranslatorStore），默认关闭，
+    // 不再有全局设置；词典与 AI 配置仍是全局共享。
     // fork: 取词时的**优先**词典（不是唯一词典）。内置 ECDICT 的 id 固定为 "builtin"（见
     // DictionaryCatalog）；DictionaryRepository 先查这部、再查其余已启用的词典，所以它只影响
     // 同 rank 命中的先后，不会屏蔽其它词典。删除/禁用当前词典时设置页会把它回落成 "builtin"，
@@ -206,13 +201,6 @@ class SettingsManager @Inject constructor(
         default = DictionaryAudioAccent.AUTO,
         serialize = { it.name },
         deserialize = { name -> DictionaryAudioAccent.fromName(name) }
-    )
-    // fork: 取词手势（设计 §5.1）。SINGLE_TAP 接管「点到文字」的单击，空白区仍然翻页/切菜单；
-    // 认不出的存量值回落默认值而不是 OFF（取词是默认行为，不该被一个脏值静默关掉）。
-    val lookupGesture = setting<ReaderLookupGesture, String>(
-        key = stringPreferencesKey("lookup_gesture"), default = ReaderLookupGesture.SINGLE_TAP,
-        serialize = { it.name },
-        deserialize = { name -> ReaderLookupGesture.fromName(name) }
     )
     // fork: AI 配置（设计 §6.1）。Key 不在这里 —— 它在 AiKeyStore 的加密密文里。
     // Base URL 存取两端都规范化：恢复备份或手改 DataStore 留下的值也能用。

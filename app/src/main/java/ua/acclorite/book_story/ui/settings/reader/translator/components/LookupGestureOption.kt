@@ -16,13 +16,13 @@ import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.presentation.reader.model.ReaderLookupGesture
 import ua.acclorite.book_story.ui.common.components.settings.ChipsWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.model.ListItem
+import ua.acclorite.book_story.ui.reader.translator.LocalBookTranslator
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategoryNote
 
 @Composable
 fun LookupGestureOption() {
-    val settings = LocalSettings.current
+    val translator = LocalBookTranslator.current
 
     Column {
         ChipsWithTitle(
@@ -31,10 +31,10 @@ fun LookupGestureOption() {
                 ListItem(
                     item = gesture,
                     title = stringResource(gesture.title),
-                    selected = gesture == settings.lookupGesture.value
+                    selected = gesture == translator.values.lookupGesture
                 )
             },
-            onClick = { settings.lookupGesture.update(it) }
+            onClick = { translator.actions.setLookupGesture(it) }
         )
 
         SettingsSubcategoryNote(text = stringResource(id = R.string.lookup_gesture_note))

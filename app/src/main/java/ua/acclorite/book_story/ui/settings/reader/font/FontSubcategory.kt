@@ -14,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
+import ua.acclorite.book_story.data.typography.ReaderTypographyField
+import ua.acclorite.book_story.ui.reader.ModifiedTypographyOption
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategory
 import ua.acclorite.book_story.ui.settings.reader.font.components.BoldFontThicknessOption
 import ua.acclorite.book_story.ui.settings.reader.font.components.FontFamilyOption
@@ -42,7 +44,9 @@ fun LazyListScope.FontSubcategory(
     ) {
         if (includeFamily) {
             item {
-                FontFamilyOption()
+                ModifiedTypographyOption(ReaderTypographyField.FONT_FAMILY) {
+                    FontFamilyOption()
+                }
             }
 
             // fork: 导入入口只放在完整设置页（底部面板太窄，且导入是低频动作）。
@@ -52,26 +56,36 @@ fun LazyListScope.FontSubcategory(
         }
 
         item {
-            FontThicknessOption()
+            ModifiedTypographyOption(ReaderTypographyField.FONT_THICKNESS) {
+                FontThicknessOption()
+            }
         }
 
         item {
-            BoldFontThicknessOption()
+            ModifiedTypographyOption(ReaderTypographyField.BOLD_FONT_THICKNESS) {
+                BoldFontThicknessOption()
+            }
         }
 
         item {
-            FontStyleOption()
+            ModifiedTypographyOption(ReaderTypographyField.ITALIC) {
+                FontStyleOption()
+            }
         }
 
         if (includeSize) {
             item {
-                FontSizeOption()
+                ModifiedTypographyOption(ReaderTypographyField.FONT_SIZE) {
+                    FontSizeOption()
+                }
             }
         }
 
         if (includeLetterSpacing) {
             item {
-                LetterSpacingOption()
+                ModifiedTypographyOption(ReaderTypographyField.LETTER_SPACING) {
+                    LetterSpacingOption()
+                }
             }
         }
     }

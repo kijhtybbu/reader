@@ -18,10 +18,12 @@ fun ReaderSettingsBottomSheetTabRow(
 ) {
     // fork: 顺序改为「排版优先」。原来排版类设置埋在第二个 Tab 的子页里，
     // 改一次字号要四层操作；现在第一屏就是高频排版项。
+    // 翻译与词典独立成 Tab，放在最后，避免和排版项挤在同一屏。
     val tabItems = listOf(
         stringResource(id = R.string.typography_tab),
         stringResource(id = R.string.more_tab),
-        stringResource(id = R.string.color_tab)
+        stringResource(id = R.string.color_tab),
+        stringResource(id = R.string.translator_reader_settings)
     )
 
     ModalBottomSheetTabRow(

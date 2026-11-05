@@ -10,19 +10,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.common.components.settings.SliderWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
 
 @Composable
 fun ParagraphHeightOption() {
-    val settings = LocalSettings.current
+    val typography = LocalReaderTypography.current
 
     SliderWithTitle(
-        value = settings.paragraphHeight.value to "pt",
+        value = typography.values.paragraphHeight to "pt",
         fromValue = 0,
         toValue = 36,
         title = stringResource(id = R.string.paragraph_height_option),
         onValueChange = {
-            settings.paragraphHeight.update(it)
+            typography.actions.setParagraphHeight(it)
         }
     )
 }

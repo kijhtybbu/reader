@@ -10,19 +10,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.common.components.settings.SliderWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
 
 @Composable
 fun BoldFontThicknessOption() {
-    val settings = LocalSettings.current
+    val typography = LocalReaderTypography.current
 
     SliderWithTitle(
-        value = (settings.boldFontThickness.value / 100) to "",
-        valuePlaceholder = "+${settings.boldFontThickness.value}",
+        value = (typography.values.boldFontThickness / 100) to "",
+        valuePlaceholder = "+${typography.values.boldFontThickness}",
         showPlaceholder = true,
         fromValue = 1,
         toValue = 8,
         title = stringResource(id = R.string.bold_font_thickness_option),
-        onValueChange = { settings.boldFontThickness.update(it * 100) }
+        onValueChange = { typography.actions.setBoldFontThickness(it * 100) }
     )
 }

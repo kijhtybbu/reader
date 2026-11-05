@@ -20,6 +20,7 @@ package ua.acclorite.book_story.ui.reader
 
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.MaterialTheme
+import ua.acclorite.book_story.data.typography.ReaderTypographyField
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategory
 import ua.acclorite.book_story.ui.settings.reader.font.components.FontFamilyOption
 import ua.acclorite.book_story.ui.settings.reader.font.components.FontSizeOption
@@ -44,12 +45,34 @@ fun LazyListScope.ReaderTypographyQuickSettings() {
         showDivider = false
     ) {
         item { ReaderTypographyPresets() }
-        item { FontSizeOption() }
-        item { LineHeightOption() }
-        item { ParagraphHeightOption() }
-        item { LetterSpacingOption() }
-        item { ParagraphIndentationOption() }
-        item { TextAlignmentOption() }
-        item { FontFamilyOption() }
+        item {
+            ModifiedTypographyOption(ReaderTypographyField.FONT_SIZE) { FontSizeOption() }
+        }
+        item {
+            ModifiedTypographyOption(ReaderTypographyField.LINE_HEIGHT) { LineHeightOption() }
+        }
+        item {
+            ModifiedTypographyOption(ReaderTypographyField.PARAGRAPH_HEIGHT) {
+                ParagraphHeightOption()
+            }
+        }
+        item {
+            ModifiedTypographyOption(ReaderTypographyField.LETTER_SPACING) {
+                LetterSpacingOption()
+            }
+        }
+        item {
+            ModifiedTypographyOption(ReaderTypographyField.PARAGRAPH_INDENTATION) {
+                ParagraphIndentationOption()
+            }
+        }
+        item {
+            ModifiedTypographyOption(ReaderTypographyField.TEXT_ALIGNMENT) {
+                TextAlignmentOption()
+            }
+        }
+        item {
+            ModifiedTypographyOption(ReaderTypographyField.FONT_FAMILY) { FontFamilyOption() }
+        }
     }
 }

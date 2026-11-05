@@ -16,23 +16,23 @@ import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.common.components.common.StyledText
 import ua.acclorite.book_story.ui.common.components.settings.SliderWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
 import ua.acclorite.book_story.ui.theme.Spacing
 
 @Composable
 fun FontThicknessOption() {
-    val settings = LocalSettings.current
-    val userEntry = settings.fontFamily.value.userEntry
+    val typography = LocalReaderTypography.current
+    val userEntry = typography.values.fontFamily.userEntry
 
     Column(modifier = Modifier.fillMaxWidth()) {
         SliderWithTitle(
-            value = (settings.fontThickness.value / 100) to "",
-            valuePlaceholder = settings.fontThickness.value.toString(),
+            value = (typography.values.fontThickness / 100) to "",
+            valuePlaceholder = typography.values.fontThickness.toString(),
             showPlaceholder = true,
             fromValue = 1,
             toValue = 9,
             title = stringResource(id = R.string.font_thickness_option),
-            onValueChange = { settings.fontThickness.update(it * 100) }
+            onValueChange = { typography.actions.setFontThickness(it * 100) }
         )
 
         // fork: 导入字体的字重行为必须写明，不能「滑块在动但字体没变」。

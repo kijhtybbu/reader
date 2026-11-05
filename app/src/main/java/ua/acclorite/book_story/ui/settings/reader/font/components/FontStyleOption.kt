@@ -13,25 +13,25 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextGeometricTransform
 import ua.acclorite.book_story.R
 import ua.acclorite.book_story.ui.common.components.settings.SegmentedButtonWithTitle
-import ua.acclorite.book_story.ui.common.helpers.LocalSettings
 import ua.acclorite.book_story.ui.common.model.ListItem
 import ua.acclorite.book_story.ui.reader.rememberFontFamily
+import ua.acclorite.book_story.ui.reader.typography.LocalReaderTypography
 
 @Composable
 fun FontStyleOption() {
-    val settings = LocalSettings.current
-    val isUserFont = settings.fontFamily.value.userEntry != null
+    val typography = LocalReaderTypography.current
+    val isUserFont = typography.values.fontFamily.userEntry != null
 
     // fork: 用户字体没有 italic 字型，斜体由正文样式的几何倾斜合成；芯片里的示例也要
     // 显示同样的倾斜，否则用户会以为斜体对导入字体无效。
     val normalFamily = rememberFontFamily(
-        font = settings.fontFamily.value,
-        fontWeight = settings.fontThickness.value,
+        font = typography.values.fontFamily,
+        fontWeight = typography.values.fontThickness,
         italic = false
     )
     val italicFamily = rememberFontFamily(
-        font = settings.fontFamily.value,
-        fontWeight = settings.fontThickness.value,
+        font = typography.values.fontFamily,
+        fontWeight = typography.values.fontThickness,
         italic = true
     )
 
@@ -47,7 +47,7 @@ fun FontStyleOption() {
                         fontStyle = FontStyle.Normal
                     )
                 },
-                selected = !settings.italic.value
+                selected = !typography.values.italic
             ),
             ListItem(
                 item = true,
@@ -61,11 +61,11 @@ fun FontStyleOption() {
                         } else null
                     )
                 },
-                selected = settings.italic.value
+                selected = typography.values.italic
             )
         ),
         onClick = { item ->
-            settings.italic.update(item)
+            typography.actions.setItalic(item)
         }
     )
 }

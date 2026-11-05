@@ -14,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import ua.acclorite.book_story.R
+import ua.acclorite.book_story.data.typography.ReaderTypographyField
+import ua.acclorite.book_story.ui.reader.ModifiedTypographyOption
 import ua.acclorite.book_story.ui.settings.components.SettingsSubcategory
 import ua.acclorite.book_story.ui.settings.reader.text.components.LineHeightOption
 import ua.acclorite.book_story.ui.settings.reader.text.components.ParagraphHeightOption
@@ -33,19 +35,27 @@ fun LazyListScope.TextSubcategory(
         showDivider = showDivider
     ) {
         item {
-            TextAlignmentOption()
+            ModifiedTypographyOption(ReaderTypographyField.TEXT_ALIGNMENT) {
+                TextAlignmentOption()
+            }
         }
 
         item {
-            LineHeightOption()
+            ModifiedTypographyOption(ReaderTypographyField.LINE_HEIGHT) {
+                LineHeightOption()
+            }
         }
 
         item {
-            ParagraphHeightOption()
+            ModifiedTypographyOption(ReaderTypographyField.PARAGRAPH_HEIGHT) {
+                ParagraphHeightOption()
+            }
         }
 
         item {
-            ParagraphIndentationOption()
+            ModifiedTypographyOption(ReaderTypographyField.PARAGRAPH_INDENTATION) {
+                ParagraphIndentationOption()
+            }
         }
     }
 }

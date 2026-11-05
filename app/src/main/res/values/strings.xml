@@ -611,7 +611,7 @@
     <string name="lookup_gesture_single_tap">Single tap</string>
     <string name="lookup_gesture_long_press">Long press</string>
     <string name="lookup_gesture_off">Off</string>
-    <string name="lookup_gesture_note">Single tap shows the dictionary card for the word you tap; taps on blank areas still turn the page or open the menu, and long press still selects text to copy, translate or look up. Long press looks a word up as soon as you press and hold, and leaves single-tap page turns alone; text selection is unavailable in that mode, so switch back to single tap when you need to copy a passage.</string>
+    <string name="lookup_gesture_note">Single tap: tap a word for the dictionary card; blank areas still turn pages or open the menu. Long press: single taps keep turning pages, press and hold a word to look it up (text selection is unavailable in this mode).</string>
     <string name="dictionary_priority_note">The radio button marks the preferred dictionary. It is looked up first, but every enabled dictionary is still searched.</string>
     <string name="dictionary_audio_accent_title">Pronunciation accent</string>
     <string name="dictionary_audio_accent_auto">Automatic</string>
@@ -725,4 +725,21 @@
     <string name="translation_dialog_meta">Model %1$s · %2$s</string>
     <string name="translation_dialog_sentence_pick">Select a sentence to analyze</string>
     <string name="translation_dialog_reanalyze">Analyze again</string>
+
+    <!-- fork: per-book typography -->
+    <string name="typography_scope_global">Global</string>
+    <string name="typography_scope_book">This book</string>
+    <string name="typography_scope_global_note">Editing global typography · affects all books</string>
+    <string name="typography_scope_book_note">Editing this book’s typography · same as global</string>
+    <string name="typography_scope_book_modified_note">Editing this book’s typography · %1$d item(s) differ from global</string>
+    <string name="typography_modified_from_global_desc">Differs from global</string>
+    <string name="typography_reset_to_global">Use global</string>
+    <string name="typography_reset_to_global_dialog_title">Restore global settings?</string>
+    <string name="typography_reset_to_global_dialog_text">The typography saved for this book will be deleted and the book will follow the global settings again. This cannot be undone.</string>
+
+    <!-- fork: per-book translator -->
+    <string name="translator_book_section">This book</string>
+    <string name="translator_global_section">Global dictionary &amp; AI</string>
+    <string name="translator_book_scope_note">Word lookup and double-click translation apply to this book only and are off by default.</string>
+    <string name="translator_global_config_note">Dictionaries and the API key are shared by all books. Tap an entry below to manage them.</string>
 </resources>
