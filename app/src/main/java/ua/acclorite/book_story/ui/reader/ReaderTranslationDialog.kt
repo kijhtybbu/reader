@@ -42,7 +42,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -120,7 +122,11 @@ fun ReaderTranslationDialog(
     onRegenerate: (TranslationTab) -> Unit,
     onDismiss: () -> Unit,
     onShare: (String) -> Unit,
-    onExternalTranslate: (String) -> Unit
+    onExternalTranslate: (String) -> Unit,
+    /** 当前展开的那一句是否已收藏。 */
+    isFavorite: Boolean = false,
+    /** 语法分析成功后出现的五角星；null 表示还没有可收藏的结果。 */
+    onToggleFavorite: (() -> Unit)? = null
 ) {
     if (!state.visible) return
 
@@ -203,7 +209,9 @@ fun ReaderTranslationDialog(
                                 onCopy = copy,
                                 onShare = onShare,
                                 onSelectSentence = onSelectSentence,
-                                onReanalyze = { onRegenerate(TranslationTab.GRAMMAR) }
+                                onReanalyze = { onRegenerate(TranslationTab.GRAMMAR) },
+                                isFavorite = isFavorite,
+                                onToggleFavorite = onToggleFavorite
                             )
                         }
                     }
@@ -358,7 +366,9 @@ private fun GrammarTabContent(
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
     onSelectSentence: (Int) -> Unit,
-    onReanalyze: () -> Unit
+    onReanalyze: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: (() -> Unit)?
 ) {
     val palette = LocalReaderPalette.current
 
@@ -369,7 +379,9 @@ private fun GrammarTabContent(
             thinkingChars = state.thinkingChars,
             onCopy = onCopy,
             onShare = onShare,
-            onReanalyze = onReanalyze
+            onReanalyze = onReanalyze,
+            isFavorite = isFavorite,
+            onToggleFavorite = onToggleFavorite
         )
         return
     }
@@ -398,7 +410,9 @@ private fun GrammarTabContent(
                 thinkingChars = state.thinkingChars,
                 onCopy = onCopy,
                 onShare = onShare,
-                onReanalyze = onReanalyze
+                onReanalyze = onReanalyze,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite
             )
         }
     }
@@ -461,7 +475,9 @@ private fun GrammarAnalysis(
     thinkingChars: Int,
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
-    onReanalyze: () -> Unit
+    onReanalyze: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: (() -> Unit)?
 ) {
     val palette = LocalReaderPalette.current
 
@@ -487,7 +503,9 @@ private fun GrammarAnalysis(
                 thinkingChars = thinkingChars,
                 onCopy = onCopy,
                 onShare = onShare,
-                onReanalyze = onReanalyze
+                onReanalyze = onReanalyze,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite
             )
         }
     }
@@ -500,7 +518,9 @@ private fun GrammarResult(
     thinkingChars: Int,
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
-    onReanalyze: () -> Unit
+    onReanalyze: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: (() -> Unit)?
 ) {
     when (grammar) {
         // Idle 只会出现一瞬间（选中句子之后、请求发出之前），按 loading 画。
@@ -531,6 +551,13 @@ private fun GrammarResult(
                 )
             }
             ActionRow {
+                // 五角星放在结果后面：只有拿到完整分析才允许收藏，收藏的也就是这份 Markdown。
+                if (onToggleFavorite != null) {
+                    FavoriteStarAction(
+                        isFavorite = isFavorite,
+                        onToggleFavorite = onToggleFavorite
+                    )
+                }
                 // 复制/分享用模型返回的 Markdown 原文，而不是渲染后的纯文本：排版要跟着走。
                 DialogAction(
                     text = stringResource(id = R.string.copy),
@@ -692,9 +719,32 @@ private fun ErrorText(error: AiError, statusCode: Int?) {
     )
 }
 
+/** 语法分析结果上的收藏五角星：实心 = 已收藏，空心 = 未收藏。 */
+@Composable
+private fun FavoriteStarAction(isFavorite: Boolean, onToggleFavorite: () -> Unit) {
+    val palette = LocalReaderPalette.current
+    IconButton(
+        modifier = Modifier.size(40.dp),
+        onClick = onToggleFavorite
+    ) {
+        Icon(
+            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+            contentDescription = stringResource(
+                id = if (isFavorite) R.string.favorite_remove_content_desc
+                else R.string.favorite_add_content_desc
+            ),
+            modifier = Modifier.size(22.dp),
+            tint = if (isFavorite) palette.accent else palette.onBarMuted
+        )
+    }
+}
+
 @Composable
 private fun ActionRow(content: @Composable () -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        itemVerticalAlignment = Alignment.CenterVertically
+    ) {
         content()
     }
 }

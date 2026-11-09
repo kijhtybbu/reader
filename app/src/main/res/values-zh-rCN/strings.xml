@@ -570,4 +570,19 @@
     <string name="translator_global_section">全局词典与 AI</string>
     <string name="translator_book_scope_note">取词与双击翻译只对本书生效，默认关闭。</string>
     <string name="translator_global_config_note">词典与 API Key 由所有书共享，点击下方条目管理。</string>
+
+    <!-- fork: 单词与句子收藏 -->
+    <string name="favorites_screen">收藏</string>
+    <string name="favorites_tab_words">单词</string>
+    <string name="favorites_tab_sentences">句子</string>
+    <string name="favorites_empty_words">还没有收藏的单词。在取词卡片顶部点五角星即可收藏。</string>
+    <string name="favorites_empty_sentences">还没有收藏的句子。在语法分析结果下方点五角星即可收藏。</string>
+    <string name="favorites_word_no_definition">没有保存的解释</string>
+    <string name="favorite_add_content_desc">收藏</string>
+    <string name="favorite_remove_content_desc">取消收藏</string>
+    <string name="favorite_sentence_dialog_title">句子收藏</string>
+    <string name="favorite_sentence_translation">翻译</string>
+    <string name="favorite_sentence_grammar">语法分析</string>
+    <string name="favorite_sentence_no_grammar">没有保存的语法分析。</string>
+    <string name="favorite_sentence_translating">翻译中…</string>
 </resources>

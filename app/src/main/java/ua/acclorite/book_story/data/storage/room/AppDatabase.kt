@@ -23,12 +23,14 @@ import ua.acclorite.book_story.data.storage.room.dao.BookDao
 import ua.acclorite.book_story.data.storage.room.dao.BookmarkDao
 import ua.acclorite.book_story.data.storage.room.dao.CategoryDao
 import ua.acclorite.book_story.data.storage.room.dao.ColorPresetDao
+import ua.acclorite.book_story.data.storage.room.dao.FavoriteDao
 import ua.acclorite.book_story.data.storage.room.dao.HistoryDao
 import ua.acclorite.book_story.data.storage.room.dao.TranslationCacheDao
 import ua.acclorite.book_story.data.storage.room.entity.BookEntity
 import ua.acclorite.book_story.data.storage.room.entity.BookmarkEntity
 import ua.acclorite.book_story.data.storage.room.entity.CategoryEntity
 import ua.acclorite.book_story.data.storage.room.entity.ColorPresetEntity
+import ua.acclorite.book_story.data.storage.room.entity.FavoriteEntity
 import ua.acclorite.book_story.data.storage.room.entity.HistoryEntity
 import ua.acclorite.book_story.data.storage.room.entity.TranslationCacheEntity
 import java.io.File
@@ -41,9 +43,10 @@ import java.util.UUID
         ColorPresetEntity::class,
         CategoryEntity::class,
         BookmarkEntity::class,
-        TranslationCacheEntity::class
+        TranslationCacheEntity::class,
+        FavoriteEntity::class
     ],
-    version = 21,
+    version = 22,
     autoMigrations = [
         AutoMigration(1, 2),
         AutoMigration(2, 3),
@@ -68,7 +71,9 @@ import java.util.UUID
         AutoMigration(19, 20),
         // fork: 新增 translationcacheentity（AI 结果缓存，第二阶段 S7）。纯建表，
         // 不碰既有表，也不需要 AutoMigrationSpec。
-        AutoMigration(20, 21)
+        AutoMigration(20, 21),
+        // fork: 新增 favoriteentity（全局单词/句子收藏）。同样是纯建表。
+        AutoMigration(21, 22)
     ],
     exportSchema = true
 )
@@ -122,6 +127,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract val categoryDao: CategoryDao
     abstract val bookmarkDao: BookmarkDao
     abstract val translationCacheDao: TranslationCacheDao
+    abstract val favoriteDao: FavoriteDao
 }
 
 @Suppress("ClassName")

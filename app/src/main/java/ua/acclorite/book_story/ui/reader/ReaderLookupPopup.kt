@@ -63,6 +63,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -185,7 +187,11 @@ fun ReaderLookupPopup(
     onExternalLookup: (String) -> Unit,
     onAiExplain: ((String) -> Unit)? = null,
     onTtsUnavailable: () -> Unit = {},
-    onAudioFile: suspend (dictId: String, path: String) -> File? = { _, _ -> null }
+    onAudioFile: suspend (dictId: String, path: String) -> File? = { _, _ -> null },
+    /** 当前词是否已在收藏夹里；只影响头部五角星的实心/空心。 */
+    isFavorite: Boolean = false,
+    /** 头部五角星的点击。null 表示不显示（例如加载中/未找到的卡片）。 */
+    onToggleFavorite: (() -> Unit)? = null
 ) {
     val palette = LocalReaderPalette.current
     val density = LocalDensity.current
@@ -421,7 +427,9 @@ fun ReaderLookupPopup(
                             audioFile = { dictId, path -> currentOnAudioFile.value(dictId, path) },
                             mediaBodyHeightPx = mediaBodyHeight.value,
                             mediaBodyUnmeasured = mediaBodyUnmeasured.value,
-                            onMediaContentHeight = { px -> if (px > 0) mediaBodyHeight.value = px }
+                            onMediaContentHeight = { px -> if (px > 0) mediaBodyHeight.value = px },
+                            isFavorite = isFavorite,
+                            onToggleFavorite = onToggleFavorite
                         )
 
                         is LookupState.NotFound -> NotFoundCard(
@@ -625,7 +633,9 @@ private fun SuccessCard(
     audioFile: suspend (dictId: String, path: String) -> File?,
     mediaBodyHeightPx: Int,
     mediaBodyUnmeasured: Boolean,
-    onMediaContentHeight: (Int) -> Unit
+    onMediaContentHeight: (Int) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: (() -> Unit)?
 ) {
     val selected = state.entries.getOrNull(state.selectedIndex)
     val media = body as? LookupBody.Media
@@ -711,7 +721,9 @@ private fun SuccessCard(
                 phonetic = body.phonetic,
                 source = selected?.dictName,
                 meta = body.meta,
-                onSpeak = speak
+                onSpeak = speak,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite
             )
             if (state.entries.size > 1) {
                 AnimatedVisibility(
@@ -872,7 +884,9 @@ private fun WordHeader(
     phonetic: String? = null,
     source: String? = null,
     meta: LookupMeta? = null,
-    onSpeak: () -> Unit
+    onSpeak: () -> Unit,
+    isFavorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null
 ) {
     val palette = LocalReaderPalette.current
     Row(
@@ -901,6 +915,17 @@ private fun WordHeader(
                 Spacer(Modifier.height(7.dp))
                 MetaBadges(meta)
             }
+        }
+        if (onToggleFavorite != null) {
+            IconButton(
+                modifier = Modifier.size(22.dp),
+                icon = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                contentDescription = if (isFavorite) R.string.favorite_remove_content_desc
+                else R.string.favorite_add_content_desc,
+                disableOnClick = false,
+                color = if (isFavorite) palette.accent else palette.onBarMuted,
+                onClick = onToggleFavorite
+            )
         }
         IconButton(
             modifier = Modifier.size(22.dp),

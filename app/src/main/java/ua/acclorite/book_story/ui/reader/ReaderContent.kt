@@ -46,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.flow.flowOf
 import ua.acclorite.book_story.domain.model.book.NodeContent
 import ua.acclorite.book_story.domain.model.bookmark.Bookmark
 import ua.acclorite.book_story.domain.model.bookmark.bookmarkForNode
@@ -54,6 +55,9 @@ import ua.acclorite.book_story.presentation.reader.DictionaryLookupModel
 import ua.acclorite.book_story.presentation.reader.LookupState
 import ua.acclorite.book_story.presentation.reader.TranslationModel
 import ua.acclorite.book_story.presentation.reader.anchor
+import ua.acclorite.book_story.presentation.favorites.FavoritesModel
+import ua.acclorite.book_story.presentation.reader.model.AsyncGrammar
+import ua.acclorite.book_story.presentation.reader.model.AsyncText
 import ua.acclorite.book_story.presentation.reader.model.ReaderLookupGesture
 import ua.acclorite.book_story.presentation.settings.DictionaryManagerScreen
 import ua.acclorite.book_story.ui.navigator.LocalNavigator
@@ -204,6 +208,40 @@ fun ReaderContent(
             translationModel.open(text = text, bookId = book.id, nodeId = nodeId)
         }
     }
+
+    // fork: 收藏夹。与收藏页共用同一个 Activity 作用域实例，五角星状态靠仓库 Flow 同步。
+    val favoritesModel: FavoritesModel = hiltViewModel()
+    val lookupSuccess = lookupState as? LookupState.Success
+    val lookupFavoriteFlow = remember(lookupSuccess?.word) {
+        val word = lookupSuccess?.word
+        if (word.isNullOrBlank()) flowOf(false) else favoritesModel.observeWord(word)
+    }
+    val lookupFavorite by lookupFavoriteFlow.collectAsStateWithLifecycle(initialValue = false)
+
+    // 语法标签：只有「已展开的那一句」（单句时就是唯一一句）才有可收藏的语法结果。
+    val grammarSentenceIndex = translationState.selectedSentenceIndex
+        ?: if (translationState.sentences.size == 1) 0 else null
+    val grammarSentence = grammarSentenceIndex?.let(translationState.sentences::getOrNull)
+    val grammarFavoriteFlow = remember(grammarSentence) {
+        if (grammarSentence.isNullOrBlank()) flowOf(false)
+        else favoritesModel.observeSentence(grammarSentence)
+    }
+    val grammarFavorite by grammarFavoriteFlow.collectAsStateWithLifecycle(initialValue = false)
+    val grammarSuccess = translationState.grammar as? AsyncGrammar.Success
+    // 多句段落里翻译标签翻的是整段，不能当成这一句的译文；单句段落才直接带上。
+    val grammarFavoriteToggle: (() -> Unit)? =
+        if (grammarSuccess != null && grammarSentence != null) {
+            {
+                val translationText = if (translationState.sentences.size <= 1) {
+                    (translationState.translation as? AsyncText.Success)?.text
+                } else null
+                favoritesModel.toggleSentence(
+                    sentence = grammarSentence,
+                    grammar = grammarSuccess.text,
+                    translation = translationText
+                )
+            }
+        } else null
 
     // 切菜单/跳转都要先关卡片：它是贴在某一段文字上的，位置一变就贴错了。
     val menuVisibilityDismissingLookup = remember(menuVisibility, lookupModel) {
@@ -390,7 +428,11 @@ fun ReaderContent(
                 },
                 onTtsUnavailable = { ttsUnavailable = true },
                 // 词条自带录音（`.mdd` 里的 `.mp3`）：落盘交给卡片的播放器，缺失/播不了时卡片回落 TTS。
-                onAudioFile = { dictId, path -> lookupModel.audioFile(context, dictId, path) }
+                onAudioFile = { dictId, path -> lookupModel.audioFile(context, dictId, path) },
+                isFavorite = lookupFavorite,
+                onToggleFavorite = {
+                    lookupSuccess?.let { favoritesModel.toggleWord(favoriteWordDraft(it)) }
+                }
             )
         }
 
@@ -405,7 +447,9 @@ fun ReaderContent(
                 // S8 之前双击段落走的就是这个外部 Intent；现在它只是错误态的退路。
                 onExternalTranslate = { text ->
                     openTranslator(ReaderEvent.OnOpenTranslator(text))
-                }
+                },
+                isFavorite = grammarFavorite,
+                onToggleFavorite = grammarFavoriteToggle
             )
         }
 

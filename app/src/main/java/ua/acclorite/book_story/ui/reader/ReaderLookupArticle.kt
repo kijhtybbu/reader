@@ -474,6 +474,65 @@ private fun hasOnlyInlineMarkup(html: String): Boolean {
     return true
 }
 
+private val NON_TEXT_BLOCK_REGEX = Regex(
+    """<(style|script)[^>]*>.*?</\1>""",
+    setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+)
+
+private val WHITESPACE_REGEX = Regex("""\s+""")
+
+/**
+ * 收藏单词时要存下来的一行释义摘要。
+ *
+ * 列表只需要「一眼看懂这个词」，不需要整篇词条：结构化词条取前几条义项，
+ * 复杂/富媒体词条退回纯文本并截断。`<style>` / `<script>` 必须先剥掉 ——
+ * `plainText` 只去标签，留着它们会把一大段 CSS 当成释义存进收藏夹。
+ *
+ * @param word 卡片标题上的词。复杂/富媒体词条的文字里通常还带着词头（列表上已经单独显示），
+ *   只有开头就是它时才去掉，避免收藏列表里出现「apple n. 苹果」这种重复。
+ * @return null 表示这个词条没有任何可显示的释义（例如只有音标）。
+ */
+internal fun LookupBody.favoriteDefinition(
+    word: String? = null,
+    maxSenses: Int = 3,
+    maxLength: Int = 300
+): String? {
+    val raw = when (this) {
+        is LookupBody.Sections -> {
+            val sensesText = senses
+                .take(maxSenses)
+                .mapNotNull { sense ->
+                    val meaning = plainText(sense.html)
+                    if (meaning.isEmpty()) null
+                    else listOfNotNull(sense.label, meaning).joinToString(" ")
+                }
+                .joinToString("；")
+            sensesText.ifBlank {
+                definitions.firstOrNull()?.let { definition ->
+                    val meaning = plainText(definition.html)
+                    if (meaning.isEmpty()) ""
+                    else listOfNotNull(definition.pos, meaning).joinToString(" ")
+                } ?: notes.firstOrNull()?.let(::plainText).orEmpty()
+            }
+        }
+
+        is LookupBody.Rich -> plainText(html.replace(NON_TEXT_BLOCK_REGEX, " "))
+        is LookupBody.Media -> plainText(html.replace(NON_TEXT_BLOCK_REGEX, " "))
+    }
+    var cleaned = raw.replace(WHITESPACE_REGEX, " ").trim()
+    if (cleaned.isEmpty()) return null
+
+    val headword = word?.trim().orEmpty()
+    if (headword.isNotEmpty() && cleaned.startsWith(headword, ignoreCase = true)) {
+        val rest = cleaned.substring(headword.length)
+            .trimStart(' ', '·', '-', '—', ':', '：', ',', '.')
+        if (rest.isNotEmpty()) cleaned = rest
+    }
+
+    return if (cleaned.length <= maxLength) cleaned
+    else cleaned.take(maxLength).trimEnd() + "…"
+}
+
 /** 去掉标签与常见实体，用于比较/判定（不是通用 HTML 解析）。 */
 internal fun plainText(html: String): String = html
     .replace(TAG_REGEX, "")

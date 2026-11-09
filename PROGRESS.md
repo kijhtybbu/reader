@@ -752,6 +752,24 @@ S9 的测试增量：
 | 门禁 | `:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:assembleRelease-debug` 通过（561 例 0 失败） |
 | 已知行为 | 从书内跳到全局页返回后，阅读器面板不自动恢复（与既有词典入口一致） |
 
+### 3.24 收藏夹（单词 / 句子）+ 提示块改浅灰
+
+| 项 | 内容 |
+| --- | --- |
+| 入口 | 主页面（书架/历史/浏览）右上角 ⋮ → 收藏（`NavigatorBottomSheet`）；收藏页本身不在底部导航里 |
+| 数据 | Room 22：`AutoMigration(21, 22)` 新建 `favoriteentity`；`(type, text)` 唯一索引 + `createdAt` 索引；收藏全局共享，不按书 |
+| 单词 | 取词卡片头部新增五角星；收藏时保存词头（trim+小写）、音标、释义摘要（纯文本，最多 300 字）；收藏页默认标签显示词头/音标/解释/发音按钮，点击复用阅读页的 `ReaderLookupPopup`（带行级锚点） |
+| 句子 | 语法分析成功后的操作行新增五角星；保存句子原文 + 语法 Markdown；收藏页句子完整换行显示，点击打开详情：原文、译文、语法分析 |
+| 译文 | 单句段落收藏时若译文已成功则一并保存；多句段落只存语法，打开详情时按句补一次译文并回填数据库（失败显示可重试错误） |
+| 五角星同步 | 三处（取词卡片 / 语法结果 / 收藏页）都订阅仓库 `Flow`；任意一处切换，其余立即同步 |
+| 提示块 | `SettingsSubcategoryNote` 从 §3.23 的 `secondaryContainer` 改为中性浅灰（浅色 `#F2F2F2` / 深色 `#2B2B2B`），不再跟随主题强调色；12 处提示统一生效 |
+| 并发 | `FavoritesModel` 的 toggle 用 `Mutex` 串行化「先查再写」，连点两下仍是收藏→取消；句子详情用 openSentenceKey + 取消旧 Job 丢弃晚到译文 |
+| 测试 | 新增 `FavoritesModelTest`（6）、`FavoriteMapperTest`（6）、`ReaderLookupFavoriteTest`（2），并在 `ReaderLookupArticleTest` 补 `favoriteDefinition` 3 例；仪器测试新增 `FavoriteMigrationTest`（21→22 建表 + 旧数据存活 + 唯一索引） |
+| 门禁 | `:app:assembleDebug`、`:app:testDebugUnitTest`（**578 例 0 失败**）、`:app:assembleRelease-debug`、`:app:compileDebugAndroidTestKotlin` 全绿 |
+| 评审 | `reviewer` 两轮（`reviewer-expert` 因 provider 不可用未跑成）。第一轮：1 major（收藏页取词卡片漏传 `onAudioFile` / `onTtsUnavailable`，MDD 录音与 TTS 安装提示失效）+ 3 minor（`Rect.Zero` 锚点、toggle 竞争、缺状态机测试），全部已修。第二轮复核：仅 3 条 P2 测试强度建议（晚到用例被取消而恒真、连击用例未真正并发、硬编码灰色不跟高对比度），前两条已用「慢读库门闩 + 读后 yield」重写并跑绿；高对比度明确保留常量灰（当前对比度 ≥ 8:1） |
+| 真机验证 | Lenovo TB322FC / Android 16 / 1904×3040，USB 覆盖安装 release-debug（54MB）成功；旧 Room 21 数据库启动时自动迁移到 22；⋮ 菜单出现「收藏」；`air` 取词卡片点五角星变实心，收藏页出现 `air /eə/ · n. 空气, 旋律, 态度; vt. 晾, 使通风, 夸耀` 与喇叭；点该行能从收藏页再次弹出取词卡片；force-stop 后重启收藏仍在；句子标签空态文案正常；深色主题下提示块实测背景 `#2B2B2B`、文字 `#D8D8D8` |
+| 未做 | 句子收藏的「语法分析 → 五角星 → 详情对话框」在真机上未跑（需要一次 AI 请求，改由单测覆盖）；收藏页批量删除/搜索；收藏按书分组 |
+
 ## 4. 真机验证结果
 
 设备：Lenovo TB322FC（Android 16 / API 36 / 1904×3040 / 440dpi）

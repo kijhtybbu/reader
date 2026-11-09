@@ -742,4 +742,19 @@
     <string name="translator_global_section">Global dictionary &amp; AI</string>
     <string name="translator_book_scope_note">Word lookup and double-click translation apply to this book only and are off by default.</string>
     <string name="translator_global_config_note">Dictionaries and the API key are shared by all books. Tap an entry below to manage them.</string>
+
+    <!-- fork: word & sentence favorites -->
+    <string name="favorites_screen">Favorites</string>
+    <string name="favorites_tab_words">Words</string>
+    <string name="favorites_tab_sentences">Sentences</string>
+    <string name="favorites_empty_words">No saved words yet. Tap the star at the top of a dictionary card to save one.</string>
+    <string name="favorites_empty_sentences">No saved sentences yet. Tap the star below a grammar analysis to save one.</string>
+    <string name="favorites_word_no_definition">No definition saved</string>
+    <string name="favorite_add_content_desc">Save to favorites</string>
+    <string name="favorite_remove_content_desc">Remove from favorites</string>
+    <string name="favorite_sentence_dialog_title">Saved sentence</string>
+    <string name="favorite_sentence_translation">Translation</string>
+    <string name="favorite_sentence_grammar">Grammar analysis</string>
+    <string name="favorite_sentence_no_grammar">No grammar analysis was saved.</string>
+    <string name="favorite_sentence_translating">Translating…</string>
 </resources>

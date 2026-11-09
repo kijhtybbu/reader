@@ -311,4 +311,39 @@ class ReaderLookupArticleTest {
         val djs = "<div class=\"head\"><span class=\"phon\">[ei]</span></div><div>x</div>"
         assertEquals("[ei]", (parseLookupBody(djs, "a") as LookupBody.Rich).phonetic)
     }
+
+    @Test
+    fun `favorite definition keeps the leading senses and strips markup`() {
+        val html = "<b>apple</b>" +
+            "<br><span style=\"color:#888\">/ˈæpl/</span>" +
+            "<br>n. 苹果, 家伙" +
+            "<br>[医] 苹果" +
+            "<br>n. 苹果树" +
+            "<br><!--def-->n. fruit with red or yellow or green skin"
+
+        val body = parseLookupBody(html, "apple") as LookupBody.Sections
+
+        // 只取前三条义项，保留词性标签；HTML 标签不会漏进收藏列表。
+        assertEquals("n. 苹果, 家伙；[医] 苹果；n. 苹果树", body.favoriteDefinition())
+    }
+
+    @Test
+    fun `favorite definition drops style blocks from a rich entry`() {
+        val html = "<style>.x{color:red}</style>" +
+            "<div class=\"entry\">Hello <b>world</b></div>"
+
+        val body = parseLookupBody(html, "hello") as LookupBody.Rich
+
+        assertEquals("Hello world", body.favoriteDefinition())
+    }
+
+    @Test
+    fun `favorite definition is truncated and returns null when there is nothing to show`() {
+        val long = LookupBody.Rich(null, null, "<div>" + "a".repeat(500) + "</div>")
+        assertTrue(long.favoriteDefinition(maxLength = 10)!!.endsWith("…"))
+        assertEquals(11, long.favoriteDefinition(maxLength = 10)!!.length)
+
+        val empty = parseLookupBody("", "apple")
+        assertNull(empty.favoriteDefinition())
+    }
 }
