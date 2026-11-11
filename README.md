@@ -87,9 +87,10 @@ open-source, offering you a personalized, ad-free journey through your favorite 
   llama.cpp server) may be used without a key.
 - **Cache management** — the AI settings screen shows the cached result count and payload size
   and can clear the translation cache after a confirmation.
-- **Word and sentence favorites** — tap the star on a dictionary card or after a grammar analysis
-  to save it to a global favorites screen (⋮ → Favorites). Words show word, phonetic, definition and
-  a pronunciation button; sentences open a dialog with the translation and grammar analysis.
+- **Word and sentence favorites** — tap the star on a dictionary card, or at the end of any sentence
+  in the grammar tab, to save it to the global Favorites tab in the main navigation. Words show word,
+  phonetic, definition and a pronunciation button; sentences open a dialog with the translation and
+  grammar analysis.
 
 The full design, decisions and known limits are in
 [`docs/phase-2-design.md`](docs/phase-2-design.md).

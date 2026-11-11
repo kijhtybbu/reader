@@ -44,4 +44,7 @@ interface FavoriteRepository {
 
     /** 收藏页补到译文后回填；句子已被取消收藏时返回 false（没有写回任何行）。 */
     suspend fun updateSentenceTranslation(text: String, translation: String): Boolean
+
+    /** 先收藏、后分析完时回填语法；句子已被取消收藏时返回 false（没有写回任何行）。 */
+    suspend fun updateSentenceGrammar(text: String, grammar: String): Boolean
 }

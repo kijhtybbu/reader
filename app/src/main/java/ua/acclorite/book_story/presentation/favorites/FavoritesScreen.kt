@@ -102,7 +102,6 @@ object FavoritesScreen : Screen, Parcelable {
                 words = words,
                 sentences = sentences,
                 onSelectTab = model::selectTab,
-                onBack = { navigator.pop() },
                 onWordClick = { word, bounds -> lookupModel.lookup(word.word, bounds) },
                 onSpeakWord = { word -> speaker.speak(word) { ttsUnavailable = true } },
                 onSentenceClick = { sentence -> model.openSentence(sentence.text) },

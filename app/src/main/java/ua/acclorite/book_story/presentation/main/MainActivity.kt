@@ -28,6 +28,7 @@ import ua.acclorite.book_story.data.translator.BookTranslatorStore
 import ua.acclorite.book_story.data.typography.ReaderTypographyStore
 import ua.acclorite.book_story.presentation.browse.BrowseModel
 import ua.acclorite.book_story.presentation.browse.BrowseScreen
+import ua.acclorite.book_story.presentation.favorites.FavoritesScreen
 import ua.acclorite.book_story.presentation.history.HistoryModel
 import ua.acclorite.book_story.presentation.history.HistoryScreen
 import ua.acclorite.book_story.presentation.library.LibraryModel
@@ -119,6 +120,15 @@ class MainActivity : AppCompatActivity() {
                         tooltip = R.string.browse_content_desc,
                         selectedIcon = R.drawable.browse_screen_filled,
                         unselectedIcon = R.drawable.browse_screen_outlined
+                    ),
+                    // fork: 收藏与书库/历史/浏览同级，放在主导航里（手机是底部栏，平板是侧栏），
+                    // 不再藏在右上角 ⋮ 菜单里。
+                    NavigatorItem(
+                        screen = FavoritesScreen,
+                        title = R.string.favorites_screen,
+                        tooltip = R.string.favorites_content_desc,
+                        selectedIcon = R.drawable.favorite_screen_filled,
+                        unselectedIcon = R.drawable.favorite_screen_outlined
                     )
                 )
 
@@ -149,14 +159,14 @@ class MainActivity : AppCompatActivity() {
                             },
                             contentKey = {
                                 when (it) {
-                                    LibraryScreen, HistoryScreen, BrowseScreen -> "tabs"
+                                    LibraryScreen, HistoryScreen, BrowseScreen, FavoritesScreen -> "tabs"
                                     else -> it
                                 }
                             },
                             backHandlerEnabled = { it != StartScreen }
                         ) { screen ->
                             when (screen) {
-                                LibraryScreen, HistoryScreen, BrowseScreen -> {
+                                LibraryScreen, HistoryScreen, BrowseScreen, FavoritesScreen -> {
                                     NavigatorTabs(
                                         currentTab = screen,
                                         transitionSpec = {

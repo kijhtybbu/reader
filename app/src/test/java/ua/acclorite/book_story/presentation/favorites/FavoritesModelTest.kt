@@ -173,6 +173,31 @@ class FavoritesModelTest {
         }
 
     @Test
+    fun `grammar from a later analysis is written back to an existing favorite`() =
+        runTest(dispatcher) {
+            val repository = FakeFavoriteRepository()
+            repository.addSentence("It works.", null, null)
+            val viewModel = model(repository)
+
+            viewModel.updateSentenceGrammar(" It works. ", "**grammar**")
+            runCurrent()
+
+            assertEquals("**grammar**", repository.grammarOf("It works."))
+        }
+
+    @Test
+    fun `grammar update does not create a row when the sentence is not favorited`() =
+        runTest(dispatcher) {
+            val repository = FakeFavoriteRepository()
+            val viewModel = model(repository)
+
+            viewModel.updateSentenceGrammar("It works.", "**grammar**")
+            runCurrent()
+
+            assertTrue(repository.sentences.value.isEmpty())
+        }
+
+    @Test
     fun `closing the dialog clears the state`() = runTest(dispatcher) {
         val repository = FakeFavoriteRepository()
         repository.addSentence("It works.", "已有译文", "**grammar**")
@@ -267,7 +292,19 @@ class FavoritesModelTest {
             return true
         }
 
+        override suspend fun updateSentenceGrammar(text: String, grammar: String): Boolean {
+            val key = favoriteSentenceKey(text)
+            if (sentences.value.none { it.text == key }) return false
+            sentences.value = sentences.value.map {
+                if (it.text == key) it.copy(grammar = grammar) else it
+            }
+            return true
+        }
+
         fun translationOf(text: String): String? =
             sentences.value.firstOrNull { it.text == favoriteSentenceKey(text) }?.translation
+
+        fun grammarOf(text: String): String? =
+            sentences.value.firstOrNull { it.text == favoriteSentenceKey(text) }?.grammar
     }
 }

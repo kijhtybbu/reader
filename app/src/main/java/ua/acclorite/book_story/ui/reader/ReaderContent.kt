@@ -218,30 +218,38 @@ fun ReaderContent(
     }
     val lookupFavorite by lookupFavoriteFlow.collectAsStateWithLifecycle(initialValue = false)
 
-    // 语法标签：只有「已展开的那一句」（单句时就是唯一一句）才有可收藏的语法结果。
+    // 语法标签：每句话末尾都有独立五角星，所以这里订阅的是整份句子收藏列表，
+    // 而不是只盯「当前展开的那一句」。列表很小，且离开阅读页后 WhileSubscribed 会停。
+    val favoriteSentenceRows by favoritesModel.sentences.collectAsStateWithLifecycle()
+    val favoriteSentenceTexts = remember(favoriteSentenceRows) {
+        favoriteSentenceRows.mapTo(HashSet()) { it.text }
+    }
     val grammarSentenceIndex = translationState.selectedSentenceIndex
         ?: if (translationState.sentences.size == 1) 0 else null
     val grammarSentence = grammarSentenceIndex?.let(translationState.sentences::getOrNull)
-    val grammarFavoriteFlow = remember(grammarSentence) {
-        if (grammarSentence.isNullOrBlank()) flowOf(false)
-        else favoritesModel.observeSentence(grammarSentence)
-    }
-    val grammarFavorite by grammarFavoriteFlow.collectAsStateWithLifecycle(initialValue = false)
     val grammarSuccess = translationState.grammar as? AsyncGrammar.Success
+
     // 多句段落里翻译标签翻的是整段，不能当成这一句的译文；单句段落才直接带上。
-    val grammarFavoriteToggle: (() -> Unit)? =
-        if (grammarSuccess != null && grammarSentence != null) {
-            {
-                val translationText = if (translationState.sentences.size <= 1) {
-                    (translationState.translation as? AsyncText.Success)?.text
-                } else null
-                favoritesModel.toggleSentence(
-                    sentence = grammarSentence,
-                    grammar = grammarSuccess.text,
-                    translation = translationText
-                )
-            }
+    // 语法只在「点的正好是当前展开、且已有完整分析」时带上，其余句子先收藏原文/译文。
+    val onToggleFavoriteSentence: (String) -> Unit = { sentence ->
+        val grammar = if (sentence == grammarSentence) grammarSuccess?.text else null
+        val translation = if (translationState.sentences.size <= 1) {
+            (translationState.translation as? AsyncText.Success)?.text
         } else null
+        favoritesModel.toggleSentence(sentence, grammar, translation)
+    }
+
+    // 先收藏、后分析完的情况：把刚拿到的语法补进已有收藏，否则详情里会一直显示
+    // 「没有保存的语法分析」。分析结果变化（重新分析）也会覆盖成最新一份。
+    val grammarSentenceFavorited =
+        grammarSentence?.let { favoriteSentenceTexts.contains(it) } == true
+    LaunchedEffect(grammarSentence, grammarSuccess?.text, grammarSentenceFavorited) {
+        val sentence = grammarSentence
+        val grammar = grammarSuccess?.text
+        if (sentence != null && !grammar.isNullOrBlank() && grammarSentenceFavorited) {
+            favoritesModel.updateSentenceGrammar(sentence, grammar)
+        }
+    }
 
     // 切菜单/跳转都要先关卡片：它是贴在某一段文字上的，位置一变就贴错了。
     val menuVisibilityDismissingLookup = remember(menuVisibility, lookupModel) {
@@ -448,8 +456,8 @@ fun ReaderContent(
                 onExternalTranslate = { text ->
                     openTranslator(ReaderEvent.OnOpenTranslator(text))
                 },
-                isFavorite = grammarFavorite,
-                onToggleFavorite = grammarFavoriteToggle
+                favoriteSentences = favoriteSentenceTexts,
+                onToggleFavoriteSentence = onToggleFavoriteSentence
             )
         }
 

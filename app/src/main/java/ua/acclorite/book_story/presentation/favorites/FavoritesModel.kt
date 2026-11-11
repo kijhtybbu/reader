@@ -139,7 +139,7 @@ class FavoritesModel @Inject constructor(
      * @param translation 单句段落的译文（若已请求过）；多句段落里传 null —— 那时翻译标签
      *   翻的是整段，不能当成这一句的译文。
      */
-    fun toggleSentence(sentence: String, grammar: String, translation: String?) {
+    fun toggleSentence(sentence: String, grammar: String?, translation: String?) {
         if (sentence.isBlank()) return
         viewModelScope.launch {
             toggleMutex.withLock {
@@ -150,6 +150,21 @@ class FavoritesModel @Inject constructor(
                     logW(TAG, "Could not toggle favorite sentence: ${error.message}")
                 }
             }
+        }
+    }
+
+    /**
+     * 先收藏、后分析完：把语法补进已有收藏。
+     *
+     * 只在句子确实还在收藏夹里时生效（DAO 返回受影响行数）；句子已被取消收藏就什么都不做。
+     */
+    fun updateSentenceGrammar(sentence: String, grammar: String) {
+        if (sentence.isBlank() || grammar.isBlank()) return
+        viewModelScope.launch {
+            runCatching { favorites.updateSentenceGrammar(sentence, grammar) }
+                .onFailure { error ->
+                    logW(TAG, "Could not update favorite grammar: ${error.message}")
+                }
         }
     }
 

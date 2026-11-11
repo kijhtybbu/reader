@@ -94,6 +94,9 @@ class FavoriteRepositoryImpl @Inject constructor(
 
     override suspend fun updateSentenceTranslation(text: String, translation: String): Boolean =
         dao.updateTranslation(favoriteSentenceKey(text), translation) > 0
+
+    override suspend fun updateSentenceGrammar(text: String, grammar: String): Boolean =
+        dao.updateGrammar(favoriteSentenceKey(text), grammar) > 0
 }
 
 internal fun FavoriteEntity.toFavoriteWord() = FavoriteWord(

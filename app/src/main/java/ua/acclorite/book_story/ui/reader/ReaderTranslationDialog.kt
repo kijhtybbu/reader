@@ -123,10 +123,10 @@ fun ReaderTranslationDialog(
     onDismiss: () -> Unit,
     onShare: (String) -> Unit,
     onExternalTranslate: (String) -> Unit,
-    /** 当前展开的那一句是否已收藏。 */
-    isFavorite: Boolean = false,
-    /** 语法分析成功后出现的五角星；null 表示还没有可收藏的结果。 */
-    onToggleFavorite: (() -> Unit)? = null
+    /** 已收藏的句子（trim 后的原文），五角星状态由它驱动。 */
+    favoriteSentences: Set<String> = emptySet(),
+    /** 点某一句话末尾的五角星。 */
+    onToggleFavoriteSentence: (sentence: String) -> Unit = { _ -> }
 ) {
     if (!state.visible) return
 
@@ -210,8 +210,8 @@ fun ReaderTranslationDialog(
                                 onShare = onShare,
                                 onSelectSentence = onSelectSentence,
                                 onReanalyze = { onRegenerate(TranslationTab.GRAMMAR) },
-                                isFavorite = isFavorite,
-                                onToggleFavorite = onToggleFavorite
+                                favoriteSentences = favoriteSentences,
+                                onToggleFavoriteSentence = onToggleFavoriteSentence
                             )
                         }
                     }
@@ -367,26 +367,23 @@ private fun GrammarTabContent(
     onShare: (String) -> Unit,
     onSelectSentence: (Int) -> Unit,
     onReanalyze: () -> Unit,
-    isFavorite: Boolean,
-    onToggleFavorite: (() -> Unit)?
+    favoriteSentences: Set<String>,
+    onToggleFavoriteSentence: (String) -> Unit
 ) {
     val palette = LocalReaderPalette.current
 
-    // 只有一句时没有可选的列表：直接展示那一句的结果（设计 §8.2）。
-    if (state.sentences.size <= 1) {
+    if (state.sentences.isEmpty()) {
         GrammarResult(
             grammar = state.grammar,
             thinkingChars = state.thinkingChars,
             onCopy = onCopy,
             onShare = onShare,
-            onReanalyze = onReanalyze,
-            isFavorite = isFavorite,
-            onToggleFavorite = onToggleFavorite
+            onReanalyze = onReanalyze
         )
         return
     }
 
-    if (state.selectedSentenceIndex == null) {
+    if (state.sentences.size > 1 && state.selectedSentenceIndex == null) {
         StyledText(
             text = stringResource(id = R.string.translation_dialog_sentence_pick),
             style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBarMuted)
@@ -399,21 +396,32 @@ private fun GrammarTabContent(
             index = index,
             sentence = sentence,
             expanded = expanded,
+            isFavorite = favoriteSentences.contains(sentence),
+            onToggleFavorite = { onToggleFavoriteSentence(sentence) },
             onClick = { onSelectSentence(index) }
         )
         // 分析结果放在句子卡片**外面**：以前它挂在同一张卡里，句子和分析共用一层底色、
         // 只靠内边距分隔，长句子加长分析就糊成一片（用户反馈「分不清哪个是句子哪个是分析」）。
         // 现在：句子 = 一张卡（完整显示、选中态染色），分析 = 另一张带标题和分隔线的卡。
         if (expanded) {
-            GrammarAnalysis(
-                grammar = state.grammar,
-                thinkingChars = state.thinkingChars,
-                onCopy = onCopy,
-                onShare = onShare,
-                onReanalyze = onReanalyze,
-                isFavorite = isFavorite,
-                onToggleFavorite = onToggleFavorite
-            )
+            if (state.sentences.size <= 1) {
+                // 单句没有「哪一句」的问题，直接展示分析，不再多一层「分析」标题卡。
+                GrammarResult(
+                    grammar = state.grammar,
+                    thinkingChars = state.thinkingChars,
+                    onCopy = onCopy,
+                    onShare = onShare,
+                    onReanalyze = onReanalyze
+                )
+            } else {
+                GrammarAnalysis(
+                    grammar = state.grammar,
+                    thinkingChars = state.thinkingChars,
+                    onCopy = onCopy,
+                    onShare = onShare,
+                    onReanalyze = onReanalyze
+                )
+            }
         }
     }
 }
@@ -430,20 +438,24 @@ private fun SentenceCard(
     index: Int,
     sentence: String,
     expanded: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClick: () -> Unit
 ) {
     val palette = LocalReaderPalette.current
 
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = if (expanded) palette.accent.copy(alpha = 0.12f) else palette.onBar.copy(alpha = 0.04f),
+        color = if (expanded) palette.accent.copy(alpha = 0.12f)
+        else palette.onBar.copy(alpha = 0.04f),
         contentColor = palette.onBar
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                // 右侧留给五角星；点星星不能顺带展开/收起这句话（IconButton 会吃掉点击）。
+                .padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
             verticalAlignment = Alignment.Top
         ) {
             StyledText(
@@ -459,6 +471,21 @@ private fun SentenceCard(
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium.copy(color = palette.onBar)
             )
+            // 收藏放在句子末尾：收藏的是「这一句」，不是下面那份分析。
+            IconButton(
+                modifier = Modifier.size(40.dp),
+                onClick = onToggleFavorite
+            ) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    contentDescription = stringResource(
+                        id = if (isFavorite) R.string.favorite_remove_content_desc
+                        else R.string.favorite_add_content_desc
+                    ),
+                    modifier = Modifier.size(20.dp),
+                    tint = if (isFavorite) palette.accent else palette.onBarMuted
+                )
+            }
         }
     }
 }
@@ -475,9 +502,7 @@ private fun GrammarAnalysis(
     thinkingChars: Int,
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
-    onReanalyze: () -> Unit,
-    isFavorite: Boolean,
-    onToggleFavorite: (() -> Unit)?
+    onReanalyze: () -> Unit
 ) {
     val palette = LocalReaderPalette.current
 
@@ -503,9 +528,7 @@ private fun GrammarAnalysis(
                 thinkingChars = thinkingChars,
                 onCopy = onCopy,
                 onShare = onShare,
-                onReanalyze = onReanalyze,
-                isFavorite = isFavorite,
-                onToggleFavorite = onToggleFavorite
+                onReanalyze = onReanalyze
             )
         }
     }
@@ -518,9 +541,7 @@ private fun GrammarResult(
     thinkingChars: Int,
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
-    onReanalyze: () -> Unit,
-    isFavorite: Boolean,
-    onToggleFavorite: (() -> Unit)?
+    onReanalyze: () -> Unit
 ) {
     when (grammar) {
         // Idle 只会出现一瞬间（选中句子之后、请求发出之前），按 loading 画。
@@ -551,13 +572,6 @@ private fun GrammarResult(
                 )
             }
             ActionRow {
-                // 五角星放在结果后面：只有拿到完整分析才允许收藏，收藏的也就是这份 Markdown。
-                if (onToggleFavorite != null) {
-                    FavoriteStarAction(
-                        isFavorite = isFavorite,
-                        onToggleFavorite = onToggleFavorite
-                    )
-                }
                 // 复制/分享用模型返回的 Markdown 原文，而不是渲染后的纯文本：排版要跟着走。
                 DialogAction(
                     text = stringResource(id = R.string.copy),
@@ -717,26 +731,6 @@ private fun ErrorText(error: AiError, statusCode: Int?) {
             color = LocalReaderPalette.current.onBar
         )
     )
-}
-
-/** 语法分析结果上的收藏五角星：实心 = 已收藏，空心 = 未收藏。 */
-@Composable
-private fun FavoriteStarAction(isFavorite: Boolean, onToggleFavorite: () -> Unit) {
-    val palette = LocalReaderPalette.current
-    IconButton(
-        modifier = Modifier.size(40.dp),
-        onClick = onToggleFavorite
-    ) {
-        Icon(
-            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-            contentDescription = stringResource(
-                id = if (isFavorite) R.string.favorite_remove_content_desc
-                else R.string.favorite_add_content_desc
-            ),
-            modifier = Modifier.size(22.dp),
-            tint = if (isFavorite) palette.accent else palette.onBarMuted
-        )
-    }
 }
 
 @Composable

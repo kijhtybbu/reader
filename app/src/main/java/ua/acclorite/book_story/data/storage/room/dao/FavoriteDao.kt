@@ -94,4 +94,17 @@ interface FavoriteDao {
         """
     )
     suspend fun updateTranslation(text: String, translation: String): Int
+
+    /**
+     * 先收藏、后分析完时把语法补进已有收藏。
+     *
+     * 只更新已存在的句子；句子已被取消收藏时返回 0（调用方不需要特殊处理）。
+     */
+    @Query(
+        """
+        UPDATE favoriteentity SET grammar = :grammar
+        WHERE type = 'SENTENCE' AND text = :text
+        """
+    )
+    suspend fun updateGrammar(text: String, grammar: String): Int
 }

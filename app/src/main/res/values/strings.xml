@@ -744,6 +744,7 @@
     <string name="translator_global_config_note">Dictionaries and the API key are shared by all books. Tap an entry below to manage them.</string>
 
     <!-- fork: word & sentence favorites -->
+    <string name="favorites_content_desc">Favorites</string>
     <string name="favorites_screen">Favorites</string>
     <string name="favorites_tab_words">Words</string>
     <string name="favorites_tab_sentences">Sentences</string>

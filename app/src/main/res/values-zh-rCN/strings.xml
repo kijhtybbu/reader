@@ -572,6 +572,7 @@
     <string name="translator_global_config_note">词典与 API Key 由所有书共享，点击下方条目管理。</string>
 
     <!-- fork: 单词与句子收藏 -->
+    <string name="favorites_content_desc">收藏夹</string>
     <string name="favorites_screen">收藏</string>
     <string name="favorites_tab_words">单词</string>
     <string name="favorites_tab_sentences">句子</string>

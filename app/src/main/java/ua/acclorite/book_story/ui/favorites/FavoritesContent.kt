@@ -68,7 +68,7 @@ import ua.acclorite.book_story.presentation.favorites.FavoriteSentenceDialogStat
 import ua.acclorite.book_story.presentation.reader.LookupState
 import ua.acclorite.book_story.ui.common.components.common.IconButton
 import ua.acclorite.book_story.ui.common.components.common.StyledText
-import ua.acclorite.book_story.ui.navigator.NavigatorBackIconButton
+import ua.acclorite.book_story.ui.navigator.NavigatorIconButton
 import ua.acclorite.book_story.ui.reader.ReaderLookupPopup
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,7 +78,6 @@ fun FavoritesContent(
     words: List<FavoriteWord>,
     sentences: List<FavoriteSentence>,
     onSelectTab: (FavoriteTab) -> Unit,
-    onBack: () -> Unit,
     onWordClick: (FavoriteWord, Rect?) -> Unit,
     onSpeakWord: (String) -> Unit,
     onSentenceClick: (FavoriteSentence) -> Unit,
@@ -106,8 +105,9 @@ fun FavoritesContent(
                 title = {
                     StyledText(text = stringResource(id = R.string.favorites_screen))
                 },
-                navigationIcon = {
-                    NavigatorBackIconButton(navigateBack = onBack)
+                actions = {
+                    // 与书库/历史/浏览一致：右上角 ⋮ 打开「关于 / 设置」面板。
+                    NavigatorIconButton()
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
