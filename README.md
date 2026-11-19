@@ -1,55 +1,57 @@
-> [!Caution]
->
-> Starting in September 2026, Android will require all apps to be registered by verified developers
-> in order to be installed on certified Android devices.
-> It means that **Book's Story will no longer be available** for installation on any certified
-> Android device.
->
-> https://keepandroidopen.org/
+# 🍞 麦麦阅读器 (MaiMai Reader)
+
+**麦麦阅读器（MaiMai Reader）v2.0** 是一款离线优先、面向中英阅读与语言学习的 Android 电子书阅读器，基于 Jetpack Compose 与 Material You 构建。
 
 ---
 
-<!------------ Fork ------------>
+## ⚖️ 来源与授权声明 (Fork & License Notice)
 
-## 🍞 麦麦阅读器 (MaiMai Reader)
+本仓库派生自 [Acclorite](https://github.com/Acclorite) 开发的开源阅读器 **[Book's Story](https://github.com/Acclorite/book-story)**，按相同授权协议发布：
 
-**This repository is a fork of [Book's Story](https://github.com/Acclorite/book-story) by
-[Acclorite](https://github.com/Acclorite), released as 麦麦阅读器 v2.0.**
-
-- **Upstream source:** <https://github.com/Acclorite/book-story>
-  (upstream tracked locally as the `upstream` git remote)
-- **License:** [GPL-3.0-only](LICENSE) — the same license as upstream. Copyright © 2024-2026
-  Acclorite; modifications in this fork © their respective authors.
-- **Source code of this fork:** <https://github.com/kijhtybbu/reader> — the complete corresponding
-  source, including every modification, as required by GPL-3.0 §5.
-
-In-app: **About → Upstream source / License / Source code** carries the same information, and
-**About → Open source licenses** lists all bundled third-party libraries. The formal distribution
-notice required by GPL-3.0 §5 (upstream, baseline, list of modifications, corresponding source,
-third-party components) is in [`NOTICE.md`](NOTICE.md).
+- **上游项目（Upstream）：** <https://github.com/Acclorite/book-story>（原作者版权 © 2024–2026 Acclorite）
+- **授权协议（License）：** [GNU GPL-3.0-only](LICENSE) —— 本分支所有修改同样遵循 GPL-3.0-only 开源分发
+- **本分支完整源码（Corresponding Source）：** <https://github.com/kijhtybbu/reader>
+- **合规与差异文档：**
+  - [`NOTICE.md`](NOTICE.md) —— GPL-3.0 §5 要求的正式分发声明（来源、基线、修改摘要与第三方组件许可）
+  - [`UPSTREAM_DIFF.md`](UPSTREAM_DIFF.md) —— 相对上游基线的完整架构、功能与缺陷修复对比
+  - 应用内 **「关于 → 上游来源 / 授权协议 / 源码 / 开源许可证」** 同步展示上述信息
 
 ---
 
-<!------------ 中文说明 ------------>
+## ✨ 核心特性
 
-## 📖 软件介绍
+**无账号、无广告、无遥测上报。** 书库、阅读进度、词典、翻译缓存与收藏全部保存在本机。支持 **EPUB、PDF、TXT、FB2、HTML、HTM、Markdown** 七种常见格式，可与原版 Book's Story 共存安装（包名 `dev.jia.reader`）。
 
-**麦麦阅读器 2.0** 是一款离线优先的中文电子书阅读器，在 Book's Story 的基础上补齐了中文阅读最常用的几件事：**离线查词、AI 段落翻译与语法分析、按书排版、单词与句子收藏**。
+### 1. 离线查词与富媒体词典
+- **内置 77 万词条 ECDICT**：随包附带 MIT 授权的 ECDICT 英汉词库，首次启动在后台自动解压建立索引，完全离线可用；取词卡片直观展示音标、中文释义、英英释义及柯林斯星级 / 牛津 3000 / 四六级 / 考研 / 托福 / 雅思 / GRE / BNC 词频标签。
+- **MDX / StarDict 自定义词典导入**：支持导入单文件 `.mdx`、带 `.mdd` 分卷资源包的 **MDX 文件夹**（样式表、插图、自定义字体、真人发音）以及 **StarDict 文件夹**（`.ifo` + `.idx(.gz)` + `.dict(.dz)` + `.syn`）；支持启用/禁用与指定优先词典，多词典命中时通过顶部候选芯片快速切换（向上滚动正文自动收起芯片释放阅读空间）。
+- **混合渲染与真人发音**：纯文本词条采用原生 Compose 结构化卡片；含图片、表格、CSS 或音频的富媒体词条自动切换至封闭沙箱 WebView（禁脚本、禁外网、自适应暗色/羊皮纸配色与系统字号缩放）。发音优先播放 `.mdd` 内置真人录音（支持 **自动 / 美音 / 英音** 偏好），无录音或格式不支持时平滑回退至系统 TTS。
 
-无账号、无广告、无统计上报。支持 EPUB / PDF / TXT / FB2 / HTML / Markdown，书库、进度、收藏与设置全部留在本机；内置 ECDICT（77 万词条）首次启动离线安装，不联网也能查词。
+### 2. AI 段落翻译与逐句语法分析
+- **双击段落即译**：双击任意正文段落（或选中文本点击「翻译」）弹出居中对话框，流式输出段落译文，支持原文折叠、复制、分享与重新生成。
+- **逐句 Markdown 语法精讲**：自动按句切分段落，点击任意句子即可流式生成主句结构、从句拆解、易忽略语法点与固定搭配的 Markdown 讲解。
+- **广泛兼容的接口与本地模型免 Key 支持**：支持任意 OpenAI 兼容接口（内置 OpenAI、DeepSeek、Gemini、OpenRouter、OpenCode Go、Ollama 预设）；API Key 经由 Google Tink（`AES256-GCM` + Android Keystore）本地加密存储。指向 `localhost` / `127.0.0.1` / `10.0.2.2` 的本地服务（如 Ollama、LM Studio、llama.cpp）可免 Key 直接调用。
+- **思考强度控制与本地持久化缓存**：支持切换推理模型的思考强度（关闭 / 低 / 中 / 高 / 默认）并实时展示思考字数或等待时长；完整译文与语法分析按「提示词版本 + 模型 + 目标语言 + 接口域名 + 规范化正文 SHA-256」持久化至本地 Room 缓存（20,000 条 / 200 MB LRU），重复打开零延迟、零 Token 消耗。
 
-### 重点功能（相对上游新增）
+### 3. 单词与句子收藏夹
+- **主导航一级「收藏」页**：与书库、历史、浏览并列，分为「单词」与「句子」两个标签，全局跨书共享。
+- **一键收藏与复盘**：取词卡片右上角点击五角星即可收藏单词（保存词头、音标与核心释义，列表中支持直接发音或点击重开完整词典卡片）；语法分析标签中每句末尾均设独立五角星，收藏后随时回看原句、译文与语法解析。
 
-| 能力 | 说明 |
-| --- | --- |
-| **离线取词** | 点按或长按单词，弹出锚定在该词上的卡片；内置 ECDICT，可再导入 MDX / StarDict 词典，支持 `.mdd` 里的图片、样式表与真人发音，多词典以 chip 切换 |
-| **AI 翻译与语法** | 双击段落流式翻译，并给出逐句语法分析；兼容 OpenAI 接口，也可指向 Ollama / LM Studio / llama.cpp 等本地模型（免 Key）；结果按提示词版本、模型、目标语言缓存，重开秒回 |
-| **按书排版** | 字号、行高、段距、字距、缩进、对齐、边距可只对当前书覆盖，面板内带实时预览，一键恢复全局默认 |
-| **按书翻译器** | 取词手势（单击 / 长按 / 关闭）与双击翻译逐书生效，默认关闭，避免干扰只想读中文书的场景 |
-| **收藏夹** | 单词与句子一键收藏，主导航统一管理；单词带音标、释义与发音，句子可回看译文与语法分析 |
-| **来源与授权** | 「关于」页明确标出上游项目、GPL-3.0-only 授权协议与本分支源码地址 |
+### 4. 按书独立排版、按书翻译器与中文字体导入
+- **按书排版（全局 / 本书）**：每本书可独立覆盖 12 项排版参数（字体、字重、粗体字重、斜体、字号、行距、段距、字距、首行缩进、对齐方式、左右与上下边距），与全局不同的参数自动标出差异圆点，支持在全局与本书间随时切换或一键恢复全局默认。
+- **高频排版面板与实时预览**：重构阅读器底部设置面板为 **「排版 / 更多 / 颜色 / 翻译器」** 四栏，首栏汇聚 7 项高频控件、**紧凑 / 标准 / 大字 / 护眼** 4 组一键预设及顶部固定实时样例预览。
+- **用户字体导入与中文字形回退**：支持导入 `.ttf` / `.otf` 字体（含静态与可变字体），自动解析 `cmap` 表检测汉字及全角标点覆盖率并提供三行实测预览；通过 `Typeface.CustomFallbackBuilder` 构建系统回退链，即使导入纯西文字体也能平滑回退系统中文而不出豆腐块。
+- **按书开启翻译器**：取词手势（**关闭 / 单击取词 / 长按取词**）与 **双击段落翻译** 均按书独立保存且默认关闭，读外文书时开启、读中文书时零干扰。
 
-### 截图（真机，中文界面）
+### 5. 阅读交互与本地化体验打磨
+- **TXT 编码自动探测与手动切换**：按 `BOM → 严格 UTF-8 → 严格 GB18030 → 严格 Big5` 探测编码并支持手动切换，彻底解决 GBK 中文网文乱码问题。
+- **分页与连续滚动双模式**：分页模式支持平移与淡入淡出翻页动画、三种点击分区（Kindle 式 / 上中下 / 仅中间）、左右 10% 边缘快速翻页带以及跨章顶部提示。
+- **段落级书签**：按 `(nodeId, nodeIntraOffset)` 定位并按段落去重，修改字号重新分页后依然精准跳转。
+- **自适应阅读配色（ReaderPalette）**：上下工具栏、弹窗、取词卡片与系统状态栏图标明暗均从当前阅读背景色派生，并做 WCAG 对比度保底，夜间与羊皮纸模式下不再闪白或割裂。
+
+---
+
+## 📱 真机截图
 
 <table>
   <tr>
@@ -57,237 +59,84 @@ third-party components) is in [`NOTICE.md`](NOTICE.md).
     <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/2.png" alt="AI 段落翻译" /></td>
   </tr>
   <tr>
-    <td align="center"><b>离线取词</b>：ECDICT 与导入的牛津高阶并列，可切词典、可发音</td>
-    <td align="center"><b>AI 翻译</b>：双击段落，流式返回译文，可复制 / 分享 / 重新生成</td>
+    <td align="center"><b>离线取词</b>：内置 ECDICT 与导入的牛津高阶并列，支持多词典切换与发音</td>
+    <td align="center"><b>AI 段落翻译</b>：双击段落流式返回译文，可复制、分享或重新生成</td>
   </tr>
   <tr>
     <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/3.png" alt="AI 语法分析" /></td>
     <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/4.png" alt="收藏夹" /></td>
   </tr>
   <tr>
-    <td align="center"><b>语法分析</b>：逐句展开主句结构、易忽视的语法点与搭配，词可点查、句子可收藏</td>
-    <td align="center"><b>收藏夹</b>：单词 / 句子两个标签，全局共享</td>
+    <td align="center"><b>逐句语法分析</b>：展开主句结构、易忽略语法点与固定搭配，单句可独立收藏</td>
+    <td align="center"><b>全局收藏夹</b>：主导航集中管理收藏的单词与句子，随时发音或回看解析</td>
   </tr>
   <tr>
     <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/5.png" alt="按书排版" /></td>
     <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/6.png" alt="按书翻译器设置" /></td>
   </tr>
   <tr>
-    <td align="center"><b>按书排版</b>：「本书」与全局不同时标出差异项，可一键恢复</td>
-    <td align="center"><b>按书翻译器</b>：取词手势与双击翻译逐书开关</td>
+    <td align="center"><b>按书排版</b>：「本书」模式下带实时预览与差异圆点标记，可一键恢复全局默认</td>
+    <td align="center"><b>按书翻译器</b>：取词手势与双击翻译按书独立开关，默认关闭不打扰纯阅读</td>
   </tr>
   <tr>
     <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/7.png" alt="关于：来源与授权" /></td>
     <td width="50%"></td>
   </tr>
   <tr>
-    <td align="center"><b>关于</b>：版本、上游来源、授权协议、源码入口</td>
+    <td align="center"><b>关于与合规声明</b>：清晰展示版本号、构建哈希、上游来源、GPL-3.0 协议与源码入口</td>
     <td></td>
   </tr>
 </table>
 
-> 截图同时放在 `fastlane/metadata/android/zh-CN/images/phoneScreenshots/`，供 F-Droid 等商店直接使用。
-> 左上角时间与电量是抓图时的系统状态栏，不是应用界面；翻译与语法分析用的是用户自备的
-> OpenAI 兼容接口（截图中为 `deepseek-v4.1-flash`）。
+---
+
+## 🛠️ 构建与验证
+
+### 环境要求
+- **Android 系统版本：** Android 10 及以上（`minSdk = 29`，`targetSdk = 36`）
+- **构建工具：** JDK 17、Android SDK 36
+
+### 构建与测试命令
+
+```bash
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+export ANDROID_HOME=$HOME/Library/Android/sdk
+
+# 词典引擎单元测试 + 应用单元测试 + Debug 构建 + Release-debug (R8) 构建
+./gradlew :dict-engine:test :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease-debug
+```
+
+- `debug`（`dev.jia.reader.debug`）：开发调试包
+- `release-debug`（`dev.jia.reader.release.debug`）：开启 R8 混淆压缩并使用 debug 签名的验收包，用于验证 ProGuard 规则与真实运行表现
+
+更多设计细节参见：
+- [`docs/phase-2-design.md`](docs/phase-2-design.md) —— 离线词典、AI 翻译、语法分析与缓存架构设计
+- [`docs/dictionary-resources-design.md`](docs/dictionary-resources-design.md) —— MDD 资源包、安全改写、混合渲染与发音设计
+- [`docs/per-book-typography-design.md`](docs/per-book-typography-design.md) —— 按书排版作用域与存储设计
+- [`docs/per-book-translator-design.md`](docs/per-book-translator-design.md) —— 按书翻译器行为设计
 
 ---
 
-<!------------ Header ------------>
+## 📦 第三方数据与组件致谢
 
-<div align="center">
-  <img src="fastlane/metadata/android/en-US/images/icon_2.png" width="120" />
-  <h1>麦麦阅读器</h1>
-  <h3>Material You eBook Reader for Android — a fork of Book's Story</h3>
-  <p>Dive into the world of adventure as you discover your favorite book's story!</p>
-</div>
+应用内 **「关于 → 开源许可证 / 致谢」** 列出了全部依赖项，核心新增组件如下：
 
----
-
-<!------------ Badges ------------>
-
-<div align="center">
-
-<a href="">[![GitHub](https://img.shields.io/github/release/Acclorite/book-story.svg?labelColor=27303D&color=3f719b&label=GitHub&logo=GitHub)](https://github.com/Acclorite/book-story/releases)</a>
-<a href="">[![GitLab](https://img.shields.io/gitlab/v/release/Acclorite/book-story.svg?labelColor=27303D&color=9b753f&label=GitLab&logo=gitlab)](https://gitlab.com/Acclorite/book-story/-/releases)</a>
-<a href="">[![Codeberg](https://img.shields.io/badge/Latest-3f9b9b?label=Codeberg&labelColor=27303D&logo=codeberg)](https://codeberg.org/Acclorite/book-story/releases)</a>
-<a href="">[![F-Droid](https://img.shields.io/f-droid/v/ua.acclorite.book_story?labelColor=27303D&color=3f9b5a&label=F-Droid&logo=f-droid)](https://f-droid.org/packages/ua.acclorite.book_story/)</a>
-<a href="">[![IzzyOnDroid](https://img.shields.io/endpoint?url=https://apt.izzysoft.de/fdroid/api/v1/shield/ua.acclorite.book_story&labelColor=27303D&color=3f9b84&label=IzzyOnDroid&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAMAAABg3Am1AAADAFBMVEUA0////wAA0v8A0v8A0////wD//wAFz/QA0/8A0/8A0/8A0/8A0v///wAA0/8A0/8A0/8A0/8A0//8/gEA0/8A0/8B0/4A0/8A0/8A0/+j5QGAwwIA0//C9yEA0/8A0/8A0/8A0/8A0/8A0/+n4SAA0/8A0/8A0/+o6gCw3lKt7QCv5SC+422b3wC19AC36zAA0/+d1yMA0/8A0/+W2gEA0/+w8ACz8gCKzgG7+QC+9CFLfwkA0/8A0////wAA0/8A0/8A0/8A0/+f2xym3iuHxCGq5BoA1P+m2joI0vONyiCz3mLO7oYA0/8M1Piq3Ei78CbB8EPe8LLj9Ly751G77zWQ1AC96UYC0fi37CL//wAA0/8A0////wD//wCp3jcA0/+j3SGj2i/I72Sx4zHE8FLB8zak1kYeycDI6nRl3qEA0/7V7psA0v6WzTa95mGi2RvB5XkPy9zH5YJ3uwGV1yxVihRLiwdxtQ1ZkAf//wD//wD//wD//wD//wCn5gf//wD//wD//wD//wD//wAA0/+h4A3R6p8A0/+X1w565OD6/ARg237n9csz2vPz+gNt37V/vifO8HW68B/L6ZOCwxXY8KRQsWRzhExAtG/E612a1Rd/pTBpmR9qjysduKVhmxF9mTY51aUozK+CsDSA52T//wD//wAA0////wD//wBJ1JRRxFWjzlxDyXRc0pGT1wCG0CWB3VGUzSTh8h6c0TSr5CCJ5FFxvl6s4H3m8xML0/DA5CvK51EX1N+Y2gSt4Dag3ChE3fax2ki68yO57NF10FRZnUPl88eJxhuCxgCz5EOLwEGf1DFutmahzGW98x0W1PGk3R154MHE6bOn69qv3gy92oG90o+Hn07B7rhCmiyMwECv1nO+0pQfwrCo57xF2daXsVhKrEdenQAduaee1Bsjr42z5D9RoCXy+QNovXpy2Z5MtWDO/TiSukaF3UtE1K6j3B4YwLc5wXlzpyIK0u5zy3uJqg4pu5RTpkZmpVKyAP8A0wBHcExHcEyBUSeEAAABAHRSTlP///9F9wjAAxD7FCEGzBjd08QyEL39abMd6///8P/ZWAnipIv/cC6B//7////////L/1Dz/0D///////86/vYnquY3/v///5T//v///17///////////////84S3QNB/8L/////////////7r/////NP////9l/////wPD4yis/x7Ym2lWSP+em////0n////////v///////////////////7//7pdGN3Urr6/+v/6aT////+//H/o2P/1v+7r7jp4PM/3p4g////g///K///481LxO///v////9w////8v/////9/p3J///a+P9v/5KR/+n///+p/xf//8P//wAAe7FyaAAABCZJREFUSMdj+E8iYKBUgwIHnwQ3N7cEHxcH+///VayoAE0Dh41qR7aBnCIQ8MsJKHH9/99czYYMWlA0cIkJGjMgAKfq//9RNYzIgLcBWYOTiCgDMhDn+B9bh6LebiWyH6L5UZQzONoAHWSHoqEpDkkDsyKqelv1//9rG1HUN9YihZK9AKp6BkG+/6xNqA5ajhSsCkrIipmYGGRa//9vQXVQXSySBnkWJOUMfn5Myuz/G3hR1NdEIUUchwiy+bkTsg4dbW/fu6W/e1c3XMMy5JiOZkFxUFZo74mgKTqaKXu0+2HqVwkja3BH9kFu361JwcHTfPJD4mdfe8ULAdVRyGlJAcVFfg+CQOozZ4XrJ85+JgwBsVXIGriQw5Tp4ZScezd8JiWnBupru30qwJZa+ZAjmWlC8fUZM4qB6kPnLNSPLMWqQQ5ZQ5aOzs1HmamBaQHzFs6y+qAmJCTE8f9/QgKSBg4DJPWc6zVDQkIC09JkZSPD38kukpExFpT4z67uYI/QwCOOCCK/izvu5CWl6AcEWMnKWml7LWbKZfH9/99UkknQHhGsynDz+65eWXv3/JmJrq5eXienVlRUfH/z8VvCf45soKQIH1yDEQsszrp6gwq9C73T87xcXadKl5TkFev4A/2tygmSBqYXqAYJmK+ZuoJydDR1vP09DA0NOy2kpdML81+U/heCpH1JU3jig7lJ5nKOT4i/t6ZHkqGzs4lJmIVHfrj+JR4HqLQSD0yDkCNEpGNn5ix9D03/eJdElTZdKV2TpNOhkwt8YUlNUgimgV0dLMBvf1gz1MolPd5FRcVNSkpDQ8owJeBCDyIhrIDnOD5QcuIU+3/2QKSs9laQ+noNLS0zLWdtqyP7mBAFAw88TwsJgMuJYweBGjYngtWbmeuZOW+bvNQToUFOAlFqOBk4Ov3/L7Z60/aN0p1tUhpa5nqWlub7C3p2I9QzyAghlUvczOz/1fhzPT3XSIfpSmmYAdVbmm1gV0dSz8DSilpUQsqCddIWIA3meuZaJqdMJZEzl6gRqgZIWZAxUdoizERXN8yi5MltcZTChzMaRQM3JNUWHS8rL/+yaPGvMmvr5ywoGoxtkDWwQ+Pb89ycBeWfGSJeL/la+RS1eOPnRtbQKgMRjZg+t8x6PkP273nWQAoFOPAgaeAThKXAmXMrK39Kmr5fsuBlBqoXfJGLe3VbmHjG9Mczi9T//3h7vygXtcDlQtJg44iQiIjIBRbGPO7gghPJy0ZIxT2HOLIUgwxQzsgYrUR350HSIMaJLidhgKY+mw+pflBDrX8E7OGBjPCAPc76gQFSTqAIiYrb/8dRP4CyosJ/rmwU5XIxHMilt4QBJwsSkBMClxOQULBlkRRwEONmR2kJcDGjADX2/+xO8r5iqjExqmLyrWpcPFRta1BfAwCtyN3XpuJ4RgAAAABJRU5ErkJggg==)](https://apt.izzysoft.de/fdroid/index/apk/ua.acclorite.book_story)</a>
-<a href="">[![Translation Status](https://img.shields.io/weblate/progress/book-story?label=Translated&logo=weblate&labelColor=27303D&color=3f9b86)](https://hosted.weblate.org/engage/book-story/)</a>
-<a href="">[![Matrix](https://img.shields.io/badge/Chat-9b3f90?label=Matrix&logo=matrix&color=539b3f&labelColor=27303D)](https://matrix.to/#/#book-story:matrix.org)</a>
-<a href="">[![License: GPL-3.0-only](https://img.shields.io/badge/GPL--3.0--only-9b3f57?label=License&labelColor=27303D)](LICENSE)</a>
-
-<!------------ Overview ------------>
-
-<h1>Overview</h1>
-
-</div>
-
-<img src="fastlane/metadata/android/en-US/images/featureGraphic.png">
-
-Enjoy a sleek, customizable **reading app** with modern design, built with Jetpack Compose. It’s
-open-source, offering you a personalized, ad-free journey through your favorite books!
+| 组件 | 许可协议 | 用途 |
+| --- | --- | --- |
+| [Book's Story](https://github.com/Acclorite/book-story) | GPL-3.0-only | 上游基座阅读器（© 2024–2026 Acclorite） |
+| [ECDICT](https://github.com/skywind3000/ECDICT) | MIT | 内置离线英汉词典数据（`app/src/main/assets/dictionaries/ecdict/`） |
+| [juicedict](https://github.com/qiuminal/juicedict) | GPL-3.0 | StarDict / MDict 词典解析引擎（vendored 于 `third_party/juicedict-engine/`） |
+| [openai-kotlin](https://github.com/aallam/openai-kotlin) | MIT | OpenAI 兼容接口流式客户端 |
+| [Ktor](https://ktor.io) | Apache-2.0 | HTTP 网络引擎 |
+| [Google Tink](https://github.com/tink-crypto/tink-java) | Apache-2.0 | API Key 本地 AES-GCM 加密存储 |
+| [Apache Commons Compress](https://commons.apache.org/proper/commons-compress/) & [XZ for Java](https://tukaani.org/xz/java.html) | Apache-2.0 / Public Domain | 内置词典 7z (LZMA2) 解压 |
 
 ---
 
-<!------------ Screenshots ------------>
+## 🧾 许可证 (License)
 
-## 🖌️ Screenshots
-
-<div>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="30%" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="30%" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="30%" />
-  <hr width=91%>
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="30%" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="30%" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="30%" />
-</div>
-
----
-
-<!------------ Features ------------>
-
-## 🔮 Features
-
-- Storage Access Framework
-- 7 supported file formats(.pdf, .txt, .epub, .fb2, .html, .htm, .md)
-- Material You design with unique themes and color presets
-- Organized Library with custom categories and chapters in the Reader
-- Highly customizable
-
-### Phase 2 additions (this fork)
-
-- **Offline dictionary lookup** — the full ECDICT database (770,611 entries, MIT) is bundled and
-  installed on first launch; tap or long-press a word for a card anchored to it. No network needed.
-- **MDX / StarDict import** — import your own `.mdx` file or a StarDict folder, enable/disable
-  dictionaries and pick a preferred one. An MDX dictionary can be imported together with its `.mdd` resource packs (images, stylesheets, fonts, recorded pronunciation) through the folder entry.
-- **AI paragraph translation and grammar** — double-tap a paragraph for a centered dialog with
-  streaming translation and structured grammar analysis. Results are persisted in Room
-  (keyed by prompt version, model, target language and endpoint host), so opening the same
-  paragraph again is instant and makes no request.
-- **Keyless local endpoints** — OpenAI-compatible Base URL + model, with the API key encrypted by
-  Tink. Local services reachable at `localhost` / `127.0.0.1` / `10.0.2.2` (Ollama, LM Studio,
-  llama.cpp server) may be used without a key.
-- **Cache management** — the AI settings screen shows the cached result count and payload size
-  and can clear the translation cache after a confirmation.
-- **Word and sentence favorites** — tap the star on a dictionary card, or at the end of any sentence
-  in the grammar tab, to save it to the global Favorites tab in the main navigation. Words show word,
-  phonetic, definition and a pronunciation button; sentences open a dialog with the translation and
-  grammar analysis.
-
-The full design, decisions and known limits are in
-[`docs/phase-2-design.md`](docs/phase-2-design.md).
-
-Third-party data and source credits (also listed in **About → Licenses**):
-
-- [ECDICT](https://github.com/skywind3000/ECDICT) — MIT. Bundled data: `app/src/main/assets/dictionaries/ecdict/`
-  (`ECDICT-LICENSE.txt`, `NOTICE.txt`).
-- [juicedict](https://github.com/qiuminal/juicedict) engine — GPL-3.0, vendored as `:dict-engine`.
-  See [`third_party/juicedict-engine/LICENSE`](third_party/juicedict-engine/LICENSE) and
-  [`PROVENANCE.md`](third_party/juicedict-engine/PROVENANCE.md).
-- [openai-kotlin](https://github.com/aallam/openai-kotlin) — MIT.
-- [Ktor](https://ktor.io) — Apache-2.0.
-- [Tink](https://github.com/tink-crypto/tink-java) — Apache-2.0.
-- [Apache Commons Compress](https://commons.apache.org/proper/commons-compress/) — Apache-2.0;
-  [XZ for Java](https://tukaani.org/xz/java.html) — Public Domain.
-
----
-
-<!------------ Download guide ------------>
-
-## 🚚 Downloads
-
-> [!Important]
->
-> The app supports only Android versions from **Android 8.0** and above.
-
-<div>
-
-[<img src="https://raw.githubusercontent.com/Kunzisoft/Github-badge/main/get-it-on-github.png" alt='Get it on GitHub' height="80">](https://github.com/Acclorite/book-story/releases/latest)
-[<img src="fastlane/metadata/android/en-US/images/gitlab-badge.png" alt='Get it on GitLab' height="80">](https://gitlab.com/Acclorite/book-story/-/releases)
-[<img src="fastlane/metadata/android/en-US/images/codeberg-badge.png" alt='Get it on Codeberg' height="80">](https://codeberg.org/Acclorite/book-story/releases)
-[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/en/packages/ua.acclorite.book_story/)
-[<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png" alt="Get it on IzzyOnDroid" height="80">](https://apt.izzysoft.de/fdroid/index/apk/ua.acclorite.book_story)
-</div>
-
----
-
-### 📲 How to install
-
-- _**Installing from GitHub, GitLab, Codeberg**_: Click the "Get it on ..." badge above, select
-  desired release, scroll down, and download
-  **book-story.apk**. Once downloaded, locate the APK file and install it.
-- _**Installing from F-Droid**_: Click the "Get it on F-Droid" badge above, scroll down, and click "
-  Download APK" under your desired release version to download the APK file. Once downloaded, locate
-  the file and install it.
-- _**Installing from IzzyOnDroid**_: Click the "Get it on IzzyOnDroid" badge above, scroll down, and
-  click "Download" to get the latest APK from IzzyOnDroid. Once downloaded, locate the file and
-  install it.
-
----
-
-<!------------ Translation ------------>
-
-## 📜 Translation
-
-> [!Important]
->
-> You can help translating the app
-> on [Hosted Weblate](https://hosted.weblate.org/engage/book-story/).
->
-> I am thankful to everyone who helps make this app more accessible to others by translating it!
-
-[<img src="https://hosted.weblate.org/widget/book-story/book-story-translation/horizontal-auto.svg" alt="Translation progress">](https://hosted.weblate.org/engage/book-story/)
-<br/>
-
----
-
-<!------------ Contribution ------------>
-
-## 🤝 How to contribute
-
-- **I do not accept code contributions.** This project is maintained
-  solely by me, and I intend to keep it that way. Pull/merge requests will likely be closed, as they
-  don’t align with the project's vision.
-- **Submit your suggestions on Issues.** Feel free to share your thoughts!
-- **Join the Matrix server** to share your ideas, report bugs, or just chat with me
-  on [this server](https://matrix.to/#/#book-story:matrix.org)!
-- **Share your ideas and suggestions.** If you’re missing a feature or have an interesting idea,
-  feel free to create a new *Issue*.
-- **Report bugs.** Encountered a crash or something went wrong? Create a new *Issue* with as much
-  detail as possible to help resolve it.
-- **Translate the app.** You can help make the app accessible in multiple languages. To contribute,
-  visit [Hosted Weblate](https://hosted.weblate.org/engage/book-story/).
-- **Enjoy the app.** The best contribution is simply using and enjoying the app I spent so much time
-  on!
-
----
-
-<!------------ Credits and License ------------>
-
-## 🤗 Credits
-
-> [!Note]
->
-> Also listed in About > Credits.
-
-- [Tachiyomi (Mihon)](https://github.com/mihonapp/mihon) (GitHub)
-- [Kitsune](https://github.com/Drumber/Kitsune) (GitHub)
-- [Voyager](https://voyager.adriel.cafe/) (Voyager Website)
-- [Material Design Icons](https://fonts.google.com/icons) (Google Fonts)
-- [Material Design Fonts](https://fonts.google.com) (Google Fonts)
-- [Weblate Translators](https://hosted.weblate.org/projects/book-story) (Hosted Weblate)
-- [GitHub Badge](https://github.com/Kunzisoft/Github-badge) (GitHub)
-- [Codeberg Badge](https://codeberg.org/Codeberg/GetItOnCodeberg) (Codeberg)
-
----
-
-## 🧾 License
-
-<div>
-  <pre>
-
-麦麦阅读器 — Material You eBook reader for Android.
+```text
+麦麦阅读器 (MaiMai Reader) — Material You eBook reader for Android.
 A fork of Book's Story. Licensed under GPL-3.0-only.
 
 Book's Story — free and open-source Material You eBook reader.
@@ -308,5 +157,4 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
-  </pre>
-</div>
+```
