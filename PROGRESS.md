@@ -780,7 +780,8 @@ S9 的测试增量：
 | 文档 | 新增 `NOTICE.md`（GPL-3.0 §5 要求的分发声明：上游、分叉基线、修改清单、对应源码、第三方组件授权）；README 顶部加 fork 说明段与标题、新增中文「软件介绍 + 重点功能 + 截图」、结尾 License 段补上游/分支版权；`UPSTREAM_DIFF.md` 增补 `versionName` 行与 `NOTICE.md` 指引；`DEV_PLAN.md` 标注旧名 |
 | 中文文案 | 截图时发现 `values-zh-rCN` 的 `about_screen` 仍写着「关于 Book\'s Story」（其余 26 个语言都是「关于应用」类中性表述），已改为「关于麦麦阅读器」；「关于 → 报告错误」从上游 issues 改指本分支 `kijhtybbu/reader/issues`（装 2.0 的人给上游提 issue 只会被当成不存在的版本），贡献者/翻译入口仍指上游作署名 |
 | 商店元数据 | 新增 `fastlane/metadata/android/zh-CN/`：`title.txt`（麦麦阅读器）、`short_description.txt`（≤ 80 字）、`full_description.txt`（阅读排版 / 词典 / AI / 收藏 / 隐私 / 来源与授权）、`changelogs/15.txt`；en-US 的 title / short / full description 同步改名并说明 fork 与源码 |
-| 截图 | 真机 TB322FC（1904×3040，黑暗主题）实抓 5 张，覆盖全部新增功能：取词卡片（ECDICT + 导入的牛津高阶双 chip）、收藏夹、按书排版（「与全局有 3 项不同」）、按书翻译器（取词手势三选一）、关于页（版本 / 上游来源 / 授权协议 / 源码）。存放在 `fastlane/metadata/android/zh-CN/images/phoneScreenshots/1..5.png`，README 中文段以内嵌表格引用；未截 AI 翻译与语法（需真实 API Key，不值得为截图按旧缓存） |
+| 截图 | 真机 TB322FC（1904×3040，黑暗主题）实抓 7 张，覆盖全部新增功能：取词卡片（ECDICT + 导入的牛津高阶双 chip）、AI 段落翻译（deepseek-v4.1-flash）、逐句语法分析（主句结构 / 易忽略的语法点 / 重要搭配，行内词 chip 可点查）、收藏夹、按书排版（「与全局有 3 项不同」）、按书翻译器（取词手势三选一）、关于页（版本 / 上游来源 / 授权协议 / 源码）。存放在 `fastlane/metadata/android/zh-CN/images/phoneScreenshots/1..7.png`，README 中文段以内嵌表格引用 |
+| 双击翻译的自动化 | `input tap x y; input tap x y` 在同一 shell 里两次调用间隔约 65ms，稳定落在 Compose 的双击窗口内，能触发翻译（`AiRepository: translate[off]: first content ~2.3s`）；分成两次 `adb shell` 调用（>300ms）只会翻页。另外注意工作表高度随内容变化，tab 的 y 坐标会从 856 变成 1221，点击前必须重新 dump |
 | 门禁 | `:app:assembleDebug` 绿（27s），`:app:assembleRelease-debug` 绿（2m，R8），并覆盖安装到 TB322FC 实机验证（versionCode 15 / 2.0，书库与进度无损）。本机 `JAVA_HOME` 在非登录 shell 下为空，需显式 `export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`，否则只报 `Unable to locate a Java Runtime` |
 | 未做 | 未改 `namespace`（`ua.acclorite.book_story`）与 Kotlin 包路径，改名仍是纯显示层；`AiTranslationRepository` 里的提示词标题 `AI_TITLE_HEADER = "Book's Story"` 未动（改它会改变翻译缓存键的语义，与本次改名无关） |
 

@@ -54,22 +54,30 @@ third-party components) is in [`NOTICE.md`](NOTICE.md).
 <table>
   <tr>
     <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/1.png" alt="离线取词卡片" /></td>
-    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/2.png" alt="收藏夹" /></td>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/2.png" alt="AI 段落翻译" /></td>
   </tr>
   <tr>
     <td align="center"><b>离线取词</b>：ECDICT 与导入的牛津高阶并列，可切词典、可发音</td>
+    <td align="center"><b>AI 翻译</b>：双击段落，流式返回译文，可复制 / 分享 / 重新生成</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/3.png" alt="AI 语法分析" /></td>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/4.png" alt="收藏夹" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>语法分析</b>：逐句展开主句结构、易忽视的语法点与搭配，词可点查、句子可收藏</td>
     <td align="center"><b>收藏夹</b>：单词 / 句子两个标签，全局共享</td>
   </tr>
   <tr>
-    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/3.png" alt="按书排版" /></td>
-    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/4.png" alt="按书翻译器设置" /></td>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/5.png" alt="按书排版" /></td>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/6.png" alt="按书翻译器设置" /></td>
   </tr>
   <tr>
     <td align="center"><b>按书排版</b>：「本书」与全局不同时标出差异项，可一键恢复</td>
     <td align="center"><b>按书翻译器</b>：取词手势与双击翻译逐书开关</td>
   </tr>
   <tr>
-    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/5.png" alt="关于：来源与授权" /></td>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/7.png" alt="关于：来源与授权" /></td>
     <td width="50%"></td>
   </tr>
   <tr>
@@ -79,7 +87,8 @@ third-party components) is in [`NOTICE.md`](NOTICE.md).
 </table>
 
 > 截图同时放在 `fastlane/metadata/android/zh-CN/images/phoneScreenshots/`，供 F-Droid 等商店直接使用。
-> 左上角时间与电量是抓图时的系统状态栏，不是应用界面。
+> 左上角时间与电量是抓图时的系统状态栏，不是应用界面；翻译与语法分析用的是用户自备的
+> OpenAI 兼容接口（截图中为 `deepseek-v4.1-flash`）。
 
 ---
 
