@@ -1,5 +1,8 @@
-# 本地阅读器 · UI 改造计划（基于 book-story fork）
+# 麦麦阅读器 · UI 改造计划（基于 book-story fork）
 
+> 本文件写于改名之前，文中出现的应用名「本地阅读器」即现名「麦麦阅读器」（v2.0 起）。
+> 来源与授权声明见 [`NOTICE.md`](NOTICE.md)。
+>
 > 前两版 `DEV_PLAN.v0.generated.md`（自研引擎）与 `DEV_PLAN.v2-readium.md`（Readium 自建外壳）均已废弃。
 > 本版前提：**引擎与解析全部复用开源实现，工作量只落在 UI 上。**
 

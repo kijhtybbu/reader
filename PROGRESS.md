@@ -770,6 +770,17 @@ S9 的测试增量：
 | 真机验证 | Lenovo TB322FC / Android 16 / 1904×3040。第一版（⋮ 入口、分析卡片星标）在解锁状态下 USB 安装并验证：旧 Room 21→22 自动迁移；`air` 取词卡片点五角星变实心；收藏页出现 `air /eə/ · n. 空气, 旋律, 态度; vt. 晾, 使通风, 夸耀` 与喇叭；点该行能再次弹出取词卡片；force-stop 后重启收藏仍在；句子空态正常；深色主题提示块实测 `#2B2B2B` / `#D8D8D8`。最终版（主导航第 4 项 + 句子行尾星标 + 语法回填）已通过 192.168.31.144:5555 远程覆盖安装成功；设备随后进入安全锁屏（无 PIN，adb 无法自行解除锁屏），最终版 UI 未在真机复核 |
 | 未做 | 句子「行尾五角星 → 详情对话框」的最终版真机复核（需要解锁 + 一次 AI 请求）；收藏页批量删除/搜索；收藏按书分组 |
 
+### 3.25 更名「麦麦阅读器」+ 2.0 + 来源与授权声明
+
+| 项 | 内容 |
+| --- | --- |
+| 应用名 | `values/strings.xml` 的 `app_name` 由「本地阅读器」改为「麦麦阅读器」。该字符串 `translatable="false"`，是全应用唯一来源，欢迎页、崩溃页、关于页、通知都自动跟随；`aapt2 dump badging` 实测所有语言区域的 `application-label` 均为「麦麦阅读器」 |
+| 版本 | `versionName` `1.8.0` → `2.0`，`versionCode` 14 → 15（单调递增，保证覆盖安装）；新增 `fastlane/metadata/android/en-US/changelogs/15.txt`，商店标题 `title.txt` 同步改名 |
+| 应用内声明 | 「关于」页在「应用版本」下方新增三项：上游来源（`LinkData.UPSTREAM` = Acclorite/book-story，描述 `Book’s Story by Acclorite · GPL-3.0-only`）、授权协议（`LinkData.LICENSE` = GNU GPL-3.0 全文）、源码（`LinkData.SOURCE` = 本分支仓库）。中英文案均已补齐（`values/`、`values-zh-rCN/`），其余语言回落英文 |
+| 文档 | 新增 `NOTICE.md`（GPL-3.0 §5 要求的分发声明：上游、分叉基线、修改清单、对应源码、第三方组件授权）；README 顶部加 fork 说明段与标题、结尾 License 段补上游/分支版权；`UPSTREAM_DIFF.md` 增补 `versionName` 行与 `NOTICE.md` 指引；`DEV_PLAN.md` 标注旧名 |
+| 门禁 | `:app:assembleDebug` 绿（27s）。本机 `JAVA_HOME` 在非登录 shell 下为空，需显式 `export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`，否则只报 `Unable to locate a Java Runtime` |
+| 未做 | 未改 `namespace`（`ua.acclorite.book_story`）与 Kotlin 包路径，改名仍是纯显示层；`AiTranslationRepository` 里的提示词标题 `AI_TITLE_HEADER = "Book's Story"` 未动（改它会改变翻译缓存键的语义，与本次改名无关） |
+
 ## 4. 真机验证结果
 
 设备：Lenovo TB322FC（Android 16 / API 36 / 1904×3040 / 440dpi）
@@ -875,8 +886,8 @@ R8 把 `text_` 改名成 `e` 后 `parseFrom` 抛异常，而异常被 `runCatchi
 
 | 应用 | 包名 | 用途 |
 | --- | --- | --- |
-| 本地阅读器 | `dev.jia.reader.release.debug` | 最新（含 R8 修复 + 编码支持），日常测试用这个 |
-| 本地阅读器 | `dev.jia.reader.debug` | 调试版（未重装，缺编码支持） |
+| 麦麦阅读器（v2.0，原名「本地阅读器」） | `dev.jia.reader.release.debug` | 最新（含 R8 修复 + 编码支持），日常测试用这个 |
+| 麦麦阅读器（v2.0，原名「本地阅读器」） | `dev.jia.reader.debug` | 调试版（未重装，缺编码支持） |
 | Book's Story | `ua.acclorite.book_story` | 官方 v1.8.0，用于对比 |
 
 测试书在 `/sdcard/Download/books/`（含两本真书 + 三本自制样本）。
@@ -887,6 +898,7 @@ R8 把 `text_` 改名成 `e` 后 `parseFrom` 抛异常，而异常被 `runCatchi
 
 | 文件 | 内容 |
 | --- | --- |
+| `NOTICE.md` | 来源 / 修改 / 授权的分发声明（上游、分叉基线、修改清单、对应源码、第三方组件）；改名与 2.0 见 §3.25 |
 | `DEV_PLAN.md` | 设计与验收记录（含实测数据、每阶段的决策与偏差） |
 | `UPSTREAM_DIFF.md` | 与上游的全部差异说明（可直接给他人看） |
 | `REBASE.md` | 从上游同步时必须检查的三处静默失效点 |

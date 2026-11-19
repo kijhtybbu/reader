@@ -1,4 +1,6 @@
-Book's Story — Material You eBook reader built with Jetpack Compose. Free & Open source & Ad-free, with extensive customization options and support for multiple file formats.
+MaiMai Reader (麦麦阅读器) 2.0 — a Material You eBook reader built with Jetpack Compose. Free & Open source & Ad-free, with extensive customization options and support for multiple file formats.
+
+This is a GPL-3.0-only fork of Book's Story by Acclorite (upstream: https://github.com/Acclorite/book-story). The complete source of this fork, including all modifications, is at https://github.com/kijhtybbu/reader. See NOTICE.md for the full upstream and license statement.
 
 Main Features:
 * Storage Access Framework

@@ -9,6 +9,7 @@
 - 仪器测试：4 个文件
 
 因为本 fork 派生自 GPL-3.0 项目，**整个 fork 同样是 GPL-3.0-only**，不能闭源分发。
+来源、修改与授权的正式声明另见 [`NOTICE.md`](NOTICE.md)，应用内见「关于 → 上游来源 / 授权协议 / 源码」。
 
 ---
 
@@ -22,7 +23,8 @@
 | `testInstrumentationRunner` | 未配置（默认是已废弃的 `android.test.InstrumentationTestRunner`） | `androidx.test.runner.AndroidJUnitRunner` | 上游的配置下 `AndroidJUnit4` 根本跑不起来 |
 | 测试依赖 | `ui-test-junit4:1.10.0` / `ui-test-manifest:1.10.0` / `ui-tooling:1.10.0` | 删除前两个；`ui-tooling` 钉回 `1.9.3`；新增 `androidx.test:runner` + `androidx.test.ext:junit` | Compose 是 atomic group：上游把测试件钉在 1.10.0 会把 debug 变体的 `ui` 拉到 1.10.0，导致**调试包和发布包跑的不是同一套文本引擎** |
 | ProGuard | 无 protobuf 规则 | `-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { <fields>; }` | 见 §2.1 |
-| 应用名 | Book's Story | 本地阅读器 | — |
+| 应用名 | Book's Story | 麦麦阅读器（v2.0 起；v1.8.0 及以前为「本地阅读器」） | 与上游区分；显示名为硬编码中文，随 `app_name` 单一来源生效 |
+| `versionName` | `1.8.0` | `2.0`（`versionCode` 14 → 15） | 改名后一次大版本号，同时保证覆盖安装的单调递增 |
 
 `gradlew` 的文件模式从 644 修正为可执行（上游在 git 里记录的是 644，macOS 上直接 `./gradlew` 会 `Permission denied`）。
 

@@ -9,12 +9,33 @@
 
 ---
 
+<!------------ Fork ------------>
+
+## 🍞 麦麦阅读器 (MaiMai Reader)
+
+**This repository is a fork of [Book's Story](https://github.com/Acclorite/book-story) by
+[Acclorite](https://github.com/Acclorite), released as 麦麦阅读器 v2.0.**
+
+- **Upstream source:** <https://github.com/Acclorite/book-story>
+  (upstream tracked locally as the `upstream` git remote)
+- **License:** [GPL-3.0-only](LICENSE) — the same license as upstream. Copyright © 2024-2026
+  Acclorite; modifications in this fork © their respective authors.
+- **Source code of this fork:** <https://github.com/kijhtybbu/reader> — the complete corresponding
+  source, including every modification, as required by GPL-3.0 §5.
+
+In-app: **About → Upstream source / License / Source code** carries the same information, and
+**About → Open source licenses** lists all bundled third-party libraries. The formal distribution
+notice required by GPL-3.0 §5 (upstream, baseline, list of modifications, corresponding source,
+third-party components) is in [`NOTICE.md`](NOTICE.md).
+
+---
+
 <!------------ Header ------------>
 
 <div align="center">
   <img src="fastlane/metadata/android/en-US/images/icon_2.png" width="120" />
-  <h1>Book's Story</h1>
-  <h3>Material You eBook Reader for Android</h3>
+  <h1>麦麦阅读器</h1>
+  <h3>Material You eBook Reader for Android — a fork of Book's Story</h3>
   <p>Dive into the world of adventure as you discover your favorite book's story!</p>
 </div>
 
@@ -204,8 +225,15 @@ Third-party data and source credits (also listed in **About → Licenses**):
 <div>
   <pre>
 
+麦麦阅读器 — Material You eBook reader for Android.
+A fork of Book's Story. Licensed under GPL-3.0-only.
+
 Book's Story — free and open-source Material You eBook reader.
 Copyright © 2024-2026 Acclorite
+Modifications in this fork are copyright © their respective authors.
+
+Upstream source: https://github.com/Acclorite/book-story
+Source of this fork: https://github.com/kijhtybbu/reader
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
