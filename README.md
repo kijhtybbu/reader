@@ -30,6 +30,59 @@ third-party components) is in [`NOTICE.md`](NOTICE.md).
 
 ---
 
+<!------------ 中文说明 ------------>
+
+## 📖 软件介绍
+
+**麦麦阅读器 2.0** 是一款离线优先的中文电子书阅读器，在 Book's Story 的基础上补齐了中文阅读最常用的几件事：**离线查词、AI 段落翻译与语法分析、按书排版、单词与句子收藏**。
+
+无账号、无广告、无统计上报。支持 EPUB / PDF / TXT / FB2 / HTML / Markdown，书库、进度、收藏与设置全部留在本机；内置 ECDICT（77 万词条）首次启动离线安装，不联网也能查词。
+
+### 重点功能（相对上游新增）
+
+| 能力 | 说明 |
+| --- | --- |
+| **离线取词** | 点按或长按单词，弹出锚定在该词上的卡片；内置 ECDICT，可再导入 MDX / StarDict 词典，支持 `.mdd` 里的图片、样式表与真人发音，多词典以 chip 切换 |
+| **AI 翻译与语法** | 双击段落流式翻译，并给出逐句语法分析；兼容 OpenAI 接口，也可指向 Ollama / LM Studio / llama.cpp 等本地模型（免 Key）；结果按提示词版本、模型、目标语言缓存，重开秒回 |
+| **按书排版** | 字号、行高、段距、字距、缩进、对齐、边距可只对当前书覆盖，面板内带实时预览，一键恢复全局默认 |
+| **按书翻译器** | 取词手势（单击 / 长按 / 关闭）与双击翻译逐书生效，默认关闭，避免干扰只想读中文书的场景 |
+| **收藏夹** | 单词与句子一键收藏，主导航统一管理；单词带音标、释义与发音，句子可回看译文与语法分析 |
+| **来源与授权** | 「关于」页明确标出上游项目、GPL-3.0-only 授权协议与本分支源码地址 |
+
+### 截图（真机，中文界面）
+
+<table>
+  <tr>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/1.png" alt="离线取词卡片" /></td>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/2.png" alt="收藏夹" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>离线取词</b>：ECDICT 与导入的牛津高阶并列，可切词典、可发音</td>
+    <td align="center"><b>收藏夹</b>：单词 / 句子两个标签，全局共享</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/3.png" alt="按书排版" /></td>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/4.png" alt="按书翻译器设置" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>按书排版</b>：「本书」与全局不同时标出差异项，可一键恢复</td>
+    <td align="center"><b>按书翻译器</b>：取词手势与双击翻译逐书开关</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="fastlane/metadata/android/zh-CN/images/phoneScreenshots/5.png" alt="关于：来源与授权" /></td>
+    <td width="50%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>关于</b>：版本、上游来源、授权协议、源码入口</td>
+    <td></td>
+  </tr>
+</table>
+
+> 截图同时放在 `fastlane/metadata/android/zh-CN/images/phoneScreenshots/`，供 F-Droid 等商店直接使用。
+> 左上角时间与电量是抓图时的系统状态栏，不是应用界面。
+
+---
+
 <!------------ Header ------------>
 
 <div align="center">

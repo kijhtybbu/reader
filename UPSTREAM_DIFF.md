@@ -25,6 +25,7 @@
 | ProGuard | 无 protobuf 规则 | `-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { <fields>; }` | 见 §2.1 |
 | 应用名 | Book's Story | 麦麦阅读器（v2.0 起；v1.8.0 及以前为「本地阅读器」） | 与上游区分；显示名为硬编码中文，随 `app_name` 单一来源生效 |
 | `versionName` | `1.8.0` | `2.0`（`versionCode` 14 → 15） | 改名后一次大版本号，同时保证覆盖安装的单调递增 |
+| 「关于 → 报告错误」 | 上游 issues | 本分支 `kijhtybbu/reader/issues` | 安装的是修改版，提给上游只会被当作不存在的版本；贡献者/翻译入口仍指上游作署名 |
 
 `gradlew` 的文件模式从 644 修正为可执行（上游在 git 里记录的是 644，macOS 上直接 `./gradlew` 会 `Permission denied`）。
 

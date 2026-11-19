@@ -777,8 +777,11 @@ S9 的测试增量：
 | 应用名 | `values/strings.xml` 的 `app_name` 由「本地阅读器」改为「麦麦阅读器」。该字符串 `translatable="false"`，是全应用唯一来源，欢迎页、崩溃页、关于页、通知都自动跟随；`aapt2 dump badging` 实测所有语言区域的 `application-label` 均为「麦麦阅读器」 |
 | 版本 | `versionName` `1.8.0` → `2.0`，`versionCode` 14 → 15（单调递增，保证覆盖安装）；新增 `fastlane/metadata/android/en-US/changelogs/15.txt`，商店标题 `title.txt` 同步改名 |
 | 应用内声明 | 「关于」页在「应用版本」下方新增三项：上游来源（`LinkData.UPSTREAM` = Acclorite/book-story，描述 `Book’s Story by Acclorite · GPL-3.0-only`）、授权协议（`LinkData.LICENSE` = GNU GPL-3.0 全文）、源码（`LinkData.SOURCE` = 本分支仓库）。中英文案均已补齐（`values/`、`values-zh-rCN/`），其余语言回落英文 |
-| 文档 | 新增 `NOTICE.md`（GPL-3.0 §5 要求的分发声明：上游、分叉基线、修改清单、对应源码、第三方组件授权）；README 顶部加 fork 说明段与标题、结尾 License 段补上游/分支版权；`UPSTREAM_DIFF.md` 增补 `versionName` 行与 `NOTICE.md` 指引；`DEV_PLAN.md` 标注旧名 |
-| 门禁 | `:app:assembleDebug` 绿（27s）。本机 `JAVA_HOME` 在非登录 shell 下为空，需显式 `export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`，否则只报 `Unable to locate a Java Runtime` |
+| 文档 | 新增 `NOTICE.md`（GPL-3.0 §5 要求的分发声明：上游、分叉基线、修改清单、对应源码、第三方组件授权）；README 顶部加 fork 说明段与标题、新增中文「软件介绍 + 重点功能 + 截图」、结尾 License 段补上游/分支版权；`UPSTREAM_DIFF.md` 增补 `versionName` 行与 `NOTICE.md` 指引；`DEV_PLAN.md` 标注旧名 |
+| 中文文案 | 截图时发现 `values-zh-rCN` 的 `about_screen` 仍写着「关于 Book\'s Story」（其余 26 个语言都是「关于应用」类中性表述），已改为「关于麦麦阅读器」；「关于 → 报告错误」从上游 issues 改指本分支 `kijhtybbu/reader/issues`（装 2.0 的人给上游提 issue 只会被当成不存在的版本），贡献者/翻译入口仍指上游作署名 |
+| 商店元数据 | 新增 `fastlane/metadata/android/zh-CN/`：`title.txt`（麦麦阅读器）、`short_description.txt`（≤ 80 字）、`full_description.txt`（阅读排版 / 词典 / AI / 收藏 / 隐私 / 来源与授权）、`changelogs/15.txt`；en-US 的 title / short / full description 同步改名并说明 fork 与源码 |
+| 截图 | 真机 TB322FC（1904×3040，黑暗主题）实抓 5 张，覆盖全部新增功能：取词卡片（ECDICT + 导入的牛津高阶双 chip）、收藏夹、按书排版（「与全局有 3 项不同」）、按书翻译器（取词手势三选一）、关于页（版本 / 上游来源 / 授权协议 / 源码）。存放在 `fastlane/metadata/android/zh-CN/images/phoneScreenshots/1..5.png`，README 中文段以内嵌表格引用；未截 AI 翻译与语法（需真实 API Key，不值得为截图按旧缓存） |
+| 门禁 | `:app:assembleDebug` 绿（27s），`:app:assembleRelease-debug` 绿（2m，R8），并覆盖安装到 TB322FC 实机验证（versionCode 15 / 2.0，书库与进度无损）。本机 `JAVA_HOME` 在非登录 shell 下为空，需显式 `export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`，否则只报 `Unable to locate a Java Runtime` |
 | 未做 | 未改 `namespace`（`ua.acclorite.book_story`）与 Kotlin 包路径，改名仍是纯显示层；`AiTranslationRepository` 里的提示词标题 `AI_TITLE_HEADER = "Book's Story"` 未动（改它会改变翻译缓存键的语义，与本次改名无关） |
 
 ## 4. 真机验证结果
