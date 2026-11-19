@@ -127,6 +127,9 @@ class TranslationCacheRepositoryImpl @Inject constructor(
         )
         withContext(NonCancellable) {
             dao.put(entity)
+            // fork: 写入后立刻按 LRU 裁回默认上限，缓存才不会无限增长。
+            // 清理失败（例如数据库被关闭）不该让已经拿到手的完整结果丢掉，所以吞掉异常。
+            runCatching { trim() }
         }
     }
 

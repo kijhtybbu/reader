@@ -144,10 +144,36 @@ class ReaderModel @Inject constructor(
                                     _effects.emit(ReaderEffect.OnSystemBarsVisibility(show = null))
 
                                     getBookUseCase(_state.value.book.id)?.let { book ->
+                                        // fork: 重解析（换编码、解析器版本升级）时
+                                        // `SaveBookContentUseCase` 会重算 `currentNodeId` /
+                                        // `currentNodeIntraOffset`，旧节点 id 已经作废。
+                                        // 但 `scrollTarget` 与已经发出的 `paginationNodeRequests`
+                                        // 还是解析前的旧目标：分页布局会一直等一个不存在的节点
+                                        // （空白页、scrollConsumed 不回调），所以这里要跟着新进度重定目标。
+                                        val previousProgress = _state.value.book.progress
+                                        val progressChanged =
+                                            book.progress.currentNodeId != previousProgress.currentNodeId ||
+                                                book.progress.currentNodeIntraOffset !=
+                                                previousProgress.currentNodeIntraOffset ||
+                                                book.progress.totalNodes != previousProgress.totalNodes ||
+                                                book.progress.totalLength != previousProgress.totalLength
+
                                         _state.update {
-                                            it.copy(
-                                                book = book
-                                            )
+                                            if (progressChanged || it.scrollTarget != null) {
+                                                it.copy(
+                                                    book = book,
+                                                    scrollTarget = ScrollTarget(
+                                                        nodeId = book.progress.currentNodeId,
+                                                        nodeIntraOffset = book.progress.currentNodeIntraOffset
+                                                    )
+                                                )
+                                            } else {
+                                                it.copy(book = book)
+                                            }
+                                        }
+
+                                        if (progressChanged) {
+                                            paginationNodeRequests.emit(book.progress.currentNodeId)
                                         }
                                     }
 

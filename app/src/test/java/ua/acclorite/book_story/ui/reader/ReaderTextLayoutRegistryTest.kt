@@ -140,6 +140,43 @@ class ReaderTextLayoutRegistryTest {
         assertEquals("new", registry.hitTest(Offset(10f, 10f))?.word)
     }
 
+    // ---- nodeAt（双击翻译的命中）----------------------------------------------
+
+    /** 一个永远取不到词的文本块（行尾空白、纯标点、句末逗号）。 */
+    private fun blockWithoutWord(nodeId: NodeId, bounds: Rect) = ReaderTextLayoutEntry(
+        key = ReaderTextLayoutKey(nodeId.id, 0),
+        nodeId = nodeId,
+        bounds = bounds
+    ) { null }
+
+    @Test
+    fun `nodeAt finds the block even when no word is hit there`() {
+        val registry = ReaderTextLayoutRegistry()
+        registry.register(blockWithoutWord(firstNode, Rect(0f, 100f, 400f, 140f)))
+
+        // 取词没命中（词边界归一化失败），但点确实在段落里：双击翻译要用这个结果。
+        assertNull(registry.hitTest(Offset(390f, 110f)))
+        assertEquals(firstNode, registry.nodeAt(Offset(390f, 110f)))
+    }
+
+    @Test
+    fun `nodeAt prefers the block registered last`() {
+        val registry = ReaderTextLayoutRegistry()
+        registry.register(blockWithoutWord(firstNode, Rect(0f, 100f, 400f, 140f)))
+        registry.register(blockWithoutWord(secondNode, Rect(0f, 100f, 400f, 140f)))
+
+        assertEquals(secondNode, registry.nodeAt(Offset(10f, 110f)))
+    }
+
+    @Test
+    fun `nodeAt returns null outside every text block`() {
+        val registry = ReaderTextLayoutRegistry()
+        registry.register(blockWithoutWord(firstNode, Rect(0f, 100f, 400f, 140f)))
+
+        assertNull(registry.nodeAt(Offset(120f, 40f)))
+        assertNull(registry.nodeAt(Offset(500f, 110f)))
+    }
+
     @Test
     fun `clear drops every block`() {
         val registry = ReaderTextLayoutRegistry()

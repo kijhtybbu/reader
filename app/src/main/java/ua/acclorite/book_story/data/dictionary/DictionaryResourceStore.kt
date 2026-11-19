@@ -211,23 +211,37 @@ class DictionaryResourceStore(
 
     // ---- 句柄 ------------------------------------------------------------------
 
+    /**
+     * 取（必要时打开）[dictionary] 的资源包句柄。调用方持有该词典的锁。
+     *
+     * **不能持着 [cacheLock] 做磁盘 IO**：`mddFilesFor` 要列目录，`opener` 要为每个分卷建一个
+     * `RandomAccessFile`（上 GB 的包、网络盘/慢 IO 上可能是几十毫秒）。持锁打开会把**别的**词典
+     * 的资源请求、缓存读写一起堵住。所以拆成三步：锁内查表 → 锁外打开 → 锁内回填。
+     *
+     * @param evicted 收集需要关闭的旧句柄；调用方必须在锁外关它们（见 [closeAll]）。
+     */
     private fun handleFor(
         dictionary: InstalledDictionary,
         evicted: MutableList<OpenHandle>
-    ): OpenHandle? = cacheLock.withLock {
-        val open = handles[dictionary.id]
-        if (open != null && sameSource(open.dictionary, dictionary)) return@withLock open
-        if (open != null) {
-            handles.remove(dictionary.id)
-            evicted += open
-        }
-        // 负缓存：这个来源已经确认打不开，别再为每个资源请求重开一次（也避免重复泄漏 FD）。
+    ): OpenHandle? {
         val source = sourceKey(dictionary)
-        if (unavailable[dictionary.id] == source) return@withLock null
 
-        // 只看 `.mdd` 文件本身：`hasResources` 是同一份推导的缓存值，两处并列反而可能互相矛盾。
+        // 1) 只做表操作：命中 / 来源变了 / 负缓存，全部在锁内判定。
+        cacheLock.withLock {
+            val open = handles[dictionary.id]
+            if (open != null && sameSource(open.dictionary, dictionary)) return open
+            if (open != null) {
+                handles.remove(dictionary.id)
+                evicted += open
+            }
+            // 负缓存：这个来源已经确认打不开，别再为每个资源请求重开一次（也避免重复泄漏 FD）。
+            if (unavailable[dictionary.id] == source) return null
+        }
+
+        // 2) 锁外打开：列 `.mdd` 与建句柄都是磁盘 IO。
+        //    只看 `.mdd` 文件本身：`hasResources` 是同一份推导的缓存值，两处并列反而可能互相矛盾。
         val files = DictionaryEngines.mddFilesFor(dictionary.directory, dictionary.baseName)
-        if (files.isEmpty()) return@withLock null
+        if (files.isEmpty()) return null
 
         val pack = try {
             opener(files)
@@ -235,16 +249,30 @@ class DictionaryResourceStore(
             logW(TAG, "Could not open the resource packs of ${dictionary.name}: ${e.message}")
             null
         }
-        if (pack == null) {
-            unavailable[dictionary.id] = source
-            return@withLock null
-        }
 
-        val handle = OpenHandle(dictionary, pack)
-        handles[dictionary.id] = handle
-        evictExcessHandles(evicted)
-        logD(TAG, "Opened ${pack.names.size} resource pack(s) for ${dictionary.id}")
-        handle
+        // 3) 回填。打开期间别的线程可能已经存了同一份句柄，或来源又变了。
+        return cacheLock.withLock {
+            val current = handles[dictionary.id]
+            if (current != null && sameSource(current.dictionary, dictionary)) {
+                // 别人先到了：以表里那份为准，刚打开的这份交给调用方在锁外关掉。
+                if (pack != null) evicted += OpenHandle(dictionary, pack)
+                return current
+            }
+            if (current != null) {
+                handles.remove(dictionary.id)
+                evicted += current
+            }
+            if (pack == null) {
+                unavailable[dictionary.id] = source
+                return null
+            }
+
+            val handle = OpenHandle(dictionary, pack)
+            handles[dictionary.id] = handle
+            evictExcessHandles(evicted)
+            logD(TAG, "Opened ${pack.names.size} resource pack(s) for ${dictionary.id}")
+            handle
+        }
     }
 
     private fun evictExcessHandles(evicted: MutableList<OpenHandle>) {

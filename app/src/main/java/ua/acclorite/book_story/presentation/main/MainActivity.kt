@@ -201,8 +201,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onDestroy() {
-        cacheDir.deleteRecursively()
-        super.onDestroy()
-    }
+    // fork: 不在 `onDestroy` 里 `cacheDir.deleteRecursively()` —— 那是在主线程上做递归删除，
+    // 会和 `DictionaryRegistry.ensureBuiltIn` 正在用的 `cacheDir/ecdict-asset.7z` 撞车，
+    // 也会把 `cacheDir/dict-audio/`（已落盘的发音）清掉。系统自己会回收缓存目录。
 }

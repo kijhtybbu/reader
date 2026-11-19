@@ -485,12 +485,17 @@ fun ReaderLayoutPaged(
                         .graphicsLayer { alpha = contentAlpha }
                         .then(
                             if (toolbarHidden) {
+                                // fork: `leadingPages` / `reversed` 是每次组合重算的普通值，
+                                // 必须进 key —— 否则翻到首页/末页、或切换阅读方向后，
+                                // 闭包里仍是旧的页偏移与翻页方向。
                                 Modifier.pointerInput(
                                     tapZones,
                                     showMenu,
                                     doubleClickTranslation,
                                     lookup,
-                                    translation
+                                    translation,
+                                    leadingPages,
+                                    reversed
                                 ) {
                                     detectTapGestures(
                                         // fork: 手指按下就先高亮命中的词。单击要等双击判定
@@ -539,13 +544,13 @@ fun ReaderLayoutPaged(
                                             // fork: 双击翻译原来挂在段落自己的 combinedClickable 上，
                                             // 那是个「第二套点击检测器」，会把单击吞掉，导致正文上的
                                             // 分区点击失效。现在统一在这里处理。
+                                            // fork: 预览高亮无条件先撤掉 —— 包括「快速翻页带」里的那次双击。
+                                            // 带内虽然不弹翻译，但 `SINGLE_TAP` 模式下按下时已经亮了高亮，
+                                            // 不撤就会一直卡在屏幕上。
+                                            lookup.onDismiss()
                                             // 左右 10% 的快速翻页带里不认双击：那里第一下就已经翻页了，
                                             // 再弹翻译只会让人以为点错了。
-                                            if (doubleClickTranslation &&
-                                                !inFastPageBand(offset.x, size.width.toFloat())
-                                            ) {
-                                                // 双击 = 翻译：把第一下按下时的取词预览/卡片撤掉。
-                                                lookup.onDismiss()
+                                            if (!inFastPageBand(offset.x, size.width.toFloat())) {
                                                 val page = pages.getOrNull(
                                                     pagerState.currentPage - leadingPages
                                                 )
@@ -612,7 +617,9 @@ fun ReaderLayoutPaged(
                                 // 所以只翻一次页（不会被外层的 onTap 再翻一次）。
                                 // 只接管「翻页」动作：Kindle 的顶部菜单带、TOP_BOTTOM 的中间带、
                                 // CENTER_ONLY 的空白区仍然走原来那条「等双击」的路。
-                                .pointerInput(tapZones, showMenu) {
+                                // fork: key 里必须带上 `leadingPages` / `reversed` / `lookup`：
+                                // 页码换算与 `turnPage` 都读它们，取值变了就得重建手势处理器。
+                                .pointerInput(tapZones, showMenu, leadingPages, reversed, lookup) {
                                     awaitEachGesture {
                                         val down = awaitFirstDown(requireUnconsumed = false)
                                         if (showMenu) return@awaitEachGesture

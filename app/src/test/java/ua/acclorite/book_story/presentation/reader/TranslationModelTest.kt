@@ -806,6 +806,92 @@ class TranslationModelTest {
         }
 
     @Test
+    fun `grammarFor returns an analyzed sentence even after it is collapsed`() = runTest(dispatcher) {
+        cacheTranslation("译文")
+        every { ai.analyzeGrammar(sentences[0], config.targetLanguage, any()) } returns
+                flowOf(firstMarkdown)
+        val model = model()
+
+        model.open(paragraph, bookId = 7, nodeId = 12)
+        advanceUntilIdle()
+        model.selectTab(TranslationTab.GRAMMAR)
+        model.selectSentence(0)
+        advanceUntilIdle()
+        model.selectSentence(0) // 收起
+
+        // 状态里已经没有这一句的语法了（收起后是 Idle），但本次打开算过的结果要能拿出来：
+        // 否则在收起状态下点五角星，收藏里就丢了语法分析。
+        assertNull(model.state.value.selectedSentenceIndex)
+        assertEquals(AsyncGrammar.Idle, model.state.value.grammar)
+        assertEquals(firstMarkdown, model.grammarFor(sentences[0]))
+        assertNull(model.grammarFor(sentences[1]))
+
+        model.dismiss()
+        assertNull(model.grammarFor(sentences[0]))
+    }
+
+    @Test
+    fun `thinking progress belongs to the selected sentence and resets on output`() =
+        runTest(dispatcher) {
+            cacheTranslation("译文")
+            val thinking = mutableMapOf<String, (Int) -> Unit>()
+            val gate = CompletableDeferred<Unit>()
+            every {
+                ai.analyzeGrammar(sentences[0], config.targetLanguage, captureLambda())
+            } answers {
+                thinking[sentences[0]] = thirdArg()
+                flow {
+                    gate.await()
+                    emit(firstMarkdown)
+                }
+            }
+            every {
+                ai.analyzeGrammar(sentences[1], config.targetLanguage, captureLambda())
+            } answers {
+                thinking[sentences[1]] = thirdArg()
+                flowOf(secondMarkdown)
+            }
+            val model = model()
+
+            model.open(paragraph, bookId = 7, nodeId = 12)
+            advanceUntilIdle()
+            model.selectTab(TranslationTab.GRAMMAR)
+
+            model.selectSentence(0)
+            runCurrent()
+            thinking.getValue(sentences[0]).invoke(120)
+            assertEquals(120, model.state.value.thinkingChars)
+
+            // 收起：没有展开的句子，思考提示清零。
+            model.selectSentence(0)
+            assertEquals(0, model.state.value.thinkingChars)
+
+            // 再展开（请求还在跑）：思考进度重新推上来。
+            model.selectSentence(0)
+            runCurrent()
+            thinking.getValue(sentences[0]).invoke(200)
+            assertEquals(200, model.state.value.thinkingChars)
+
+            // 切到另一句：上一句的字数不能留在新展开的这句上。
+            model.selectSentence(1)
+            runCurrent()
+            assertEquals(0, model.state.value.thinkingChars)
+            // 上一句的请求还在跑，它的思考进度也不能写进来。
+            thinking.getValue(sentences[0]).invoke(300)
+            assertEquals(0, model.state.value.thinkingChars)
+
+            // 这一句已经拿到完整结果：思考提示必须清掉。
+            assertEquals(
+                AsyncGrammar.Success(secondMarkdown, fromCache = false),
+                model.state.value.grammar
+            )
+            assertEquals(0, model.state.value.thinkingChars)
+
+            gate.complete(Unit)
+            advanceUntilIdle()
+        }
+
+    @Test
     fun `blank text does not open the dialog`() = runTest(dispatcher) {
         val model = model()
 

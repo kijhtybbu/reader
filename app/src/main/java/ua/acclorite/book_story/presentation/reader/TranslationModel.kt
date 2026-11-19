@@ -212,7 +212,12 @@ class TranslationModel @Inject constructor(
         if (index !in current.sentences.indices) return
 
         if (current.selectedSentenceIndex == index) {
-            _state.value = current.copy(selectedSentenceIndex = null, grammar = AsyncGrammar.Idle)
+            _state.value = current.copy(
+                selectedSentenceIndex = null,
+                grammar = AsyncGrammar.Idle,
+                // 收起就没有「正在分析」的句子了，上一句的推理字数提示跟着清掉。
+                thinkingChars = 0
+            )
             return
         }
 
@@ -223,7 +228,9 @@ class TranslationModel @Inject constructor(
             // 请求还在跑、结果还没写完时先接上已到达的片段：收起再展开不该是一块空白。
             grammar = stored
                 ?: grammarStreaming[key]?.let { AsyncGrammar.Streaming(it) }
-                ?: AsyncGrammar.Idle
+                ?: AsyncGrammar.Idle,
+            // 切到另一句：上一条请求的推理字数不属于这一句。
+            thinkingChars = 0
         )
         if (stored == null) startGrammarRequest(session, index, force = false)
     }
@@ -264,6 +271,15 @@ class TranslationModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * 本次打开期间已经分析过的某句语法（Markdown 原文）；没分析过返回 null。
+     *
+     * 收藏句子时用它保住「已经分析过、但当前没展开」的那份结果：UI 状态里只有展开句的语法，
+     * 收起或切到另一句之后旧结果就只剩下这里一份。
+     */
+    fun grammarFor(sentence: String): String? =
+        session?.let { s -> grammarResults[grammarKey(s, sentence)]?.text }
 
     /** 关闭对话框：取消全部请求（已完成的结果已经在缓存里）。 */
     fun dismiss() {
@@ -371,7 +387,15 @@ class TranslationModel @Inject constructor(
                 ai.analyzeGrammar(
                     text = sentence,
                     targetLanguage = session.config.targetLanguage,
-                    onThinking = { chars -> publishThinking(session.requestId, chars) }
+                    // fork: 只推「当前展开的就是这一句」的推理进度。切到别的句子后，上一条
+                    // 请求还在跑，它的字数不能跑到新展开的那句头上。
+                    onThinking = { chars ->
+                        if (_state.value.selectedSentenceIndex
+                                ?.let(session.sentences::getOrNull) == sentence
+                        ) {
+                            publishThinking(session.requestId, chars)
+                        }
+                    }
                 ).collect { delta ->
                     builder.append(delta)
                     // 第一块立刻渲染（`publishedLength == 0`）：Markdown 重排再贵也贵不过让用户
@@ -455,7 +479,15 @@ class TranslationModel @Inject constructor(
             if (selected == null || state.sentences.getOrNull(selected) != sentence) {
                 state
             } else {
-                state.copy(grammar = result)
+                // fork: 这一句已经有了实际输出（流式/完成/失败），推理阶段的字数提示就该消失；
+                // 不重置的话上一句的 `thinkingChars` 会残留在新展开的那句上。
+                val resetThinking = result is AsyncGrammar.Streaming ||
+                    result is AsyncGrammar.Success ||
+                    result is AsyncGrammar.Error
+                state.copy(
+                    grammar = result,
+                    thinkingChars = if (resetThinking) 0 else state.thinkingChars
+                )
             }
         }
     }

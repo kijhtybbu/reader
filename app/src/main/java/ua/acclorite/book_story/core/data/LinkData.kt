@@ -7,7 +7,8 @@
 package ua.acclorite.book_story.core.data
 
 object LinkData {
-    const val RELEASES = "https://www.github.com/Acclorite/book-story/releases/latest"
+    // fork: 「检查更新」指向本分支的 release 页 —— 上游的最新版是另一个应用。
+    const val RELEASES = "https://github.com/kijhtybbu/reader/releases"
     // fork: 「报告错误」指向本分支的 issue 列表 —— 用户装的是 2.0 的修改版，
     // 提给上游只会变成「这不是我们的版本」。上游仅保留贡献者/翻译入口作署名。
     const val ISSUES = "https://github.com/kijhtybbu/reader/issues"

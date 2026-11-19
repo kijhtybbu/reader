@@ -15,6 +15,7 @@ import android.os.Parcelable
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.parcelize.Parcelize
 import ua.acclorite.book_story.presentation.navigator.Screen
@@ -31,6 +32,10 @@ object AiSettingsScreen : Screen, Parcelable {
         val navigator = LocalNavigator.current
         val model = hiltViewModel<AiSettingsModel>()
         val (scrollBehavior, listState) = TopAppBarDefaults.collapsibleTopAppBarScrollBehavior()
+
+        // fork: 单 Activity 回退栈下这个 ViewModel 是 Activity 作用域的，重新进入时必须
+        // 重读缓存占用、清掉上一次留下的「已清除」与连接测试结果。
+        LaunchedEffect(Unit) { model.onEnter() }
 
         AiSettingsContent(
             model = model,

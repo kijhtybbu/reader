@@ -28,6 +28,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -116,7 +117,13 @@ object DictionaryCatalog {
         publish()
 
         scope.launch {
-            DictionaryRegistry.builtInState.collect { publish() }
+            DictionaryRegistry.builtInState
+                // fork: 解压进度每 tick 变一次，publish() 会重建整个列表（还要遍历内置词典目录）。
+                // 启动时那一长串 Extracting(0.01f..0.99f) 对 UI 没有意义，只关心「开始/结束」。
+                .distinctUntilChanged { old, new ->
+                    old is BuiltInState.Extracting && new is BuiltInState.Extracting
+                }
+                .collect { publish() }
         }
         scope.launch {
             // 启动时还没有导入在跑（导入挂在设置页的作用域上），可以安全清理上次进程留下的暂存目录。
@@ -139,8 +146,13 @@ object DictionaryCatalog {
         }
 
     /**
-     * 删除导入词典：先删文件，再删索引条目。反过来会让「索引没了、目录还在」变成孤儿目录，
-     * 下一次 [refresh] 又把它收养回来。
+     * 删除导入词典：先从索引摘掉并 [publish]，再删文件。
+     *
+     * 顺序不能反：
+     *  - [publish] 会让 `DictionaryRepository` / `DictionaryResourceStore` 先关掉这部词典的引擎与
+     *    资源句柄；先删文件的话引擎还开着、句柄指向已消失的路径。
+     *  - 先删文件再摘索引时，`deleteRecursively()` 失败会留下「索引没了、目录还在」的孤儿目录，
+     *    下一次 [refresh] 又把它收养回来。这里失败就回滚索引，至少条目与磁盘是一致的。
      *
      * 内置词典返回 false（不可删除）。
      */
@@ -150,16 +162,26 @@ object DictionaryCatalog {
         val dictionariesDir = directoryOf(context)
         val entry = index.firstOrNull { it.id == id } ?: return@withContext false
         val directory = resolve(dictionariesDir, entry.directory)
-        if (directory != null && directory.exists() && !directory.deleteRecursively()) {
-            logW(TAG, "Could not delete the dictionary files at ${directory.absolutePath}")
-            return@withContext false
-        }
+
         writeMutex.withLock {
             val next = index.filterNot { it.id == id }
             persist(dictionariesDir, next)
             index = next
         }
         publish()
+
+        if (directory != null && directory.exists() && !directory.deleteRecursively()) {
+            logW(TAG, "Could not delete the dictionary files at ${directory.absolutePath}")
+            writeMutex.withLock {
+                if (index.none { it.id == id }) {
+                    val next = index + entry
+                    persist(dictionariesDir, next)
+                    index = next
+                }
+            }
+            publish()
+            return@withContext false
+        }
         true
     }
 
@@ -237,7 +259,9 @@ object DictionaryCatalog {
             baseName = baseName,
             directory = directory,
             wordCount = ready?.wordCount ?: 0,
-            sizeBytes = sizeOf(directory),
+            // fork: 只在就绪时统计目录大小。未就绪时走一遍磁盘遍历（启动期主线程）毫无意义，
+            // 目录还不存在/正在解压，算出来的数字也是错的。
+            sizeBytes = if (ready != null) sizeOf(directory) else 0L,
             enabled = true,
             importedAt = 0L,
             builtIn = true,

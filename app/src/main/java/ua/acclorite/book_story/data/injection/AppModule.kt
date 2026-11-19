@@ -24,6 +24,7 @@ import ua.acclorite.book_story.data.ai.AiKeyCipher
 import ua.acclorite.book_story.data.ai.AiKeyStore
 import ua.acclorite.book_story.data.ai.AiTranslationRepository
 import ua.acclorite.book_story.data.ai.TinkAiKeyCipher
+import ua.acclorite.book_story.data.dictionary.DictionaryCatalog
 import ua.acclorite.book_story.data.dictionary.DictionaryRepository
 import ua.acclorite.book_story.data.settings.SettingsManager
 import ua.acclorite.book_story.data.storage.room.AppDatabase
@@ -70,7 +71,11 @@ object AppModule {
     fun provideDictionaryRepository(settings: SettingsManager): DictionaryRepository {
         return DictionaryRepository(
             activeDictionaryId = { settings.activeDictionaryId.lastValue }
-        )
+        ).also {
+            // fork: 与 `DictionaryResourceStore.shared` 一致 —— 禁用/删除/重装词典后立刻关掉
+            // 不再可用的导入引擎，不用等下一次查询。
+            it.startWatching(DictionaryCatalog.dictionaries)
+        }
     }
 
     /**

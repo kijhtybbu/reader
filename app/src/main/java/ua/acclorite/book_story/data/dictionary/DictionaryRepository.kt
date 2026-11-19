@@ -32,7 +32,11 @@ import com.qiuminal.juicedict.engine.DictHit
 import com.qiuminal.juicedict.engine.DictionaryEngine
 import com.qiuminal.juicedict.engine.DictionaryEngines
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -70,6 +74,8 @@ class DictionaryRepository(
 
     private val cacheLock = Mutex()
 
+    private val watchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /** accessOrder = true：迭代顺序即 LRU 顺序，[engineFor] 从头部淘汰最久未用的实例。 */
     private val importedEngines = LinkedHashMap<String, DictionaryEngine>(4, 0.75f, true)
 
@@ -85,6 +91,11 @@ class DictionaryRepository(
     suspend fun lookup(query: String, limit: Int = 5): List<DictionaryHit> {
         val q = query.trim()
         if (q.isEmpty() || limit <= 0) return emptyList()
+
+        // fork: 查询开头就清理已不可用的导入引擎。`engineFor` 对内置词典提前 return，
+        // 用户禁用/删除全部导入词典后只剩内置分支，那里的 `evictUnavailable()` 永远不会执行，
+        // 被删词典的引擎（和它的 fd）就会一直留在缓存里。
+        evictUnavailableEngines()
 
         val ranked = ArrayList<RankedHit>()
         for (dictionary in orderedForLookup(dictionaries(), activeDictionaryId())) {
@@ -186,6 +197,13 @@ class DictionaryRepository(
         }
     }
 
+    /** 目录变化时立刻关掉失效引擎；`AppModule.provideDictionaryRepository` 建好实例后调用一次。 */
+    internal fun startWatching(changes: Flow<List<InstalledDictionary>>) {
+        watchScope.launch {
+            changes.collect { evictUnavailableEngines() }
+        }
+    }
+
     /** 词典被删除或禁用后，下一次查询顺手关掉它的引擎（最多 2 个实例，不必订阅目录变化）。 */
     private suspend fun evictUnavailable() {
         val available = dictionaries().associateBy { it.id }
@@ -198,6 +216,11 @@ class DictionaryRepository(
                 closeEngine(id, engine)
             }
         }
+    }
+
+    /** [evictUnavailable] 的加锁入口：必须持 [cacheLock] 才能改 [importedEngines]。 */
+    private suspend fun evictUnavailableEngines() {
+        cacheLock.withLock { evictUnavailable() }
     }
 
     /**

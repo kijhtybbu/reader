@@ -97,6 +97,20 @@ class DictionaryRepositoryTest {
         builtIn = false
     )
 
+    /** 内置词典条目。JVM 单测里 `DictionaryRegistry` 没有打开引擎，`openBuiltIn()` 返回 null。 */
+    private fun builtInDictionary() = InstalledDictionary(
+        id = DictionaryCatalog.BUILT_IN_ID,
+        type = DictionaryType.STARDICT,
+        name = DictionaryCatalog.BUILT_IN_NAME,
+        baseName = "ecdict",
+        directory = File("/nonexistent/builtin"),
+        wordCount = 0,
+        sizeBytes = 0,
+        enabled = true,
+        importedAt = 0L,
+        builtIn = true
+    )
+
     private fun repositoryWith(
         vararg engines: FakeEngine,
         enabled: (String) -> Boolean = { true }
@@ -352,6 +366,61 @@ class DictionaryRepositoryTest {
         assertTrue("a disabled dictionary must not keep its engine open", engines.getValue("a").closed)
         assertFalse(engines.getValue("b").closed)
     }
+
+    // ---- 内置词典仍在时的清理 --------------------------------------------------
+
+    /**
+     * `engineFor` 对内置词典提前 return，所以「只剩内置词典」时它那条分支上的清理永远跑不到。
+     * 用户禁用最后一部导入词典后，它的引擎（和 fd）就会一直开着。
+     */
+    @Test
+    fun `disabling the sole imported dictionary closes its engine while only the built-in remains`() =
+        runTest {
+            var enabled = true
+            val engine = FakeEngine("a") { listOf("hello") }
+            val repository = DictionaryRepository(
+                dictionaries = {
+                    listOf(builtInDictionary(), dictionary("a", enabled = enabled))
+                },
+                opener = { engine }
+            )
+
+            assertEquals(listOf("hello"), repository.lookup("hello").map { it.word })
+            assertFalse(engine.closed)
+
+            enabled = false
+            // 只剩内置词典：这次查询会走 `openBuiltIn()` 那条提前 return 的分支。
+            assertTrue(repository.lookup("hello").isEmpty())
+
+            assertTrue(
+                "a disabled dictionary must not keep its engine open",
+                engine.closed
+            )
+        }
+
+    @Test
+    fun `deleting the sole imported dictionary closes its engine while only the built-in remains`() =
+        runTest {
+            var present = true
+            val engine = FakeEngine("a") { listOf("hello") }
+            val repository = DictionaryRepository(
+                dictionaries = {
+                    buildList {
+                        add(builtInDictionary())
+                        if (present) add(dictionary("a"))
+                    }
+                },
+                opener = { engine }
+            )
+
+            assertEquals(listOf("hello"), repository.lookup("hello").map { it.word })
+            assertFalse(engine.closed)
+
+            present = false
+            assertTrue(repository.lookup("hello").isEmpty())
+
+            assertTrue("a deleted dictionary must not keep its engine open", engine.closed)
+        }
 
     // ---- StarDict fixture -----------------------------------------------------
 

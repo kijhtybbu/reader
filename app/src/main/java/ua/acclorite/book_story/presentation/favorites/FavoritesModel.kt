@@ -37,9 +37,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ua.acclorite.book_story.core.log.logW
+import ua.acclorite.book_story.data.ai.AI_PROMPT_VERSION
 import ua.acclorite.book_story.data.ai.AiError
+import ua.acclorite.book_story.data.ai.AiRequestConfig
 import ua.acclorite.book_story.data.ai.AiRequestConfigProvider
 import ua.acclorite.book_story.data.ai.AiTranslationRepository
+import ua.acclorite.book_story.data.ai.cache.TranslationCacheRepository
+import ua.acclorite.book_story.data.ai.cache.TranslationKind
+import ua.acclorite.book_story.data.ai.cache.translationCacheKey
 import ua.acclorite.book_story.data.ai.mapAiException
 import ua.acclorite.book_story.domain.model.favorite.FavoriteSentence
 import ua.acclorite.book_story.domain.model.favorite.FavoriteTab
@@ -49,6 +54,10 @@ import ua.acclorite.book_story.domain.repository.FavoriteRepository
 import javax.inject.Inject
 
 private const val TAG = "FavoritesModel"
+
+/** 收藏的句子不属于任何书/节点；缓存表的这两列非空，用 -1 表示「无」。 */
+private const val NO_BOOK_ID = -1
+private const val NO_NODE_ID = -1
 
 /** 句子详情里译文区的状态。 */
 sealed interface FavoriteTranslation {
@@ -71,7 +80,9 @@ data class FavoriteSentenceDialogState(
 class FavoritesModel @Inject constructor(
     private val favorites: FavoriteRepository,
     private val ai: AiTranslationRepository,
-    private val configProvider: AiRequestConfigProvider
+    private val configProvider: AiRequestConfigProvider,
+    // fork: 收藏页与阅读页共用同一份 AI 缓存。阅读页里已经分析/翻译过的句子不该在收藏页再花钱请求一次。
+    private val cache: TranslationCacheRepository
 ) : ViewModel() {
 
     /**
@@ -168,7 +179,12 @@ class FavoritesModel @Inject constructor(
         }
     }
 
-    /** 打开收藏页上的一个句子：已有的译文直接显示，没有就补一次。 */
+    /**
+     * 打开收藏页上的一个句子：已有的译文直接显示，没有就补一次。
+     *
+     * 译文与语法都先看 AI 缓存（键与 `TranslationModel` 一致）：阅读页里双击过的段落已经付过费，
+     * 收藏页不该再请求一次。命中缓存会回填数据库，下次打开零请求。
+     */
     fun openSentence(sentence: String) {
         translationJob?.cancel()
         val key = sentence.trim()
@@ -177,13 +193,27 @@ class FavoritesModel @Inject constructor(
             val favorite = favorites.getSentence(key) ?: return@launch
             if (openSentenceKey != key) return@launch
 
-            val stored = favorite.translation?.takeIf { it.isNotBlank() }
+            val config = configProvider.current()
+            val withGrammar = backfillGrammar(favorite, config)
+            val stored = withGrammar.translation?.takeIf { it.isNotBlank() }
+                ?: cachedPayload(withGrammar.text, TranslationKind.TRANSLATION, config)
+                    ?.also { payload ->
+                        // 回填失败只记日志：译文仍然展示，下次打开再试一次。
+                        runCatching {
+                            favorites.updateSentenceTranslation(withGrammar.text, payload)
+                        }.onFailure { error ->
+                            logW(TAG, "Could not store the cached translation: ${error.message}")
+                        }
+                    }
+            // 读库/读缓存期间用户可能已经切到另一句。
+            if (openSentenceKey != key) return@launch
+
             _sentenceDialog.value = FavoriteSentenceDialogState(
-                favorite = favorite,
+                favorite = withGrammar.copy(translation = stored),
                 translation = stored?.let { FavoriteTranslation.Success(it) }
                     ?: FavoriteTranslation.Loading
             )
-            if (stored == null) startTranslation(favorite)
+            if (stored == null) startTranslation(withGrammar)
         }
     }
 
@@ -244,6 +274,9 @@ class FavoritesModel @Inject constructor(
                 runCatching { favorites.updateSentenceTranslation(key, result) }
                     .onFailure { error -> logW(TAG, "Could not store the translation: ${error.message}") }
 
+                // fork: 同时写进 AI 缓存 —— 下次在阅读页双击到同一句直接命中，不再计费。
+                putCache(key, TranslationKind.TRANSLATION, config, result)
+
                 _sentenceDialog.update { current ->
                     if (current?.favorite?.text != key) current
                     else current.copy(
@@ -269,6 +302,74 @@ class FavoritesModel @Inject constructor(
         _sentenceDialog.update { current ->
             if (current?.favorite?.text != key) current
             else current.copy(translation = translation)
+        }
+    }
+
+    /* ------ AI 缓存 --------------------------------------- */
+
+    /**
+     * 收藏时没带上语法（或只存了原文）时，先看这一句的语法缓存。命中就回填数据库并返回带语法的
+     * 条目，详情里直接能看到阅读页已经分析过的结果。
+     */
+    private suspend fun backfillGrammar(
+        favorite: FavoriteSentence,
+        config: AiRequestConfig
+    ): FavoriteSentence {
+        if (!favorite.grammar.isNullOrBlank()) return favorite
+        val payload = cachedPayload(favorite.text, TranslationKind.GRAMMAR, config) ?: return favorite
+        runCatching { favorites.updateSentenceGrammar(favorite.text, payload) }
+            .onFailure { error -> logW(TAG, "Could not store the cached grammar: ${error.message}") }
+        return favorite.copy(grammar = payload)
+    }
+
+    /** 缓存键与 `TranslationModel` 完全一致（同一句、同一标签、同一配置才能命中）。 */
+    private fun cacheKey(text: String, kind: TranslationKind, config: AiRequestConfig): String =
+        translationCacheKey(
+            text = text,
+            kind = kind,
+            targetLanguage = config.targetLanguageName,
+            model = config.model,
+            baseUrl = config.baseUrl
+        )
+
+    /** 缓存读失败不该让详情打不开：记日志后当作未命中。 */
+    private suspend fun cachedPayload(
+        text: String,
+        kind: TranslationKind,
+        config: AiRequestConfig
+    ): String? = try {
+        cache.get(cacheKey(text, kind, config))?.payload?.takeIf { it.isNotBlank() }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logW(TAG, "Could not read the AI cache: ${e.message}")
+        null
+    }
+
+    /** 写完整结果（收藏的句子不属于任何书/节点，`bookId` / `nodeId` 用 -1）。写失败只记日志。 */
+    private suspend fun putCache(
+        text: String,
+        kind: TranslationKind,
+        config: AiRequestConfig,
+        payload: String
+    ) {
+        try {
+            cache.put(
+                key = cacheKey(text, kind, config),
+                kind = kind,
+                bookId = NO_BOOK_ID,
+                nodeId = NO_NODE_ID,
+                payload = payload,
+                model = config.model,
+                baseUrl = config.baseUrl,
+                targetLanguage = config.targetLanguageName,
+                promptVersion = AI_PROMPT_VERSION,
+                now = System.currentTimeMillis()
+            )
+        } catch (e: CancellationException) {
+            logW(TAG, "AI cache write was cancelled")
+        } catch (e: Exception) {
+            logW(TAG, "Could not cache the AI result: ${e.message}")
         }
     }
 }

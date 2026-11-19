@@ -244,6 +244,10 @@ fun ReaderLayoutContinuous(
     val currentScrollTarget by rememberUpdatedState(scrollTarget)
     val currentReaderNodes by rememberUpdatedState(readerNodes)
     val currentPaginating by rememberUpdatedState(paginating)
+    // fork: 分页 effect 的 key 只有 `listState` / `paginating`，闭包会一直拿着「打开页面时」的
+    // 首尾判定。追加节点后它永远以为还没到头（或还在头），预加载会重复触发/漏触发。
+    val currentReachedFirst by rememberUpdatedState(reachedFirst)
+    val currentReachedLast by rememberUpdatedState(reachedLast)
 
     // Progress tracking
     LaunchedEffect(listState) {
@@ -290,10 +294,10 @@ fun ReaderLayoutContinuous(
                 val nodesList = currentReaderNodes
                 if (nodesList.isEmpty()) return@collectLatest
 
-                if (itemIndex < PRELOAD_THRESHOLD && !reachedFirst) {
+                if (itemIndex < PRELOAD_THRESHOLD && !currentReachedFirst) {
                     val firstNode = nodesList.firstOrNull() ?: return@collectLatest
                     paginateBackward(ReaderEvent.OnPaginateBackward(firstNode.node.id))
-                } else if (itemIndex > nodesList.size - PRELOAD_THRESHOLD && !reachedLast) {
+                } else if (itemIndex > nodesList.size - PRELOAD_THRESHOLD && !currentReachedLast) {
                     val lastNode = nodesList.lastOrNull() ?: return@collectLatest
                     paginateForward(ReaderEvent.OnPaginateForward(lastNode.node.id))
                 }
@@ -389,7 +393,7 @@ fun ReaderLayoutContinuous(
                                         val window = contentCoordinates
                                             ?.takeIf { it.isAttached }
                                             ?.localToWindow(offset)
-                                        val nodeId = window?.let { textLayouts.hitTest(it)?.nodeId }
+                                        val nodeId = window?.let(textLayouts::nodeAt)
                                         // 用 rememberUpdatedState 的那份：分页追加节点后旧的
                                         // readerNodes 已经过期，双击会翻到不存在或重复的段落。
                                         val paragraph = nodeId?.let { id ->

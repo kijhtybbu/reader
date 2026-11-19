@@ -155,8 +155,10 @@ object UserFontRegistry {
                 is FontFileCheck.Accepted -> check
             }
 
+            // fork: 用会抛异常的版本 —— `hasCjkGlyphs` 把「不是字体」也吞成 false，
+            // 伪造文件头的下载残骸会当成「没有中文字形」的合法字体导进来。
             val hasCjk = try {
-                UserFontTypefaces.hasCjkGlyphs(tempFile)
+                UserFontTypefaces.validateAndCheckCjk(tempFile)
             } catch (e: Exception) {
                 logW(TAG, "Imported file is not a readable font: ${e.message}")
                 return@withContext FontImportResult.Rejected(FontRejection.NOT_A_FONT)

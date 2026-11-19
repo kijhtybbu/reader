@@ -85,14 +85,18 @@ fun ReaderBookmarksBottomSheet(
                             horizontalArrangement = Arrangement.spacedBy(Spacing.m)
                         ) {
                             Column(Modifier.weight(1f)) {
-                                StyledText(
-                                    text = bookmark.chapterTitle,
-                                    style = MaterialTheme.typography.titleSmall.copy(
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                // TXT 没有章节：`chapterTitle` 是空串，渲染出来只是一行空白，
+                                // 把摘录顶下去。
+                                if (bookmark.chapterTitle.isNotBlank()) {
+                                    StyledText(
+                                        text = bookmark.chapterTitle,
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                                 if (bookmark.snippet.isNotBlank()) {
                                     StyledText(
                                         text = bookmark.snippet,

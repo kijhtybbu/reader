@@ -58,38 +58,46 @@ internal class MdxDictionary(
     val bookDescription: String get() = description
 
     init {
-        val head = MdxHeader.parse(reader.read(0L, minOf(reader.length, MAX_HEADER_BYTES).toInt()))
-            ?: error("not an MDict file: ${mdxFile.name}")
-        require(head.kind == MdxKind.ARTICLE) {
-            "${mdxFile.name} is a resource pack, not a dictionary"
-        }
-        require(head.encrypted and MdxKeyBlockCrypto.NEEDS_PASSWORD == 0) {
-            "password-protected MDict files are not supported"
-        }
-        require(head.keySectionOffset < reader.length) { "truncated MDict file ${mdxFile.name}" }
-        header = head
+        // `reader` 在构造期就打开了 `RandomAccessFile`。init 里任何一步抛（不是 MDict、加密、
+        // 截断、key 块解析失败）都会让这个实例永远拿不到 `close()`，fd 就漏了 —— 打开导入的
+        // 词典是「用户点了才发生」的路径，反复失败会一直积累。
+        try {
+            val head = MdxHeader.parse(reader.read(0L, minOf(reader.length, MAX_HEADER_BYTES).toInt()))
+                ?: error("not an MDict file: ${mdxFile.name}")
+            require(head.kind == MdxKind.ARTICLE) {
+                "${mdxFile.name} is a resource pack, not a dictionary"
+            }
+            require(head.encrypted and MdxKeyBlockCrypto.NEEDS_PASSWORD == 0) {
+                "password-protected MDict files are not supported"
+            }
+            require(head.keySectionOffset < reader.length) { "truncated MDict file ${mdxFile.name}" }
+            header = head
 
-        keyIndex = MdxKeyIndex.parse(
-            reader = reader,
-            offset = head.keySectionOffset,
-            unitSize = if (head.isUtf16) 2 else 1,
-            declaredEntries = head.entryCount,
-            version = head.version,
-            stripKey = head.stripKey,
-            encrypted = head.encrypted,
-        )
-        words = MdxWordIndex.load(reader, keyIndex, head.stripKey)
-        records = MdxRecordStore(
-            reader = reader,
-            offset = keyIndex.recordSectionOffset(head.keySectionOffset),
-            numberWidth = keyIndex.numberWidth
-        )
-        keyIndex.setRecordsEnd(records.totalSize)
+            keyIndex = MdxKeyIndex.parse(
+                reader = reader,
+                offset = head.keySectionOffset,
+                unitSize = if (head.isUtf16) 2 else 1,
+                declaredEntries = head.entryCount,
+                version = head.version,
+                stripKey = head.stripKey,
+                encrypted = head.encrypted,
+            )
+            words = MdxWordIndex.load(reader, keyIndex, head.stripKey)
+            records = MdxRecordStore(
+                reader = reader,
+                offset = keyIndex.recordSectionOffset(head.keySectionOffset),
+                numberWidth = keyIndex.numberWidth
+            )
+            keyIndex.setRecordsEnd(records.totalSize)
 
-        resources = mddFiles.filter { it.isFile }.mapNotNull { file ->
-            runCatching { MdxResourcePack(file) }
-                .onFailure { MdxLog.warn(TAG, "could not open ${file.name}", it) }
-                .getOrNull()
+            resources = mddFiles.filter { it.isFile }.mapNotNull { file ->
+                runCatching { MdxResourcePack(file) }
+                    .onFailure { MdxLog.warn(TAG, "could not open ${file.name}", it) }
+                    .getOrNull()
+            }
+        } catch (t: Throwable) {
+            runCatching { reader.close() }
+            throw t
         }
     }
 

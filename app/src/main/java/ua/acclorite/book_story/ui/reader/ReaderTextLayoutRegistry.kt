@@ -122,6 +122,21 @@ internal class ReaderTextLayoutRegistry {
         }
         return null
     }
+
+    /**
+     * 窗口坐标 → 所在的文本块节点。
+     *
+     * 与 [hitTest] 的区别：不要求点到的位置能归一化出一个词。双击翻译要的是「点在哪个段落里」，
+     * 点在行尾空白、纯标点或句末逗号上同样算命中 —— 拿 [hitTest] 判会直接弹不出翻译。
+     */
+    fun nodeAt(windowPosition: Offset): NodeId? {
+        val snapshot = entries.values.toList()
+        for (index in snapshot.indices.reversed()) {
+            val entry = snapshot[index]
+            if (entry.bounds.contains(windowPosition)) return entry.nodeId
+        }
+        return null
+    }
 }
 
 /**

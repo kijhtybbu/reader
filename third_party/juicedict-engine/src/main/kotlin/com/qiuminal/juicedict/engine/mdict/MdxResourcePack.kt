@@ -32,25 +32,32 @@ internal class MdxResourcePack(private val file: File) : AutoCloseable {
     val name: String get() = file.name
 
     init {
-        val head = MdxHeader.parse(reader.read(0L, minOf(reader.length, MAX_HEADER_BYTES).toInt()))
-            ?: error("not an MDict resource pack: ${file.name}")
-        require(head.kind == MdxKind.RESOURCE) { "${file.name} is not a resource pack" }
-        require(head.encrypted and MdxKeyBlockCrypto.NEEDS_PASSWORD == 0) {
-            "password-protected MDict resource packs are not supported"
+        // `reader` 在构造期就打开了 `RandomAccessFile`。init 里任何一步抛（不是 MDD、加密、
+        // 截断、key 块解析失败）都会让实例永远拿不到 `close()`，fd 就漏了。
+        try {
+            val head = MdxHeader.parse(reader.read(0L, minOf(reader.length, MAX_HEADER_BYTES).toInt()))
+                ?: error("not an MDict resource pack: ${file.name}")
+            require(head.kind == MdxKind.RESOURCE) { "${file.name} is not a resource pack" }
+            require(head.encrypted and MdxKeyBlockCrypto.NEEDS_PASSWORD == 0) {
+                "password-protected MDict resource packs are not supported"
+            }
+            header = head
+            index = MdxKeyIndex.parse(
+                reader = reader,
+                offset = head.keySectionOffset,
+                unitSize = 2,
+                declaredEntries = 0L,
+                version = head.version,
+                stripKey = head.stripKey,
+                encrypted = head.encrypted,
+            )
+            order = MdxKeyOrder.comparator(head.stripKey)
+            records = MdxRecordStore(reader, index.recordSectionOffset(head.keySectionOffset))
+            index.setRecordsEnd(records.totalSize)
+        } catch (t: Throwable) {
+            runCatching { reader.close() }
+            throw t
         }
-        header = head
-        index = MdxKeyIndex.parse(
-            reader = reader,
-            offset = head.keySectionOffset,
-            unitSize = 2,
-            declaredEntries = 0L,
-            version = head.version,
-            stripKey = head.stripKey,
-            encrypted = head.encrypted,
-        )
-        order = MdxKeyOrder.comparator(head.stripKey)
-        records = MdxRecordStore(reader, index.recordSectionOffset(head.keySectionOffset))
-        index.setRecordsEnd(records.totalSize)
     }
 
     /**

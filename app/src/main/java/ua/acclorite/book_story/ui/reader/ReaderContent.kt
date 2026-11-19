@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -165,13 +166,17 @@ fun ReaderContent(
     val currentNodeId = book.progress.currentNodeId
     val currentNodeOffset = book.progress.currentNodeIntraOffset
     val currentBookmark = bookmarkForNode(bookmarks, currentNodeId.id)
-    // 摘录：从当前这一行（段内偏移）开始取若干字；只看段首的话，段落中间的书签会显示成无关的文字
+    // 摘录：从当前这一行（段内偏移）开始取若干字；只看段首的话，段落中间的书签会显示成无关的文字。
+    // 标题节点也要能取摘录：在章节标题上创建书签时，只认 Paragraph 会得到一个空字符串。
     val currentSnippet = remember(nodes, currentNodeId, currentNodeOffset) {
-        nodes.firstOrNull { it.id == currentNodeId }
-            ?.content
-            ?.let { it as? NodeContent.Paragraph }
-            ?.text
-            ?.drop(currentNodeOffset)
+        val text = nodes.firstOrNull { it.id == currentNodeId }?.content?.let { content ->
+            when (content) {
+                is NodeContent.Paragraph -> content.text
+                is NodeContent.Header -> content.title
+                else -> null
+            }
+        }
+        text?.drop(currentNodeOffset)
             ?.take(60)
             ?.trim()
             .orEmpty()
@@ -230,9 +235,10 @@ fun ReaderContent(
     val grammarSuccess = translationState.grammar as? AsyncGrammar.Success
 
     // 多句段落里翻译标签翻的是整段，不能当成这一句的译文；单句段落才直接带上。
-    // 语法只在「点的正好是当前展开、且已有完整分析」时带上，其余句子先收藏原文/译文。
+    // 语法先用本次打开期间算过的结果（包括已收起/切走的那句），没有才看当前展开的这句。
     val onToggleFavoriteSentence: (String) -> Unit = { sentence ->
-        val grammar = if (sentence == grammarSentence) grammarSuccess?.text else null
+        val grammar = translationModel.grammarFor(sentence)
+            ?: if (sentence == grammarSentence) grammarSuccess?.text else null
         val translation = if (translationState.sentences.size <= 1) {
             (translationState.translation as? AsyncText.Success)?.text
         } else null
@@ -262,6 +268,15 @@ fun ReaderContent(
         { event: ReaderEvent ->
             lookupModel.dismiss()
             scroll(event)
+        }
+    }
+
+    // fork: 单 Activity 回退栈下这两个 ViewModel 是 Activity 作用域的。离开阅读页（或换书）时
+    // 不主动收尾，取词卡片/翻译对话框的状态会一直留在实例里，下次进来（甚至别的书）先闪一下。
+    DisposableEffect(book.id) {
+        onDispose {
+            lookupModel.dismiss()
+            translationModel.dismiss()
         }
     }
 

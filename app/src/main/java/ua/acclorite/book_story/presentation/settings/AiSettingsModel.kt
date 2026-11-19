@@ -98,6 +98,19 @@ class AiSettingsModel @Inject constructor(
         refreshCache()
     }
 
+    /**
+     * 每次进入设置页调用（`AiSettingsScreen` 的 `LaunchedEffect`）。
+     *
+     * `Navigator` 是单 Activity 回退栈、没有 per-screen `ViewModelStoreOwner`，`hiltViewModel()`
+     * 拿到的是 Activity 作用域实例：上一次访问留下的「缓存已清除」与连接测试结果会一直显示，
+     * 缓存条数也停在旧值。这里把它们重置并重读占用。
+     */
+    fun onEnter() {
+        testJob?.cancel()
+        _testState.value = AiTestState.Idle
+        refreshCache()
+    }
+
     /** 重新读取缓存的条数与占用；失败只改变这一行的状态，不影响 Key/连接的交互。 */
     fun refreshCache() {
         cacheJob?.cancel()

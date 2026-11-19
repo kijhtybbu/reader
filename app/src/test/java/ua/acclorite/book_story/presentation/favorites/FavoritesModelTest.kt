@@ -39,12 +39,16 @@ import ua.acclorite.book_story.data.ai.AiRequestConfig
 import ua.acclorite.book_story.data.ai.AiRequestConfigProvider
 import ua.acclorite.book_story.data.ai.AiTargetLanguage
 import ua.acclorite.book_story.data.ai.AiTranslationRepository
+import ua.acclorite.book_story.data.ai.cache.CachedAiResult
+import ua.acclorite.book_story.data.ai.cache.TranslationKind
+import ua.acclorite.book_story.data.ai.cache.translationCacheKey
 import ua.acclorite.book_story.data.repository.favoriteSentenceKey
 import ua.acclorite.book_story.data.repository.favoriteWordKey
 import ua.acclorite.book_story.domain.model.favorite.FavoriteSentence
 import ua.acclorite.book_story.domain.model.favorite.FavoriteWord
 import ua.acclorite.book_story.domain.model.favorite.FavoriteWordDraft
 import ua.acclorite.book_story.domain.repository.FavoriteRepository
+import ua.acclorite.book_story.presentation.reader.FakeTranslationCache
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FavoritesModelTest {
@@ -61,19 +65,30 @@ class FavoritesModelTest {
         Dispatchers.resetMain()
     }
 
+    private val config = AiRequestConfig(
+        model = "test-model",
+        baseUrl = "https://example.test/v1/",
+        targetLanguage = AiTargetLanguage.ENGLISH,
+        targetLanguageName = "English (en)",
+        grammarEnabled = true
+    )
+
+    private fun sentenceCacheKey(text: String, kind: TranslationKind) = translationCacheKey(
+        text = text,
+        kind = kind,
+        targetLanguage = config.targetLanguageName,
+        model = config.model,
+        baseUrl = config.baseUrl
+    )
+
     private fun model(
         repository: FakeFavoriteRepository,
-        ai: AiTranslationRepository = mockk(relaxed = true)
+        ai: AiTranslationRepository = mockk(relaxed = true),
+        cache: FakeTranslationCache = FakeTranslationCache()
     ): FavoritesModel {
         val config = mockk<AiRequestConfigProvider>()
-        every { config.current() } returns AiRequestConfig(
-            model = "test-model",
-            baseUrl = "https://example.test/v1/",
-            targetLanguage = AiTargetLanguage.ENGLISH,
-            targetLanguageName = "English (en)",
-            grammarEnabled = true
-        )
-        return FavoritesModel(repository, ai, config)
+        every { config.current() } returns this.config
+        return FavoritesModel(repository, ai, config, cache)
     }
 
     @Test
@@ -208,6 +223,79 @@ class FavoritesModelTest {
         viewModel.closeSentence()
 
         assertEquals(null, viewModel.sentenceDialog.value)
+    }
+
+    // ---- AI 缓存 ---------------------------------------------------------------
+
+    @Test
+    fun `a cached translation is shown without a request and backfilled`() = runTest(dispatcher) {
+        val repository = FakeFavoriteRepository()
+        repository.addSentence("It works.", null, "**grammar**")
+        val ai = mockk<AiTranslationRepository>(relaxed = true)
+        val cache = FakeTranslationCache().apply {
+            entries[sentenceCacheKey("It works.", TranslationKind.TRANSLATION)] = CachedAiResult(
+                payload = "缓存译文",
+                model = config.model,
+                targetLanguage = config.targetLanguageName,
+                createdAt = 1L
+            )
+        }
+        val viewModel = model(repository, ai, cache)
+
+        viewModel.openSentence("It works.")
+        runCurrent()
+
+        assertEquals(
+            FavoriteTranslation.Success("缓存译文"),
+            viewModel.sentenceDialog.value?.translation
+        )
+        assertEquals("缓存译文", repository.translationOf("It works."))
+        verify(exactly = 0) { ai.translate(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a cached grammar is shown without a request and backfilled`() = runTest(dispatcher) {
+        val repository = FakeFavoriteRepository()
+        // 收藏时只存了原文：语法没跟上。
+        repository.addSentence("It works.", "已有译文", null)
+        val ai = mockk<AiTranslationRepository>(relaxed = true)
+        val cache = FakeTranslationCache().apply {
+            entries[sentenceCacheKey("It works.", TranslationKind.GRAMMAR)] = CachedAiResult(
+                payload = "**cached grammar**",
+                model = config.model,
+                targetLanguage = config.targetLanguageName,
+                createdAt = 1L
+            )
+        }
+        val viewModel = model(repository, ai, cache)
+
+        viewModel.openSentence("It works.")
+        runCurrent()
+
+        assertEquals("**cached grammar**", repository.grammarOf("It works."))
+        assertEquals("**cached grammar**", viewModel.sentenceDialog.value?.favorite?.grammar)
+        verify(exactly = 0) { ai.analyzeGrammar(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a finished network translation is written to the AI cache`() = runTest(dispatcher) {
+        val repository = FakeFavoriteRepository()
+        repository.addSentence("It works.", null, "**grammar**")
+        val ai = mockk<AiTranslationRepository>(relaxed = true)
+        every { ai.translate(any(), any(), any()) } returns flowOf("译文")
+        val cache = FakeTranslationCache()
+        val viewModel = model(repository, ai, cache)
+
+        viewModel.openSentence("It works.")
+        runCurrent()
+
+        val put = cache.puts.single()
+        assertEquals(sentenceCacheKey("It works.", TranslationKind.TRANSLATION), put.key)
+        assertEquals(TranslationKind.TRANSLATION, put.kind)
+        assertEquals("译文", put.payload)
+        // 收藏的句子不属于任何书/节点。
+        assertEquals(-1, put.bookId)
+        assertEquals(-1, put.nodeId)
     }
 
     /** 内存版收藏仓库：只实现状态机用到的路径。 */

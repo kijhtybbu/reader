@@ -55,13 +55,18 @@ object UserFontTypefaces {
     )
 
     /**
-     * 6 份：设置页最多同时展示 10 个用户字体，但只有可见的那几个会被组合。
-     * 缓存过大没有意义 —— 每个 FontFamily 背后是一份 mmap 的字体文件。
+     * 12 份：设置页最多展示 [ua.acclorite.book_story.ui.reader.data.UserFontRegistry.MAX_FONTS] 个
+     * 用户字体，同时可见的那几个还会各自按字重/斜体分桶。缓存过大没有意义 ——
+     * 每个 FontFamily 背后是一份 mmap 的字体文件。
      */
-    private val cache = object : LruCache<Key, ComposeFontFamily>(6) {}
+    private val cache = object : LruCache<Key, ComposeFontFamily>(12) {}
 
-    /** 静态字体的基础 Typeface（按文件名）。字重变化不再读文件。 */
-    private val baseTypefaces = object : LruCache<String, Typeface>(4) {}
+    /**
+     * 静态字体的基础 Typeface（按文件名），容量与 [UserFontRegistry.MAX_FONTS] 对齐：
+     * 设置页可以同时展示 10 个字体，4 份会让「拖动字重滑块」反复重读 20 MB 的字库。
+     * 字重变化不再读文件。
+     */
+    private val baseTypefaces = object : LruCache<String, Typeface>(10) {}
 
     fun cached(entry: UserFontEntry, weight: Int, italic: Boolean): ComposeFontFamily? =
         cache.get(Key(entry.fileName, weight, italic))
@@ -140,20 +145,31 @@ object UserFontTypefaces {
             .build()
 
     /**
-     * 导入时检测字体文件是否自带中文字形。
+     * 导入校验：这个文件能不能真的当字体打开，以及它自不自带中文字形。
      *
-     * 不用 `Paint.hasGlyph`：它会顺着系统回退链找字。实测 API 36 上 Raleway（cmap 里只有
-     * 拉丁）也会返回 true，徽标就成了摆设。这里直接读 cmap 的格式 4/12 子表，回答的是
-     * 「文件里有没有这两个码位」。
+     * **会抛异常**：文件头魔数对、内容是垃圾的下载残骸（伪造 sfnt 头的 HTML/JSON）只有
+     * 在这里才能拦下来，调用方据此落成
+     * [ua.acclorite.book_story.data.storage.font.FontRejection.NOT_A_FONT]。
+     * 渲染路径上需要「不能崩」的版本见 [hasCjkGlyphs]。
+     *
+     * 中文字形不用 `Paint.hasGlyph` 判定：它会顺着系统回退链找字。实测 API 36 上 Raleway
+     * （cmap 里只有拉丁）也会返回 true，徽标就成了摆设。这里直接读 cmap 的格式 4/12 子表，
+     * 回答的是「文件里有没有这两个码位」。
      */
-    fun hasCjkGlyphs(file: File): Boolean {
-        val cmap = try {
-            readCmapTable(file)
-        } catch (e: Exception) {
-            logW(TAG, "Could not read cmap of ${file.name}: ${e.message}")
-            null
-        } ?: return false
+    fun validateAndCheckCjk(file: File): Boolean {
+        // Font.Builder 会解析 sfnt 目录与表头：魔数对但结构坏的文件在这里就抛。
+        Font.Builder(file).build()
+        val cmap = readCmapTable(file)
+            ?: throw IllegalArgumentException("Font has no readable cmap table: ${file.name}")
         return FontCmapTable.hasAllGlyphs(cmap, CJK_PROBES)
+    }
+
+    /** [validateAndCheckCjk] 的不抛异常版本：读不了就当「没有中文字形」。 */
+    fun hasCjkGlyphs(file: File): Boolean = try {
+        validateAndCheckCjk(file)
+    } catch (e: Exception) {
+        logW(TAG, "Could not read cmap of ${file.name}: ${e.message}")
+        false
     }
 
     private fun readCmapTable(file: File): ByteArray? = RandomAccessFile(file, "r").use { raf ->
