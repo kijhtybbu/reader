@@ -64,6 +64,35 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Signing configuration:
+    // 若通过环境变量提供了正式签名密钥（CI Secrets 或本地导出），则使用正式签名；
+    // 未提供时 release 构建自动回退到 debug 签名，确保产出的 APK 始终可直接安装。
+    val releaseStoreFile = System.getenv("RELEASE_STORE_FILE")
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::file)
+    val releaseStorePassword = System.getenv("RELEASE_STORE_PASSWORD")
+        ?.takeIf { it.isNotBlank() }
+    val releaseKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
+        ?.takeIf { it.isNotBlank() }
+    val releaseKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+        ?.takeIf { it.isNotBlank() }
+    val hasReleaseKeystore = releaseStoreFile != null &&
+        releaseStoreFile.isFile &&
+        releaseStorePassword != null &&
+        releaseKeyAlias != null &&
+        releaseKeyPassword != null
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     // Build types configuration
     buildTypes {
         getByName("debug") {
@@ -73,6 +102,11 @@ android {
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = false
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
 
             proguardFiles("proguard-rules.pro")
         }

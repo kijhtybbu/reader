@@ -1,0 +1,147 @@
+name: Release APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "发布标签（例如 v2.0.0；留空则按 app/build.gradle.kts 的 versionName 自动生成）"
+        required: false
+        default: ""
+      prerelease:
+        description: "标记为预发布版本 (Pre-release)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Configure Android signing keystore (optional)
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$RELEASE_STORE_PASSWORD" ] && [ -n "$RELEASE_KEY_ALIAS" ] && [ -n "$RELEASE_KEY_PASSWORD" ]; then
+            KEYSTORE_PATH="$RUNNER_TEMP/release.keystore"
+            echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            echo "RELEASE_STORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "RELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "SIGNING_MODE=release-keystore" >> "$GITHUB_ENV"
+            echo "Configured production release keystore from repository secrets."
+          else
+            echo "SIGNING_MODE=debug-fallback" >> "$GITHUB_ENV"
+            echo "No release keystore secrets configured; app/build.gradle.kts will sign release APK with debug key so it remains directly installable."
+          fi
+
+      - name: Run unit tests & build release APK
+        run: ./gradlew :dict-engine:test :app:testDebugUnitTest :app:assembleRelease --no-daemon
+
+      - name: Prepare release artifacts & notes
+        id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          VERSION_NAME=$(sed -n 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
+          VERSION_CODE=$(sed -n 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' app/build.gradle.kts | head -n 1)
+          GIT_SHORT_HASH=$(git rev-parse --short HEAD)
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG_NAME="${GITHUB_REF_NAME}"
+          elif [ -n "${INPUT_TAG}" ]; then
+            TAG_NAME="${INPUT_TAG}"
+          else
+            case "${VERSION_NAME}" in
+              v*) TAG_NAME="${VERSION_NAME}" ;;
+              *.*.*) TAG_NAME="v${VERSION_NAME}" ;;
+              *) TAG_NAME="v${VERSION_NAME}.0" ;;
+            esac
+          fi
+
+          mkdir -p dist
+          APK_SRC="app/build/outputs/apk/release/app-release.apk"
+          APK_NAME="maimai-reader-${TAG_NAME}.apk"
+          APK_DEST="dist/${APK_NAME}"
+
+          cp "${APK_SRC}" "${APK_DEST}"
+          (cd dist && sha256sum "${APK_NAME}" > "${APK_NAME}.sha256")
+          APK_SHA256=$(awk '{print $1}' "dist/${APK_NAME}.sha256")
+          cp NOTICE.md dist/NOTICE.md
+
+          {
+            echo "## 🍞 麦麦阅读器 (MaiMai Reader) ${TAG_NAME}"
+            echo ""
+            CHANGELOG_FILE="fastlane/metadata/android/zh-CN/changelogs/${VERSION_CODE}.txt"
+            if [ -f "${CHANGELOG_FILE}" ]; then
+              echo "### 更新内容"
+              cat "${CHANGELOG_FILE}"
+              echo ""
+            fi
+            echo "### 构建信息"
+            echo "- **版本：** \`${VERSION_NAME}\` (\`versionCode ${VERSION_CODE}\`, commit \`${GIT_SHORT_HASH}\`)"
+            echo "- **包名：** \`dev.jia.reader\`（支持 Android 10 / API 29 及以上，可与原版 Book's Story 共存）"
+            echo "- **安装包：** \`${APK_NAME}\`"
+            echo "- **SHA-256：** \`${APK_SHA256}\`"
+            echo ""
+            echo "### 来源与授权声明 (GPL-3.0-only)"
+            echo "- **上游项目：** [Acclorite/book-story](https://github.com/Acclorite/book-story)（Copyright © 2024–2026 Acclorite）"
+            echo "- **本分支源码：** [kijhtybbu/reader](https://github.com/kijhtybbu/reader)"
+            echo "- **授权协议：** [GNU GPL-3.0-only](https://www.gnu.org/licenses/gpl-3.0.html)（详见随附 \`NOTICE.md\` 与仓库 \`UPSTREAM_DIFF.md\`）"
+          } > dist/RELEASE_NOTES.md
+
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${APK_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maimai-reader-${{ steps.meta.outputs.tag_name }}
+          path: |
+            dist/${{ steps.meta.outputs.apk_name }}
+            dist/${{ steps.meta.outputs.apk_name }}.sha256
+            dist/NOTICE.md
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: 麦麦阅读器 ${{ steps.meta.outputs.tag_name }}
+          body_path: dist/RELEASE_NOTES.md
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease || false }}
+          files: |
+            dist/${{ steps.meta.outputs.apk_name }}
+            dist/${{ steps.meta.outputs.apk_name }}.sha256
+            dist/NOTICE.md
