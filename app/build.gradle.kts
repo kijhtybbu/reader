@@ -48,8 +48,10 @@ android {
         // fork: rebase-critical — 见 REBASE.md 第 1 节
         minSdk = 29
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.8.0"
+        // fork: 2.0 起改名为「麦麦阅读器」。versionCode 只需单调递增（14 → 15），
+        // 不必与 versionName 对齐。
+        versionCode = 15
+        versionName = "2.0"
         // fork: 「关于」页显示的构建标识，见文件头的 gitShortHash。
         buildConfigField("String", "GIT_HASH", "\"$gitShortHash\"")
 

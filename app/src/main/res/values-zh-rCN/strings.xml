@@ -181,6 +181,12 @@
     <string name="no_chapters">无章节</string>
     <string name="chapters">章节</string>
     <string name="app_version_option">应用版本</string>
+    <string name="upstream_source_option">上游来源</string>
+    <string name="upstream_source_desc">Book’s Story（Acclorite）· GPL-3.0-only</string>
+    <string name="license_option">授权协议</string>
+    <string name="license_desc">GNU 通用公共许可证第 3 版（仅此版本）</string>
+    <string name="source_code_option">源码</string>
+    <string name="source_code_desc">本分支的仓库，含全部修改</string>
     <string name="report_bug_option">报告错误</string>
     <string name="credits_option">鸣谢</string>
     <string name="credits_design">设计</string>

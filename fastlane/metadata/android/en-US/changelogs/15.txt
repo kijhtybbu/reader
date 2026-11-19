@@ -1,0 +1,2 @@
+* Renamed to 麦麦阅读器 (MaiMai Reader) and bumped to 2.0
+* About: upstream source, license (GPL-3.0-only) and fork source code links

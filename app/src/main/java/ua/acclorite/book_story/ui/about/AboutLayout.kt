@@ -88,6 +88,45 @@ fun AboutLayout(
 
         item {
             AboutItem(
+                title = stringResource(id = R.string.upstream_source_option),
+                description = stringResource(id = R.string.upstream_source_desc)
+            ) {
+                navigateToBrowserPage(
+                    AboutEvent.OnNavigateToBrowserPage(
+                        page = LinkData.UPSTREAM
+                    )
+                )
+            }
+        }
+
+        item {
+            AboutItem(
+                title = stringResource(id = R.string.license_option),
+                description = stringResource(id = R.string.license_desc)
+            ) {
+                navigateToBrowserPage(
+                    AboutEvent.OnNavigateToBrowserPage(
+                        page = LinkData.LICENSE
+                    )
+                )
+            }
+        }
+
+        item {
+            AboutItem(
+                title = stringResource(id = R.string.source_code_option),
+                description = stringResource(id = R.string.source_code_desc)
+            ) {
+                navigateToBrowserPage(
+                    AboutEvent.OnNavigateToBrowserPage(
+                        page = LinkData.SOURCE
+                    )
+                )
+            }
+        }
+
+        item {
+            AboutItem(
                 title = stringResource(id = R.string.report_bug_option),
                 description = null
             ) {

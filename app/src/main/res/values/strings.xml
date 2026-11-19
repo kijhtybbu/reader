@@ -6,7 +6,7 @@
 
 <resources>
     <!-- Basic Strings -->
-    <string name="app_name" translatable="false">本地阅读器</string>
+    <string name="app_name" translatable="false">麦麦阅读器</string>
     <string name="default_string">Default</string>
 
     <!-- Screens -->
@@ -460,6 +460,12 @@
     <!-- About -->
     <!-- Options -->
     <string name="app_version_option">App version</string>
+    <string name="upstream_source_option">Upstream source</string>
+    <string name="upstream_source_desc">Book’s Story by Acclorite · GPL-3.0-only</string>
+    <string name="license_option">License</string>
+    <string name="license_desc">GNU General Public License v3.0 only</string>
+    <string name="source_code_option">Source code</string>
+    <string name="source_code_desc">Repository of this fork, including all modifications</string>
     <string name="report_bug_option">Report a bug</string>
     <string name="licenses_option">Open source licenses</string>
     <string name="credits_option">Credits</string>
